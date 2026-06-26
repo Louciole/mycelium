@@ -105,6 +105,9 @@ export async function onMessage(event) {
                 case "edit_conv":
                     if (message.content.item === "name"){
                         setElement('global.convs['+message.content.id+'].name', message.content.content)
+                    } else if (message.content.item === "pfp") {
+                        setElement('global.convs['+message.content.id+'].pfp', message.content.content)
+                        setElement('global.privateConvs['+message.content.id+'].pfp', message.content.content)
                     }
                     break;
 

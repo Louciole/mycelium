@@ -493,14 +493,16 @@ window.getCustomEmojiScrollHtml = getCustomEmojiScrollHtml
 
 function repaintConv(sub, value){
     console.log("repainting conv", sub, value)
+    const conv = global.convs[global.state.activeConv]
+    if (!conv?.messageGroups?.length) return
 
-    if(global.convs[global.state.activeConv].messageGroups[global.convs[global.state.activeConv].messageGroups.length-1].messages.length > 1){
+    if(conv.messageGroups[conv.messageGroups.length-1].messages.length > 1){
         sub.lastChild.remove()
         if (sub.children[sub.children.length-1].classList.contains("separator")){
             sub.children[sub.children.length-1].remove()
         }
     }
-    sub.insertAdjacentHTML("beforeend", fillWith('messageGroup',[global.convs[global.state.activeConv].messageGroups[global.convs[global.state.activeConv].messageGroups.length-1]]))
+    sub.insertAdjacentHTML("beforeend", fillWith('messageGroup',[conv.messageGroups[conv.messageGroups.length-1]]))
     requestAnimationFrame(() => mountAllConvSpreadsheets(sub))
 
 
@@ -696,7 +698,7 @@ function getAnswerBlock(element){
     <div class="replyLine">
     </div>
 </div>
-<div class="circle red small"></div>
+<div class="circle red small" style="background-image:url(/static/attachments/${global.users[og.sender]?.pfp});background-size:cover;"></div>
 <b>@${global.users[og.sender].display}</b>
 <a href="#message-${og.id}" class="ellipsis">${og.body}</a>
 </div>`
@@ -824,8 +826,7 @@ if (_snapshot) {
     for (const k in _snapshot) global[k] = _snapshot[k]
     if (global.user?.id) global.users[global.user.id] = global.user
     setElement('global.servers', global.servers || {})
-    updateElement('global.convs')
-    updateElement('global.privateConvs')
+    loadConvs(true)    // local-first paint of the DM sidebar from the snapshot (no fetch)
     markReady()
     initWebSockets()   // idempotent; reconnects when the network returns
 }

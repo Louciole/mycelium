@@ -270,6 +270,66 @@ export async function expectMessageNotVisible(page, text) {
     await expect(page.locator('.message .mdBlock').filter({ hasText: text })).toHaveCount(0);
 }
 
+/**
+ * Opens the add-users panel from within an active conversation.
+ */
+export async function openAddUsersPanel(page) {
+    await page.locator('.call-actions .icon-wrapper:has(img[src="/static/icons/material/groupadd.svg"])').click();
+    await page.waitForFunction(() => {
+        const el = document.getElementById('add-users');
+        return el && el.style.visibility !== 'hidden' && el.offsetParent !== null;
+    }, { timeout: 5000 });
+}
+
+/**
+ * Checks the checkbox for a friend in the add-users panel by their username.
+ */
+export async function selectFriendInAddPanel(page, username) {
+    const row = page.locator('#add-users .scrollable .space-between').filter({
+        has: page.locator('.username').filter({ hasText: username }),
+    });
+    await row.waitFor({ state: 'visible', timeout: 5000 });
+    const checkbox = row.locator('input[type="checkbox"]');
+    if (!(await checkbox.isChecked())) {
+        await checkbox.click();
+    }
+}
+
+/**
+ * Clicks "Créer un MP" in the add-users panel.
+ * Waits for the button to become enabled first.
+ */
+export async function confirmGroupConvCreation(page) {
+    const btn = page.locator('#createConvBtn');
+    await expect(btn).not.toHaveClass(/disabled/, { timeout: 5000 });
+    await btn.click();
+}
+
+/**
+ * Returns the ID of a group conv (private=false) that contains all given member usernames.
+ */
+export async function getGroupConvId(page, memberUsernames) {
+    return page.evaluate((usernames) => {
+        const users = window.global?.users || {};
+        const convs = Object.values(window.global?.privateConvs || {});
+        const conv = convs.find((c) => {
+            if (c?.private !== false) return false;
+            const memberNames = (c.members || []).map((id) => users[id]?.username).filter(Boolean);
+            return usernames.every((u) => memberNames.includes(u));
+        });
+        return conv?.id || null;
+    }, memberUsernames);
+}
+
+/**
+ * Waits for a group conv (private=false) to appear in global.privateConvs without reloading.
+ */
+export async function waitForGroupConvLive(page, timeout = 10000) {
+    await page.waitForFunction(() => {
+        return Object.values(window.global?.privateConvs || {}).some((c) => c?.private === false);
+    }, { timeout });
+}
+
 
 
 

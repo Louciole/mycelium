@@ -1,6 +1,6 @@
 <div class="inline space-between">
     <div class="inline">
-        <div class="circle red"></div>
+        <div class="circle red" style="${global.users[getRelevantUser(element)]?.pfp ? 'background-image:url(/static/attachments/'+global.users[getRelevantUser(element)].pfp+');background-size:cover;' : ''}"></div>
         <div class="name">${global.users[getRelevantUser(element)].display}</div>
         <div class="username">${global.users[getRelevantUser(element)].username}</div>
     </div>

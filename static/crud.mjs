@@ -71,7 +71,21 @@ export function loadServers(){
     xhr("get_user_servers",onload)
 }
 
-export function loadConvs(){
+export function loadConvs(renderOnly = false){
+    // Paint the DM sidebar from whatever is in global.convs/privateConvs.
+    const render = function() {
+        updateElement("global.convs")
+        goTo('sec-column',"column-perso",undefined, true,()=>{goTo('sec-selector',"privateMessage")})
+    }
+
+    // Offline (or an explicit local-first paint from a snapshot): the convs are
+    // already in global — just render them, never fetch. Without this the list
+    // never paints offline, since the network onload below never fires.
+    if (global.state.offline || renderOnly) {
+        render()
+        return
+    }
+
     const onload = function() {
         const keys = JSON.parse(this.responseText)
         for(let key of keys){
@@ -82,9 +96,7 @@ export function loadConvs(){
             loadUsers(global.convs[key.id].members)
         }
 
-        updateElement("global.convs")
-        goTo('sec-column',"column-perso",undefined, true,()=>{goTo('sec-selector',"privateMessage")})
-
+        render()
     };
     xhr("get_user_convs",onload)
 }
@@ -128,6 +140,7 @@ export function loadConv(key){
     };
 
     const request = xhr("get_conv_content?conv_id="+JSON.stringify(key), onload, "GET",false)
+    if (!request.responseText) return
     const elements = JSON.parse(request.responseText)
     elements.attachments = elements.attachments ? JSON.parse(elements.attachments) : []
     for(let element in elements){
@@ -641,6 +654,16 @@ function addPendingUser(event, id){
 }
 window.addPendingUser = addPendingUser
 
+function filterFriendList(event) {
+    const query = event.target.value.toLowerCase()
+    document.querySelectorAll('#add-users .scrollable .space-between').forEach(row => {
+        const username = row.querySelector('.username')?.textContent?.toLowerCase() || ''
+        const name = row.querySelector('.name')?.textContent?.toLowerCase() || ''
+        row.style.display = (username.includes(query) || name.includes(query)) ? '' : 'none'
+    })
+}
+window.filterFriendList = filterFriendList
+
 function createConv(event){
     if (event.currentTarget.classList.contains("disabled")){
         return
@@ -659,8 +682,11 @@ function createConv(event){
     const conv = {"name":"New Conversation","members":members,"messageGroups":[],"messages":{},"private":false}
 
     const onload = function() {
-        conv.id = parseInt(this.responseText)
-        addElement("global.convs", conv)
+        const res = JSON.parse(this.responseText)
+        conv.id = res.id
+        global.convs[conv.id] = conv
+        global.privateConvs[conv.id] = conv
+        addElement("global.privateConvs", conv)
         closeMenu("#add-users")
     };
     xhr("create_conv?name=".concat(conv.name,"&members=",JSON.stringify(conv.members)),onload)
@@ -943,9 +969,17 @@ function handleImageUpload(file) {
 }
 window.handleImageUpload = handleImageUpload
 
+function uploadConvPfp(convId) {
+    global.state.uploadImage = "convPfp"
+    global.state.uploadConvId = convId
+    openMenu('loadImage', false)
+}
+window.uploadConvPfp = uploadConvPfp
+
 function uploadProfileImage(field="pfp"){
     const isBanner = global.state.uploadImage === "banner"
-    const outputSize = isBanner ? 600 : 256 // 600px wide for banners, 256x256 for avatars
+    const isConvPfp = global.state.uploadImage === "convPfp"
+    const outputSize = isBanner ? 600 : 256
 
     imageEditor.getCroppedImageData(outputSize).then(result => {
         const onload = function () {
@@ -961,8 +995,18 @@ function uploadProfileImage(field="pfp"){
                 } catch (e) {
                     console.error("Failed to parse server pfp response:", e)
                 }
+            } else if (isConvPfp) {
+                global.state.uploadImage = ""
+                try {
+                    const response = JSON.parse(this.responseText)
+                    if (response.pfp) {
+                        setElement('global.convs[' + global.state.uploadConvId + '].pfp', response.pfp)
+                        setElement('global.privateConvs[' + global.state.uploadConvId + '].pfp', response.pfp)
+                    }
+                } catch (e) {
+                    console.error("Failed to parse conv pfp response:", e)
+                }
             } else if (isBanner) {
-                // Banner upload
                 global.state.uploadImage = ""
                 try {
                     const response = JSON.parse(this.responseText)
@@ -973,7 +1017,6 @@ function uploadProfileImage(field="pfp"){
                     console.error("Failed to parse banner response:", e)
                 }
             } else {
-                // Profile picture upload
                 try {
                     const response = JSON.parse(this.responseText)
                     if (response.pfp) {
@@ -987,6 +1030,8 @@ function uploadProfileImage(field="pfp"){
 
         if (global.state.uploadImage === "serverAvatar"){
             xhr("edit_server_property?property=pfp&server_id=".concat(global.state.currentServer.id), onload,"POST",true,{"value":result})
+        } else if (isConvPfp) {
+            xhr("change_conv_pfp?conv_id=".concat(global.state.uploadConvId), onload,"POST",true,{"value":result})
         } else if (isBanner) {
             xhr("change_banner", onload,"POST",true,{"value":result})
         } else {
@@ -1090,6 +1135,22 @@ window.deleteServerEmoji = deleteServerEmoji
 
 
 export function loadServer(id){
+    // Offline: the snapshot already holds this server's dirs/members/roles.
+    // Skip the (synchronous) fetch — it would throw on a network error and abort
+    // navigation — and just re-trigger reactivity so the channel list paints from
+    // the cached state. Every other loader is guarded the same way.
+    if (global.state.offline) {
+        const serv = lookFor(id, global.servers)
+        if (serv) {
+            if (serv.dirs) orderServDirs(serv)
+            setElement(`global.servers[${id}]`, serv)
+            if (global.state.currentServer?.id === id) {
+                setElement('global.state.currentServer', serv)
+            }
+        }
+        return
+    }
+
     const onload = function() { // request successful
         console.log(this.responseText)
         const resp = JSON.parse(this.responseText)

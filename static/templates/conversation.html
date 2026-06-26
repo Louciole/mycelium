@@ -3,7 +3,10 @@
     <div class="selected-info">
         <div class="title">
             ${global.state.isMobile?'<img class="icon" src="/static/icons/material/back.svg" onclick="mobileHideContent()" style="margin-right: 0.6rem"/>':''}
-            <div class="circle red"></div>
+            ${global.convs[global.state.activeConv].private
+              ? Subscribe("global.users["+notMe(global.convs[global.state.activeConv].members,true)+"].pfp", ()=>{return 'background-image:url(/static/attachments/'+global.users[notMe(global.convs[global.state.activeConv].members,true)]?.pfp+');background-size:cover;'}, "circle red", {"target":"style"})
+              : `<div class="global-convs🪟${global.state.activeConv}🥹-pfp circle red" onclick="uploadConvPfp(${global.state.activeConv})" style="cursor:pointer;${global.convs[global.state.activeConv].pfp?'background-image:url(/static/attachments/'+global.convs[global.state.activeConv].pfp+');background-size:cover;':''}" data-target="style" data-element="global.convs[${global.state.activeConv}]" data-content="(element)=>{return element.pfp?'cursor:pointer;background-image:url(/static/attachments/'+element.pfp+');background-size:cover;':'cursor:pointer;'}"></div>`
+            }
             ${Subscribe("global.convs["+global.state.activeConv+"].name", ()=>{return getConvName(global.convs[global.state.activeConv], true)})}
         </div>
         <div class="call-actions">
@@ -15,7 +18,7 @@
                 <img class="icon" src="/static/icons/material/videocam.svg"/>
                 <span class="tooltip bottom">${_t("Appel vidéo")}</span>
             </div>
-            <div class="icon-wrapper" data-haptic="light" onclick="toggleFM('add-users')">
+            <div class="icon-wrapper" data-haptic="light" onclick="toggleFM('add-users');document.querySelector('#add-users input[type=text]').value='';filterFriendList({target:{value:''}})">
                 <img class="icon" src="/static/icons/material/groupadd.svg"/>
             </div>
         </div>
@@ -157,7 +160,7 @@
             <p> ${_t("autres amis")}</p>
         </div>
         <label>
-            <input type="text" placeholder="${_t('Entre le nom d\'utilisateur d\'un ami')}">
+            <input type="text" placeholder="${_t('Entre le nom d\'utilisateur d\'un ami')}" oninput="filterFriendList(event)">
         </label>
         <div class="scrollable">
             ${fillWith("add-user-elt",global.user.friends)}

@@ -74,7 +74,8 @@ create table if not exists conversationElement (
 create table if not exists conversation (
     name varchar(255) NOT NULL,
     private bool default true,
-    last_activity timestamp DEFAULT CURRENT_TIMESTAMP
+    last_activity timestamp DEFAULT CURRENT_TIMESTAMP,
+    pfp varchar(255)
 ) inherits (conversationElement);
 
 create table if not exists textual_channel (

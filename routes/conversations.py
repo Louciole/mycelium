@@ -14,12 +14,35 @@ from message_helpers import (_enrichMessagesWithPolls, _enrichMessagesWithReacti
 def create_conv(self, name, members, private=False):
     members = json.loads(members)
     conv_id = self.newConv(name, members, private)
+    conv = self.db.getSomething("conversation", conv_id)
+    all_members = self.db.getFilters("accessconversation", ["conversation", "=", conv_id])
+    member_ids = [m["account"] for m in all_members]
+    conv["members"] = member_ids
+    creator_id = self.getUser()
+    for member_id in member_ids:
+        if member_id != creator_id:
+            self.sendNotification(member_id, {"type": "added_conv", "content": conv})
     return json.dumps({"id": conv_id})
+
+
+@Server.expose
+def change_conv_pfp(self, conv_id, value):
+    uid = self.getUser()
+    conv_id = int(conv_id)
+    members = self.db.getFilters("accessconversation", ["conversation", "=", conv_id])
+    if not any(m["account"] == uid for m in members):
+        raise HTTPError(self.response, 403, "forbidden")
+    filename = self.saveFile(value)
+    self.db.edit("conversation", conv_id, "pfp", filename)
+    for m in members:
+        self.sendNotification(m["account"], {"type": "edit_conv", "item": "pfp", "id": conv_id, "content": filename})
+    return json.dumps({"pfp": filename})
 
 
 @Server.expose
 def edit_conv(self, element, value, conv_id):
     uid = self.getUser()
+    conv_id = int(conv_id)
     if element not in ("name",):
         raise HTTPError(self.response, 400, "Invalid element")
 
@@ -50,6 +73,7 @@ def get_user_convs(self):
 @Server.expose
 def get_conv_content(self, conv_id):
     uid = self.getUser()
+    conv_id = int(conv_id)
     conv = self.db.getFilters("accessconversation", ["conversation", "=", conv_id, "and", "account", "=", uid])
     if conv:
         content = {}

@@ -67,7 +67,7 @@ deploy-staging:
   tags:
     - staging
   rules:
-    - if: '$CI_COMMIT_BRANCH == "maine"'
+    - when: never
   # Start as soon as tests pass — don't wait behind the Android builds.
   needs:
     - job: test
@@ -123,7 +123,7 @@ build-aab:
   image: mingc/android-build-box:latest
 
   rules:
-    - if: '$CI_COMMIT_BRANCH == "maine"'
+    - if: '$CI_COMMIT_BRANCH == "release"'
 
   variables:
     GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
