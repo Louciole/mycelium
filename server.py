@@ -209,11 +209,28 @@ class Mycelium(ForumMixin, Server):
         """A WS dropped without an explicit hang-up — remove the user from any
         active call so the session is properly ended instead of lingering as a
         zombie (active=true forever). Mirrors the notifications of call_leave."""
+        import ws_handlers as _wsh
         for call_id in self.callManager.get_active_call_ids_for_user(user_id):
             result = self.callManager.leave_call(call_id, user_id)
             if not result:
                 continue
             call = result["call"]
+
+            if call.vocal_channel_id:
+                # Vocal channel call — notify remaining participants + server members
+                if not result.get("ended"):
+                    for participant_id in call.participants:
+                        await self.sendNotificationAsync(participant_id, {
+                            "type": "call_participant_left",
+                            "content": {
+                                "call": call.to_dict(),
+                                "user_id": user_id,
+                                "mode_changed": False
+                            }
+                        })
+                await _wsh._broadcast_vocal_leave(self, call, user_id)
+                continue
+
             if result.get("ended"):
                 members = self.db.getAll("accessconversation", call.conversation_id, "conversation")
                 for member in members:

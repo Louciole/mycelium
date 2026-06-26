@@ -474,6 +474,13 @@ create or replace view analytics_overview as
 
 create index if not exists idx_message_place_timestamp on message(place, timestamp desc);
 
+-- Vocal channels: call_session can be tied to a vocal channel instead of a conversation
+ALTER TABLE call_session ALTER COLUMN conversation_id DROP NOT NULL;
+ALTER TABLE call_session ADD COLUMN IF NOT EXISTS vocal_channel_id integer;
+create index if not exists idx_call_session_vocal_channel on call_session(vocal_channel_id) where vocal_channel_id is not null;
+-- At most one active call per vocal channel (guards the simultaneous-first-join race)
+create unique index if not exists idx_call_session_active_vocal on call_session(vocal_channel_id) where active and vocal_channel_id is not null;
+
 CREATE OR REPLACE FUNCTION bump_conversation_activity() RETURNS trigger AS $$
 BEGIN
     UPDATE conversation

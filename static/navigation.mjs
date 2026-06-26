@@ -298,28 +298,27 @@ function goToChannel(id){
 window.goToChannel = goToChannel
 
 function goToVocalChannel(id){
-    let targetElt
-    if(global.state.activeChan){
+    const cm = global.state.callManager
+    const alreadyInThisChannel = cm?.callState === 'active' && cm?.currentCall?.vocal_channel_id === id
+
+    if (alreadyInThisChannel) {
+        // Open the vocal channel view
+        let targetElt
+        if(global.state.activeChan){
+            targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
+            targetElt?.classList.remove("selected")
+        }
+        global.state.activeChan = {id:id, slug:"-vocal-"+id, type:"vocal"}
+        if (global.state.isMobile) mobileDisplayContent()
         targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
-        targetElt?.classList.remove("selected")
+        targetElt?.classList.add("selected")
+        pushRoute(global.state.currentServer?.id + '/' + id)
+        goTo('content','server-vocal-content',undefined,false)
+        return
     }
 
-    global.state.activeChan = {id:id, slug:"-vocal-"+id, type:"vocal"}
-    saveLastChannel(id, 'vocal')
-
-    if (!global.convs) global.convs = {}
-    const room = lookFor(id, global.state.currentServer.dirs.vocals)
-    global.convs[id] = {id: id, name: room ? room.name : "Note Channel", type: "note"}
-
-    if (global.state.isMobile) {
-        mobileDisplayContent()
-    }
-
-    targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
-    targetElt.classList.add("selected")
-
-    pushRoute(global.state.currentServer?.id + '/' + id)
-    goTo('content','server-vocal-content',undefined,false)
+    // Not yet in channel — join silently without navigating away
+    if (window.joinVocalChannel) joinVocalChannel(id)
 }
 window.goToVocalChannel = goToVocalChannel
 

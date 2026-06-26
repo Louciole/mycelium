@@ -259,6 +259,36 @@ export async function onMessage(event) {
                     }
                     break;
 
+                case "vocal_channel_joined": {
+                    const vd = message.content.content;
+                    const servId = global.state.currentServer?.id;
+                    const serv = servId ? global.servers?.[servId] : null;
+                    if (serv) {
+                        if (!serv.vocalOccupants) serv.vocalOccupants = {};
+                        serv.vocalOccupants[vd.channel_id] = vd.participants;
+                        setElement(`global.state.currentServer.vocalOccupants[${vd.channel_id}]`, vd.participants);
+                    }
+                    break;
+                }
+
+                case "vocal_channel_left": {
+                    const vdl = message.content.content;
+                    const srvId2 = global.state.currentServer?.id;
+                    const serv2 = srvId2 ? global.servers?.[srvId2] : null;
+                    if (serv2) {
+                        if (!serv2.vocalOccupants) serv2.vocalOccupants = {};
+                        serv2.vocalOccupants[vdl.channel_id] = vdl.participants;
+                        setElement(`global.state.currentServer.vocalOccupants[${vdl.channel_id}]`, vdl.participants);
+                    }
+                    // If we're watching the vocal channel content and the call ended, clean up
+                    const vcm = global.state.callManager;
+                    if (vcm && vcm.currentCall?.vocal_channel_id === vdl.channel_id
+                            && !vdl.participants.includes(global.user.id)) {
+                        vcm.cleanup();
+                    }
+                    break;
+                }
+
                 case "callOffer":
                     const offerMgr = global.state.callManager;
                     if (offerMgr && offerMgr.currentCall) {

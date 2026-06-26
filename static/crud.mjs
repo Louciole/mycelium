@@ -1178,6 +1178,12 @@ export function loadServer(id){
         const forums = resp.forums ? resp.forums : []
         serv["dirs"] = {"channels" : resp.channels, "dashboards" : dashboards , "vocals" : vocals, "drives" : drives, "notes": notes, "forums": forums, "cat" : resp.cat}
 
+        const vocalOccupants = {}
+        for (const chan of vocals) {
+            vocalOccupants[chan.id] = chan.occupants || []
+        }
+        serv["vocalOccupants"] = vocalOccupants
+
         serv["members"] = {}
         let userList = []
         for (let member of resp.members){
@@ -1374,6 +1380,25 @@ function deleteCat(catId){
     xhr("edit_server_category?server_id="+global.state.currentServer.id+"&targetId="+catId+"&action=delete", onload)
 }
 window.deleteCat = deleteCat
+
+function deleteChannel(){
+    const id = global.state.modaltarget?.dataset?.id
+    const type = global.state.editingChannelType || 'textual'
+    if (!id) return
+    if (!confirm(_t("Delete this channel? This action cannot be undone."))) return
+    const onload = function(){
+        const arrMap = {textual: 'channels', vocal: 'vocals', drive: 'drives', note: 'notes', forum: 'forums'}
+        const arr = global.state.currentServer.dirs[arrMap[type]]
+        if (arr) {
+            const idx = arr.findIndex(c => c.id == id)
+            if (idx > -1) arr.splice(idx, 1)
+        }
+        closeMenu('#channels-params')
+        orderServDirs(global.state.currentServer)
+    }
+    xhr(`edit_server_channel?server_id=${global.state.currentServer.id}&action=delete&targetId=${id}&channel_type=${type}`, onload)
+}
+window.deleteChannel = deleteChannel
 
 function createRole(){
     const onload = function() {

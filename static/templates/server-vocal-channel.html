@@ -1,2 +1,25 @@
-<div class="conv" id="channel-vocal-${element.id}" data-id="${element.id}" data-type="vocal" data-pos="${element.place}" ${checkServRights('edit') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} oncontextmenu="toggleModale('edit-channel-modale',event)" onclick="goToVocalChannel(${element.id})"><img class="icon" src="/static/icons/material/volume.svg"/>${element.name}</div>
-
+<div class="conv vocal-channel-row" id="channel-vocal-${element.id}" data-id="${element.id}" data-type="vocal" data-pos="${element.place}" ${checkServRights('edit') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} oncontextmenu="toggleModale('edit-channel-modale',event)" onclick="goToVocalChannel(${element.id})"><img class="icon" src="/static/icons/material/sound.svg"/>${element.name}</div>
+${Subscribe(`global.state.currentServer.vocalOccupants[${element.id}]`, (chanId) => {
+    const occupants = global.state.currentServer?.vocalOccupants?.[chanId] || []
+    if (!occupants.length) return ''
+    return '<div class="vocal-occupants">' + occupants.map(uid => {
+        const u = global.users?.[uid]
+        const pfpStyle = u?.pfp ? `background-image:url(/static/attachments/${u.pfp});background-size:cover;` : ''
+        if (uid === global.user?.id) {
+            return `<div class="vocal-occupant-row" onclick="goToVocalChannel(${chanId});event.stopPropagation()">
+                <div class="pfp-small" style="${pfpStyle}"></div>
+                <span class="vocal-name">${u?.display || ''}</span>
+                ${Subscribe('global.state.callManager.isMuted', () =>
+                    global.state.callManager?.isMuted ? '<img class="icon tiny-icon status-icon" src="/static/icons/material/mic.svg"/>' : ''
+                )}
+                ${Subscribe('global.state.callManager.isDeafened', () =>
+                    global.state.callManager?.isDeafened ? '<img class="icon tiny-icon status-icon" src="/static/icons/material/headset.svg"/>' : ''
+                )}
+            </div>`
+        }
+        return `<div class="vocal-occupant-row" onclick="goToVocalChannel(${chanId});event.stopPropagation()">
+            <div class="pfp-small" style="${pfpStyle}"></div>
+            <span class="vocal-name">${u?.display || ''}</span>
+        </div>`
+    }).join('') + '</div>'
+}, undefined, {element: `${element.id}`})}

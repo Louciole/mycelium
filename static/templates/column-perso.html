@@ -16,16 +16,20 @@
       </div>
     </div>
   </div>
-  <div class="icon-wrapper mute" onclick="mute()">
-    <img class="icon" src="/static/icons/material/mic.svg"/>
-    <span class="tooltip bottom">${_t("Rendre Muet")}</span>
-    <div class="line red medium visible"></div>
-  </div>
-  <div class="icon-wrapper" onclick="deafen()">
-    <img class="icon" src="/static/icons/material/headset.svg"/>
-    <span class="tooltip bottom">${_t("Mettre en sourdine")}</span>
-    <div class="line red medium"></div>
-  </div>
+  ${Subscribe('global.state.callManager.isMuted', () => `
+    <div class="icon-wrapper" onclick="mute()">
+      <img class="icon" src="/static/icons/material/mic.svg"/>
+      <span class="tooltip bottom">${_t("Rendre Muet")}</span>
+      <div class="line red medium ${global.state.callManager?.isMuted ? 'visible' : ''}"></div>
+    </div>
+  `, "profile-ctrl")}
+  ${Subscribe('global.state.callManager.isDeafened', () => `
+    <div class="icon-wrapper" onclick="deafen()">
+      <img class="icon" src="/static/icons/material/headset.svg"/>
+      <span class="tooltip bottom">${_t("Mettre en sourdine")}</span>
+      <div class="line red medium ${global.state.callManager?.isDeafened ? 'visible' : ''}"></div>
+    </div>
+  `, "profile-ctrl")}
   <div class="icon-wrapper" onclick="openMenu('settings')">
     <img class="icon" src="/static/icons/material/settings.svg"/>
     <span class="tooltip bottom">${_t("Paramètres utilisateur")}</span>

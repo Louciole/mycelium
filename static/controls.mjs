@@ -16,20 +16,14 @@ function updateMessageInGlobal(messageId, newContent) {
 }
 
 function deafen(){
-    event.currentTarget.lastElementChild.classList.toggle("visible")
     const callManager = global.state.callManager;
-    if (callManager) {
-        callManager.toggleDeafen();
-    }
+    if (callManager) callManager.toggleDeafen();
 }
 window.deafen = deafen
 
 function mute(){
-    event.currentTarget.lastElementChild.classList.toggle("visible")
     const callManager = global.state.callManager;
-    if (callManager) {
-        callManager.toggleMute();
-    }
+    if (callManager) callManager.toggleMute();
 }
 window.mute = mute
 

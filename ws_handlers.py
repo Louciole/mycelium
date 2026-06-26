@@ -143,7 +143,7 @@ async def call_join(self, websocket, data):
 
 
 async def call_leave(self, websocket, data):
-    # Quitter un appel
+    # Quitter un appel (DM/group calls only; vocal channels use vocalLeave)
     if self.checkWSAuth(websocket, data["clientID"]):
         client = self.db.getSomething("active_client", data["clientID"])
         call_id = data.get("call_id")
@@ -151,9 +151,13 @@ async def call_leave(self, websocket, data):
         result = self.callManager.leave_call(call_id, client["userid"])
 
         if result:
+            call = result['call']
+            if call.vocal_channel_id:
+                # Vocal channel — handled by vocalLeave, but clean up just in case
+                await _broadcast_vocal_leave(self, call, client["userid"])
+                return
+
             if result['ended']:
-                # L'appel est terminé, notifier tous
-                call = result['call']
                 members = self.db.getAll("accessconversation", call.conversation_id, "conversation")
                 for member in members:
                     await self.sendNotificationAsync(member["account"], {
@@ -164,8 +168,6 @@ async def call_leave(self, websocket, data):
                         }
                     })
             else:
-                call = result['call']
-                # Notifier les participants restants
                 for participant_id in call.participants:
                     await self.sendNotificationAsync(participant_id, {
                         "type": "call_participant_left",
@@ -176,7 +178,6 @@ async def call_leave(self, websocket, data):
                         }
                     })
 
-                # Si changement de mode SFU->P2P
                 if result['mode_changed']:
                     for participant_id in call.participants:
                         await self.sendNotificationAsync(participant_id, {
@@ -253,6 +254,109 @@ async def call_join_legacy(self, websocket, data):
         self.calls["room"] = set()
 
 
+async def _broadcast_vocal_leave(self, call, user_id):
+    """Broadcast vocal_channel_left to all online server members."""
+    chan = self.db.getSomething("vocal_channel", call.vocal_channel_id)
+    if not chan:
+        return
+    server_members = self.db.getAll("accessserver", chan["server"], "server")
+    for member in server_members:
+        await self.sendNotificationAsync(member["account"], {
+            "type": "vocal_channel_left",
+            "content": {
+                "channel_id": call.vocal_channel_id,
+                "user_id": user_id,
+                "participants": call.participants
+            }
+        })
+
+
+async def vocal_join(self, websocket, data):
+    """Client just joined a vocal channel — broadcast presence to server members."""
+    if not self.checkWSAuth(websocket, data["clientID"]):
+        return
+
+    client = self.db.getSomething("active_client", data["clientID"])
+    channel_id = data.get("channel_id")
+    call_id = data.get("call_id")
+
+    chan = self.db.getSomething("vocal_channel", channel_id)
+    if not chan:
+        return
+
+    call = self.callManager.active_calls.get(int(call_id)) if call_id else None
+    participants = call.participants if call else [client["userid"]]
+
+    server_members = self.db.getAll("accessserver", chan["server"], "server")
+    for member in server_members:
+        await self.sendNotificationAsync(member["account"], {
+            "type": "vocal_channel_joined",
+            "content": {
+                "channel_id": int(channel_id),
+                "user_id": client["userid"],
+                "participants": participants
+            }
+        })
+
+    # Also notify existing call participants for WebRTC signaling (same as callJoin)
+    if call:
+        for participant_id in call.participants:
+            await self.sendNotificationAsync(participant_id, {
+                "type": "call_participant_joined",
+                "content": {
+                    "call": call.to_dict(),
+                    "user_id": client["userid"],
+                    "mode_changed": False
+                }
+            })
+
+
+async def vocal_leave(self, websocket, data):
+    """Client left a vocal channel — update call and broadcast to server members."""
+    if not self.checkWSAuth(websocket, data["clientID"]):
+        return
+
+    client = self.db.getSomething("active_client", data["clientID"])
+    call_id = data.get("call_id")
+    channel_id = data.get("channel_id")
+
+    result = self.callManager.leave_call(int(call_id), client["userid"])
+    if not result:
+        # Call was already ended elsewhere (e.g. a WS drop via on_disconnect).
+        # Still broadcast an empty participants list so sidebars update.
+        if channel_id:
+            chan = self.db.getSomething("vocal_channel", int(channel_id))
+            if chan:
+                members = self.db.getAll("accessserver", chan["server"], "server")
+                for m in members:
+                    await self.sendNotificationAsync(m["account"], {
+                        "type": "vocal_channel_left",
+                        "content": {
+                            "channel_id": int(channel_id),
+                            "user_id": client["userid"],
+                            "participants": []
+                        }
+                    })
+        return
+
+    call = result["call"]
+
+    # Notify remaining call participants of the departure (WebRTC cleanup)
+    if not result["ended"]:
+        for participant_id in call.participants:
+            await self.sendNotificationAsync(participant_id, {
+                "type": "call_participant_left",
+                "content": {
+                    "call": call.to_dict(),
+                    "user_id": client["userid"],
+                    "mode_changed": result.get("mode_changed", False)
+                }
+            })
+
+    # Broadcast presence update to all server members
+    await _broadcast_vocal_leave(self, call, client["userid"])
+
+
 # Maps an incoming ``data["type"]`` to its handler. Several signaling types share
 # one handler. Unknown types fall through to the default branch in the dispatch loop.
 HANDLERS = {
@@ -268,4 +372,6 @@ HANDLERS = {
     "callIce": call_signal,
     "callHangup": call_hangup,
     "callJoin_legacy": call_join_legacy,
+    "vocalJoin": vocal_join,
+    "vocalLeave": vocal_leave,
 }

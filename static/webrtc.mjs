@@ -70,8 +70,30 @@ export class CallManager {
     _updateCallViewState() {
         this.callViewState = { callState: this.callState, hasAnyVideo: this.hasAnyVideo };
         setElement('global.state.callManager.callViewState', this.callViewState);
-        // Re-attach local stream after DOM update (the #local-video element is recreated on each render)
-        requestAnimationFrame(() => this.displayLocalStream());
+        // The grid re-render recreates every <video> element, dropping their srcObject.
+        // Re-attach all streams (local + remote) afterwards, or e.g. a peer enabling
+        // their camera — which flips hasAnyVideo and triggers this very re-render —
+        // would wipe the freshly-arrived remote video. Done without _updateHasAnyVideo
+        // to avoid re-rendering recursively.
+        requestAnimationFrame(() => this._reattachStreams());
+    }
+
+    // Re-bind every known stream to its (possibly recreated) <video> element.
+    _reattachStreams() {
+        this.displayLocalStream();
+        for (const userId in this.remoteStreams) {
+            const stream = this.remoteStreams[userId];
+            const videoElement = document.getElementById(`remote-video-${userId}`);
+            if (videoElement && videoElement.srcObject !== stream) {
+                videoElement.srcObject = stream;
+                videoElement.muted = this.isDeafened;
+            }
+            const participantElement = document.getElementById(`participant-${userId}`);
+            if (participantElement) {
+                const hasVideo = stream.getVideoTracks().some(t => t.enabled);
+                participantElement.classList.toggle('has-stream', hasVideo);
+            }
+        }
     }
 
     _updateHasAnyVideo() {
@@ -200,6 +222,12 @@ export class CallManager {
             this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
             this.callType = video ? 'video' : 'audio';
             setElement('global.state.callManager.callType', this.callType);
+
+            // Apply pre-set mute state immediately
+            if (this.isMuted) {
+                const audioTrack = this.localStream.getAudioTracks()[0];
+                if (audioTrack) audioTrack.enabled = false;
+            }
 
             this.displayLocalStream();
             console.log(`✅ Local ${this.callType} stream acquired`);
@@ -402,15 +430,26 @@ export class CallManager {
 
         try {
             const callId = this.currentCall.id;
+            const vocalChannelId = this.currentCall.vocal_channel_id;
 
-            // Notify server via HTTP
-            await this._httpRequest('POST', `/leave_call?call_id=${callId}`);
-
-            // Notify server via WebSocket
-            this._sendWebSocketMessage({
-                type: "callLeave",
-                call_id: callId
-            });
+            if (vocalChannelId) {
+                // Vocal channels: the WS vocalLeave handler is the single source of
+                // truth — it mutates the call and broadcasts presence. Calling the
+                // HTTP /leave_call too would run leave_call twice and leave the last
+                // participant stuck in a half-ended state (stale occupant list).
+                this._sendWebSocketMessage({
+                    type: "vocalLeave",
+                    call_id: callId,
+                    channel_id: vocalChannelId
+                });
+            } else {
+                // Notify server via HTTP
+                await this._httpRequest('POST', `/leave_call?call_id=${callId}`);
+                this._sendWebSocketMessage({
+                    type: "callLeave",
+                    call_id: callId
+                });
+            }
 
             console.log(`✅ Left call (ID: ${callId})`);
         } catch (error) {
@@ -576,14 +615,24 @@ export class CallManager {
                     existingPc.close();
                     delete this.peerConnections[fromUser];
                 }
-            } else if (existingPc) {
-                console.log(`♻️ Closing existing connection with ${fromUser} (state: ${existingPc.signalingState})`);
-                existingPc.close();
-                delete this.peerConnections[fromUser];
             }
 
-            // Create peer connection (without sending offer)
-            const pc = await this.createPeerConnection(fromUser, false);
+            // Reuse an already-established connection so a renegotiation (e.g. a peer
+            // turning on their camera) is applied in place. Tearing the connection
+            // down and recreating it would start a fresh ICE session on our side while
+            // the offerer keeps theirs, so the credentials mismatch and the new media
+            // never connects. Only build a new connection when there isn't a usable one.
+            let pc = this.peerConnections[fromUser];
+            if (pc && pc.signalingState === 'stable') {
+                console.log(`♻️ Renegotiating existing connection with ${fromUser}`);
+            } else {
+                if (pc) {
+                    console.log(`♻️ Closing unusable connection with ${fromUser} (state: ${pc.signalingState})`);
+                    pc.close();
+                    delete this.peerConnections[fromUser];
+                }
+                pc = await this.createPeerConnection(fromUser, false);
+            }
 
             // Set remote description
             await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
@@ -877,27 +926,62 @@ export class CallManager {
     // ==================== AUDIO/VIDEO CONTROLS ====================
 
     toggleMute() {
-        if (!this.localStream) return;
-
-        const audioTrack = this.localStream.getAudioTracks()[0];
-        if (audioTrack) {
-            audioTrack.enabled = !audioTrack.enabled;
-            this.isMuted = !audioTrack.enabled;
-            this.updateCallControls();
-            console.log(`🎤 Mute: ${this.isMuted}`);
+        this.isMuted = !this.isMuted;
+        if (this.localStream) {
+            const audioTrack = this.localStream.getAudioTracks()[0];
+            if (audioTrack) audioTrack.enabled = !this.isMuted;
         }
+        this.updateCallControls();
+        console.log(`🎤 Mute: ${this.isMuted}`);
     }
 
     toggleVideo() {
         if (!this.localStream) return;
-
         const videoTrack = this.localStream.getVideoTracks()[0];
-        if (videoTrack) {
-            videoTrack.enabled = !videoTrack.enabled;
-            this.isVideoOff = !videoTrack.enabled;
-            this.updateCallControls();
+        if (!videoTrack) {
+            this._enableCamera();
+            return;
+        }
+        videoTrack.enabled = !videoTrack.enabled;
+        this.isVideoOff = !videoTrack.enabled;
+        this.updateCallControls();
+        this._updateHasAnyVideo();
+        console.log(`📹 Video off: ${this.isVideoOff}`);
+    }
+
+    async _enableCamera() {
+        try {
+            const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const videoTrack = videoStream.getVideoTracks()[0];
+            if (!videoTrack) return;
+
+            this.localStream.addTrack(videoTrack);
+            this.callType = 'video';
+            this.isVideoOff = false;
+            setElement('global.state.callManager.callType', this.callType);
+
+            // Add track to every peer connection and renegotiate
+            for (const userId in this.peerConnections) {
+                const pc = this.peerConnections[userId];
+                pc.addTrack(videoTrack, this.localStream);
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                this._sendWebSocketMessage({
+                    type: "callOffer",
+                    call_id: this.currentCall.id,
+                    target_user: parseInt(userId),
+                    signal: { sdp: offer }
+                });
+            }
+
+            // _updateHasAnyVideo triggers _updateCallViewState which re-renders the
+            // outer Subscribe and schedules displayLocalStream() via rAF so srcObject
+            // is re-attached to the freshly created #local-video element.
             this._updateHasAnyVideo();
-            console.log(`📹 Video off: ${this.isVideoOff}`);
+            this.updateCallControls();
+            console.log('📹 Camera enabled');
+        } catch (error) {
+            console.error('❌ Failed to enable camera:', error);
         }
     }
 
@@ -1231,6 +1315,88 @@ window.declineCallSection = function(callId) {
     const callManager = global.state.callManager;
     if (callManager && callManager.callState === 'banner') {
         callManager.cleanup();
+    }
+};
+
+/**
+ * Join a vocal channel (no ring — immediate presence).
+ * Called from goToVocalChannel in navigation.mjs.
+ */
+window.joinVocalChannel = async function(channelId) {
+    const callManager = global.state.callManager;
+    if (!callManager) return;
+
+    // Already in this vocal channel — just navigate to the view, don't re-join
+    if (callManager.currentCall?.vocal_channel_id === channelId && callManager.callState === 'active') {
+        return;
+    }
+
+    // If already in another call, leave it first
+    if (callManager.currentCall) {
+        await callManager.leaveCall();
+    }
+
+    try {
+        await callManager.getLocalStream(false);
+
+        const response = await callManager._httpRequest('POST', `/join_vocal_channel?channel_id=${channelId}`);
+        const { call } = response;
+
+        callManager.currentCall = call;
+        callManager.mode = call.mode;
+        callManager.callState = 'active';
+        setElement('global.state.callManager.currentCall', call);
+        setElement('global.state.callManager.mode', call.mode);
+        setElement('global.state.callManager.callState', 'active');
+
+        callManager.remoteParticipants = call.participants
+            .filter(uid => uid !== global.user.id)
+            .map(uid => ({ userId: uid, status: 'connected' }));
+        setElement('global.state.callManager.remoteParticipants', callManager.remoteParticipants);
+
+        callManager.updateAvailableActions();
+        callManager._startAudioMonitor();
+        callManager._updateCallViewState();
+
+        // Notify other server members we joined (presence broadcast)
+        callManager._sendWebSocketMessage({
+            type: "vocalJoin",
+            channel_id: channelId,
+            call_id: call.id
+        });
+
+        // Tell existing call participants to expect an offer from us (WebRTC signaling)
+        if (call.participants.length > 1) {
+            callManager._sendWebSocketMessage({
+                type: "callJoin",
+                call_id: call.id
+            });
+
+            // Mirror joinCall: above the SFU threshold the call uses an SFU, so the
+            // joiner connects to the SFU instead of building a full P2P mesh.
+            if (callManager.mode === 'sfu') {
+                await callManager.createSFUConnection();
+            } else {
+                for (const participantId of call.participants) {
+                    if (participantId !== global.user.id) {
+                        await callManager.createPeerConnection(participantId, true);
+                    }
+                }
+            }
+        }
+
+        console.log(`✅ Joined vocal channel ${channelId} (call ${call.id})`);
+    } catch (error) {
+        console.error('❌ Failed to join vocal channel:', error);
+        showPermissionError(error.message);
+        callManager.cleanup();
+    }
+};
+
+window.leaveVocalChannel = async function() {
+    const callManager = global.state.callManager;
+    if (callManager && callManager.currentCall?.vocal_channel_id) {
+        await callManager.leaveCall();
     }
 };
 

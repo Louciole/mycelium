@@ -97,6 +97,11 @@ def get_serv_content(self, server_id, channel_id=None):
         # Filter private channels: only show if user has view access
         content["channels"] = [ch for ch in content["channels"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "textual", "view")]
         content["vocals"] = [ch for ch in content["vocals"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "vocal", "view")]
+
+        # Attach live occupant lists to each vocal channel
+        for chan in content["vocals"]:
+            call = self.callManager.get_call_by_vocal_channel(chan["id"])
+            chan["occupants"] = call.participants if call else []
         content["drives"] = [ch for ch in content["drives"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "drive", "view")]
         content["notes"] = [ch for ch in content["notes"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "note", "view")]
         content["forums"] = [ch for ch in content["forums"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "forum", "view")]
@@ -391,7 +396,7 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
 
 
 @Server.expose
-def edit_server_category(self, server_id, action, field=None, value=None, targetId=None):
+def edit_server_category(self, server_id, action=None, field=None, value=None, targetId=None):
     uid = self.getUser()
     self.require_server_perm(uid, server_id, "edit")
 

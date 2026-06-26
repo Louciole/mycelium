@@ -99,6 +99,43 @@ def get_call_state(self, conversation_id):
 
 
 @Server.expose
+def join_vocal_channel(self, channel_id):
+    uid = self.getUser()
+    chan = self.db.getSomething("vocal_channel", channel_id)
+    if not chan:
+        raise HTTPError(self.response, 404, "Vocal channel not found")
+
+    self.require_member(uid, chan["server"])
+
+    if chan.get("is_private") and not self.checkChannelAccess(uid, int(channel_id), "vocal", "view"):
+        raise HTTPError(self.response, 403, "No access to this vocal channel")
+
+    result = self.callManager.create_call_for_vocal_channel(int(channel_id), uid)
+    if not result:
+        raise HTTPError(self.response, 500, "Failed to join vocal channel")
+    call = result['call']
+    return json.dumps({
+        'call': call.to_dict(),
+        'created': result.get('created', False)
+    }, default=str)
+
+
+@Server.expose
+def get_vocal_channel_state(self, channel_id):
+    uid = self.getUser()
+    chan = self.db.getSomething("vocal_channel", channel_id)
+    if not chan:
+        raise HTTPError(self.response, 404, "Vocal channel not found")
+
+    self.require_member(uid, chan["server"])
+
+    call_state = self.callManager.get_call_by_vocal_channel(int(channel_id))
+    if call_state:
+        return json.dumps(call_state.to_dict(), default=str)
+    return json.dumps({"active": False}, default=str)
+
+
+@Server.expose
 def register_activity(self, SDP):
     uid = self.getUser()
     self.db.insertDict("active_client", {"userid": uid, "SDP": SDP})
