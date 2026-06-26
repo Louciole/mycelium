@@ -75,6 +75,9 @@ export function loadConvs(renderOnly = false){
     // Paint the DM sidebar from whatever is in global.convs/privateConvs.
     const render = function() {
         updateElement("global.convs")
+        // Don't clobber sec-column when the user is browsing a server — the
+        // server selector is already there and this async callback would race it.
+        if (global.state.isServer) return
         goTo('sec-column',"column-perso",undefined, true,()=>{goTo('sec-selector',"privateMessage")})
     }
 
@@ -1265,6 +1268,18 @@ function createInvitation(){
     })
 }
 window.createInvitation = createInvitation
+
+function copyInviteLink(iconWrapper){
+    const input = iconWrapper.closest('.input-wrapper')?.querySelector('input')
+    if (!input) return
+    navigator.clipboard.writeText(input.value).then(() => {
+        const img = iconWrapper.querySelector('img')
+        const prev = img.src
+        img.src = '/static/icons/material/check.svg'
+        setTimeout(() => { img.src = prev }, 1500)
+    })
+}
+window.copyInviteLink = copyInviteLink
 
 function createChan(type = 'textual'){
     const channelType = type || 'textual';

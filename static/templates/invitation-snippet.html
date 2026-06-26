@@ -1,7 +1,12 @@
 <div class="window">
     <h3>${_t("Tu as été invité.e à rejoindre")}</h3>
     <div class="inline">
-        <div class="circle"></div>
+        ${Subscribe('global.state.serverPfp', () => {
+            const inner = global.state.serverPfp
+                ? '<img src="/static/attachments/' + global.state.serverPfp + '" alt="">'
+                : (global.state.serverName ? global.state.serverName.charAt(0).toUpperCase() : '')
+            return '<div class="circle">' + inner + '</div>'
+        }, 'invite-circle')}
         <h2>${global.state.serverName}</h2>
     </div>
     ${global.state.jwt ? `<a href="/join_server?invite_code=${global.state.link}"><div class="btn">${_t("Rejoindre")}</div></a>` : `<a href="/auth?ref=${global.state.link}"><div class="btn">${_t("Se connecter ou S'inscrire")}</div></a>`}

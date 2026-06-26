@@ -1,5 +1,5 @@
 <div class="container">
-    <div class="item serveur" onclick="goToServer(event,${element.id})">
+    <div class="item serveur" id="server-item-${element.id}" onclick="goToServer(event,${element.id})">
         ${element?.pfp ? '<img src="/static/attachments/' + element.pfp + '">': getSlug(element.name)}
     </div>
     <div class="indicator"></div>

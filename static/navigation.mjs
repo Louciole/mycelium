@@ -78,29 +78,49 @@ export function handleHashRoute(hash) {
             global.state.isServer = true
             loadServer(serverId)
 
-            goTo('sec-selector', 'serverSelector', undefined, false, () => {
-                const dirs = global.state.currentServer.dirs
-                if (!dirs) return
+            // Select the server icon in the main selector (best-effort: icons may
+            // not be in the DOM yet if loadServers hasn't completed).
+            const prevTab = global.state.currentTab
+            if (prevTab) prevTab.classList.remove('selected')
+            const serverIcon = document.getElementById('server-item-' + serverId)
+            if (serverIcon) {
+                serverIcon.classList.add('selected')
+                global.state.currentTab = serverIcon
+            }
 
-                if (parts[2] === 'post' && parts[3]) {
-                    const postId = parseInt(parts[3])
-                    if (!isNaN(postId)) {
-                        goToForumChannel(channelId)
-                        setTimeout(() => goToForumPost(postId), 100)
+            const navigateInServer = () => {
+                goTo('sec-selector', 'serverSelector', undefined, false, () => {
+                    const dirs = global.state.currentServer.dirs
+                    if (!dirs) return
+
+                    if (parts[2] === 'post' && parts[3]) {
+                        const postId = parseInt(parts[3])
+                        if (!isNaN(postId)) {
+                            goToForumChannel(channelId)
+                            setTimeout(() => goToForumPost(postId), 100)
+                        }
+                        return
                     }
-                    return
-                }
 
-                if (dirs.channels?.some(c => c.id === channelId)) {
-                    goToChannel(channelId)
-                } else if (dirs.vocals?.some(c => c.id === channelId)) {
-                    goToVocalChannel(channelId)
-                } else if (dirs.notes?.some(c => c.id === channelId)) {
-                    goToNoteChannel(channelId)
-                } else if (dirs.forums?.some(c => c.id === channelId)) {
-                    goToForumChannel(channelId)
-                }
-            })
+                    if (dirs.channels?.some(c => c.id === channelId)) {
+                        goToChannel(channelId)
+                    } else if (dirs.vocals?.some(c => c.id === channelId)) {
+                        goToVocalChannel(channelId)
+                    } else if (dirs.notes?.some(c => c.id === channelId)) {
+                        goToNoteChannel(channelId)
+                    } else if (dirs.forums?.some(c => c.id === channelId)) {
+                        goToForumChannel(channelId)
+                    }
+                })
+            }
+
+            // column-perso must be loaded before sec-selector can be targeted.
+            // It may not exist yet if loadConvs hasn't fired (e.g. slow network).
+            if (document.getElementById('sec-selector')) {
+                navigateInServer()
+            } else {
+                goTo('sec-column', 'column-perso', undefined, false, navigateInServer)
+            }
         }
     } finally {
         _skipRoutePush = false

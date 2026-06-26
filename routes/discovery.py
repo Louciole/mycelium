@@ -190,7 +190,7 @@ def server_display(self, invite):
     server = self.db.getSomething("invitation", invite, "link")
     if server:
         details = self.db.getSomething("server", server["server"])
-        return details["name"]
+        return json.dumps({"name": details["name"], "pfp": details.get("pfp")})
     else:
         raise HTTPError(self.response, 404, "Not Found")
 
