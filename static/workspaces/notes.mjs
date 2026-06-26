@@ -369,6 +369,9 @@ class Editor {
 
     onInput(blockId, event) {
         const block = this.blocks[blockId];
+        // Must run before MDToPreview re-renders the DOM (needs current selection)
+        if (typeof window.mentionNoteOnInput === 'function') window.mentionNoteOnInput(blockId, event)
+
         if (block.type === "text") {
             const text = event.currentTarget.innerText
             if (text.startsWith('/')) {
@@ -394,14 +397,14 @@ class Editor {
                 this.putCursorToEnd(event.currentTarget)
             }else{
                 const cursorPosition = this.saveCursorPosition(event.currentTarget);
-                block.content = event.currentTarget.innerText
-                event.currentTarget.innerHTML = MDToPreview(event.currentTarget.innerText)
+                block.content = blockToRawContent(event.currentTarget)
+                event.currentTarget.innerHTML = MDToPreview(block.content)
                 this.restoreCursorPosition(event.currentTarget, cursorPosition);
             }
         }else{
             const cursorPosition = this.saveCursorPosition(event.currentTarget);
-            block.content = event.currentTarget.innerText
-            event.currentTarget.innerHTML = MDToPreview(event.currentTarget.innerText)
+            block.content = blockToRawContent(event.currentTarget)
+            event.currentTarget.innerHTML = MDToPreview(block.content)
             this.restoreCursorPosition(event.currentTarget, cursorPosition);
         }
 
@@ -458,6 +461,8 @@ class Editor {
     }
 
     onKeyDown(blockId, event) {
+        if (typeof window.mentionNoteOnKeyDown === 'function' && window.mentionNoteOnKeyDown(blockId, event)) return
+
         const block = this.blocks[blockId];
 
         const menu = global.state.slashMenu
@@ -548,6 +553,7 @@ class Editor {
     }
 
     onBlur(blockId, event) {
+        if (typeof window.mentionNoteOnBlur === 'function') window.mentionNoteOnBlur()
         this._hideSlashMenu()
         // switching from editor preview to rendered view
         const block = this.blocks[blockId];
@@ -906,6 +912,34 @@ const preview_equiv = {
     "/":"${content}/"
 }
 
+// Reconstruct raw markdown from a rendered block's DOM, converting mention
+// spans back to their token form (e.g. <span data-channel-id="3"> → <#3>).
+function blockToRawContent(el) {
+    let result = ''
+    for (const node of el.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            result += node.textContent
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.classList.contains('mention-channel')) {
+                result += `<#${node.dataset.channelId}>`
+            } else if (node.classList.contains('mention-user')) {
+                result += `<@${node.dataset.mentionId}>`
+            } else if (node.classList.contains('mention-role')) {
+                result += `<@&${node.dataset.mentionId}>`
+            } else if (node.classList.contains('mention-everyone')) {
+                result += '<@everyone>'
+            } else if (node.classList.contains('mention-here')) {
+                result += '<@here>'
+            } else if (node.tagName === 'BR') {
+                result += '\n'
+            } else {
+                result += blockToRawContent(node)
+            }
+        }
+    }
+    return result
+}
+
 function MDToPreview(text){
     const engine = new Markdown()
     const tokens = engine.tokenize(text)
@@ -955,6 +989,8 @@ function MDToRender(text){
     return evaluateText(rendered)
 }
 window.MDToRender = MDToRender
+window.MDToPreview = MDToPreview
+window.blockToRawContent = blockToRawContent
 
 function func_dashboard(dashboardName){
     const onload = function(){

@@ -176,8 +176,228 @@ function selectCandidate(textarea, index) {
 }
 
 window.mentionSelect = function(index) {
-    const textarea = document.querySelector(".chat-input textarea")
-    if (textarea) selectCandidate(textarea, index)
+    if (activeBlockEl) {
+        selectNoteCandidate(index)
+    } else {
+        const textarea = document.querySelector(".chat-input textarea")
+        if (textarea) selectCandidate(textarea, index)
+    }
+}
+
+// ─── Note block (contenteditable) autocomplete ───────────────────────────────
+
+let activeBlockEl = null
+
+function getTextBeforeCaret(el) {
+    const sel = window.getSelection()
+    if (!sel.rangeCount) return ''
+    const range = sel.getRangeAt(0).cloneRange()
+    range.setStart(el, 0)
+    return range.toString()
+}
+
+function createPopupForNoteBlock(blockEl) {
+    if (!autocompletePopup) {
+        autocompletePopup = document.createElement("div")
+        autocompletePopup.className = "mention-autocomplete"
+        document.body.appendChild(autocompletePopup)
+    }
+    // Always reposition — popup may be reused when quickly switching blocks
+    const rect = blockEl.getBoundingClientRect()
+    Object.assign(autocompletePopup.style, {
+        position: "fixed",
+        left: rect.left + "px",
+        top: (rect.bottom + 4) + "px",
+        width: Math.min(320, Math.max(200, rect.width)) + "px",
+    })
+}
+
+// Maps a visible-text cursor offset (from getTextBeforeCaret) to the
+// equivalent offset in the raw markdown source (blockToRawContent).
+// Mention spans contribute their token length to raw but their visible
+// text length to the text offset.
+function textOffsetToRawOffset(el, textOffset) {
+    let textSeen = 0
+    let rawSeen = 0
+
+    function walk(node) {
+        if (textSeen >= textOffset) return true
+        if (node.nodeType === Node.TEXT_NODE) {
+            const take = Math.min(node.textContent.length, textOffset - textSeen)
+            textSeen += take
+            rawSeen += take
+            return textSeen >= textOffset
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return false
+
+        const cls = node.classList
+        let token = null
+        if (cls.contains('mention-channel'))       token = `<#${node.dataset.channelId}>`
+        else if (cls.contains('mention-user'))     token = `<@${node.dataset.mentionId}>`
+        else if (cls.contains('mention-role'))     token = `<@&${node.dataset.mentionId}>`
+        else if (cls.contains('mention-everyone')) token = '<@everyone>'
+        else if (cls.contains('mention-here'))     token = '<@here>'
+
+        if (token !== null) {
+            // Cursor inside a mention span → treat as landing at end of raw token
+            textSeen += Math.min(node.textContent.length, textOffset - textSeen)
+            rawSeen += token.length
+            return textSeen >= textOffset
+        }
+        for (const child of node.childNodes) {
+            if (walk(child)) return true
+        }
+        return false
+    }
+
+    for (const child of el.childNodes) {
+        if (walk(child)) break
+    }
+    return rawSeen
+}
+
+function restoreCursorInBlock(el, caretOffset) {
+    const sel = window.getSelection()
+    const range = document.createRange()
+    let current = 0
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    let node
+    while ((node = walker.nextNode())) {
+        const len = node.textContent.length
+        if (current + len >= caretOffset) {
+            range.setStart(node, caretOffset - current)
+            range.collapse(true)
+            sel.removeAllRanges()
+            sel.addRange(range)
+            return
+        }
+        current += len
+    }
+    range.selectNodeContents(el)
+    range.collapse(false)
+    sel.removeAllRanges()
+    sel.addRange(range)
+}
+
+function selectNoteCandidate(index) {
+    const c = candidates[index]
+    if (!c || !activeBlockEl) return
+    if (c.type !== 'channel') return
+
+    const insertToken = `<#${c.id}> `
+
+    // Work in raw-content space so existing mention spans are not corrupted
+    const rawContent = window.blockToRawContent(activeBlockEl)
+    const textBefore = getTextBeforeCaret(activeBlockEl)
+    const rawTriggerPos = textOffsetToRawOffset(activeBlockEl, triggerStart)
+    const rawCursorPos  = textOffsetToRawOffset(activeBlockEl, textBefore.length)
+
+    const rawPrefix = rawContent.substring(0, rawTriggerPos)
+    const newRawContent = rawPrefix + insertToken + rawContent.substring(rawCursorPos)
+
+    const blockContainerEl = activeBlockEl.closest('[data-block-id]')
+    const blockId = blockContainerEl?.dataset.blockId
+    if (blockId && global.state.noteEditor?.blocks[blockId]) {
+        global.state.noteEditor.blocks[blockId].content = newRawContent
+        activeBlockEl.innerHTML = window.MDToPreview(newRawContent)
+
+        // Find the inserted span: it's the (N+1)-th .mention-channel where N is
+        // the number of <#id> tokens already in rawPrefix
+        const prevCount = (rawPrefix.match(/<#\d+>/g) || []).length
+        const spans = activeBlockEl.querySelectorAll('.mention-channel')
+        const targetSpan = spans[prevCount]
+        if (targetSpan) {
+            const sel = window.getSelection()
+            const after = document.createRange()
+            const next = targetSpan.nextSibling
+            if (next?.nodeType === Node.TEXT_NODE) {
+                after.setStart(next, Math.min(1, next.textContent.length))
+            } else {
+                after.setStartAfter(targetSpan)
+            }
+            after.collapse(true)
+            sel.removeAllRanges()
+            sel.addRange(after)
+        } else {
+            restoreCursorInBlock(activeBlockEl, rawPrefix.length + insertToken.length)
+        }
+    }
+
+    const savedEl = activeBlockEl
+    closePopup()
+    activeBlockEl = null
+    savedEl.focus()
+}
+
+window.mentionNoteOnInput = function(blockId, event) {
+    if (!global.state?.isServer) { closePopup(); activeBlockEl = null; return }
+
+    const el = event.currentTarget
+    const textBefore = getTextBeforeCaret(el)
+
+    let i = textBefore.length - 1
+    while (i >= 0) {
+        const ch = textBefore[i]
+        if (ch === ' ' || ch === '\n') { closePopup(); activeBlockEl = null; return }
+        if (ch === '#') {
+            // Skip already-formed tokens like <#123>
+            if (i > 0 && textBefore[i - 1] === '<') { closePopup(); activeBlockEl = null; return }
+            currentTrigger = '#'
+            triggerStart = i
+            break
+        }
+        i--
+    }
+    if (i < 0) { closePopup(); activeBlockEl = null; return }
+
+    const query = textBefore.substring(triggerStart + 1)
+    if (query.length > 30) { closePopup(); activeBlockEl = null; return }
+
+    activeBlockEl = el
+    createPopupForNoteBlock(el)
+    candidates = buildChannelCandidates(query)
+    selectedIndex = 0
+    renderPopup()
+}
+
+window.mentionNoteOnKeyDown = function(blockId, event) {
+    if (!autocompletePopup || autocompletePopup.style.display === "none" || candidates.length === 0) return false
+
+    switch (event.key) {
+        case "ArrowDown":
+            event.preventDefault()
+            selectedIndex = (selectedIndex + 1) % candidates.length
+            renderPopup()
+            return true
+        case "ArrowUp":
+            event.preventDefault()
+            selectedIndex = (selectedIndex - 1 + candidates.length) % candidates.length
+            renderPopup()
+            return true
+        case "Tab":
+        case "Enter":
+            event.preventDefault()
+            event.stopPropagation()
+            selectNoteCandidate(selectedIndex)
+            return true
+        case "Escape":
+            event.preventDefault()
+            closePopup()
+            activeBlockEl = null
+            return true
+    }
+    return false
+}
+
+window.mentionNoteOnBlur = function() {
+    // Capture current popup and block so the deferred close is a no-op if
+    // another popup has already opened (e.g. user moved to the chat input).
+    const popupAtBlur = autocompletePopup
+    const blockAtBlur = activeBlockEl
+    setTimeout(() => {
+        if (autocompletePopup === popupAtBlur) closePopup()
+        if (activeBlockEl === blockAtBlur) activeBlockEl = null
+    }, 150)
 }
 
 // ─── Click handler for user mentions in rendered messages ────────────────────
@@ -264,7 +484,8 @@ window.mentionOnKeyDown = function(event) {
  * Called from textarea onblur — closes the popup with a delay (so mousedown on items fires first)
  */
 window.mentionOnBlur = function() {
-    setTimeout(closePopup, 150)
+    const popupAtBlur = autocompletePopup
+    setTimeout(() => { if (autocompletePopup === popupAtBlur) closePopup() }, 150)
 }
 
 
