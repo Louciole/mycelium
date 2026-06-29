@@ -38,6 +38,9 @@ export async function onMessage(event) {
                     if(message.content.content.place === global.state.activeConv){
                         handleMessageGroup(message.content.content)
                         addElement('global.convs['.concat(message.content.content.place,'].messages'), message.content.content)
+                        // Keep the user pinned to the bottom, or surface a pill if
+                        // they've scrolled up, instead of yanking the viewport.
+                        window.onConvMessageArrived?.()
                         // Reading live: keep the server-side read state in sync so the
                         // channel doesn't re-appear unread on the next reload.
                         if (isChannel && document.visibilityState === 'visible') {

@@ -356,7 +356,8 @@ def send_test_message(session, conv_id, content='Test message'):
         )
         if response.status_code == 200:
             data = response.json()
-            return data.get('id')
+            # send_message returns {"message": {...}} for text messages.
+            return data.get('message', {}).get('id') if isinstance(data, dict) else None
         return None
     except Exception as e:
         print(f"Failed to send message: {e}")

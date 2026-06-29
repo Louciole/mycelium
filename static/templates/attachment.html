@@ -1,6 +1,6 @@
 <div class="attachment-item ${isImageAttachment(element) ? 'image-attachment' : 'file-attachment'}">
     ${isImageAttachment(element)
-        ? `<img src="/static/attachments/${element?.filepath ? element.filepath : element}" alt="attachment"/>`
+        ? `<img src="${element?.dataUrl ? element.dataUrl : '/static/attachments/' + (element?.filepath ? element.filepath : element)}" alt="attachment"/>`
         : `<a href="/static/attachments/${element.filepath}" download="${element.filename}" class="file-download" onclick="downloadAttachment(${JSON.stringify('/static/attachments/' + element.filepath).replace(/"/g, '&quot;')}, ${JSON.stringify(element.filename).replace(/"/g, '&quot;')}, event)">
             <img class="icon" src="/static/icons/material/paperclip.svg" alt=""/>
             <span class="file-name">${element.filename}</span>

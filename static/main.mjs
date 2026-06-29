@@ -203,10 +203,10 @@ function getSlug(name){
 window.getSlug = getSlug
 
 function isImageAttachment(attachment) {
+    // Optimistic (pre-upload) attachments carry a mime but no filepath yet.
+    if (attachment.mime) return attachment.mime.startsWith("image/");
     if (!attachment.filepath) return true;
-
-
-    return attachment.mime.startsWith("image/");
+    return false;
 }
 window.isImageAttachment = isImageAttachment
 
@@ -575,37 +575,183 @@ export function getRelevantUser(element){
 window.getRelevantUser = getRelevantUser
 
 function sendCurrentMessage(target){
-    const onload = function(){
-        if (handleQuotaError(this)) return
-        const attachments = this.responseText
-        const currentDate = new Date();
-        const timestamp = currentDate.getTime();
-        // Use timestamp as temporary ID (server should return real ID, but for now...)
-        const tempId = Object.keys(global.convs[global.state.activeConv].messages || {}).length
-        const message = {"id":tempId, "sender": global.user.id,"place":global.state.activeConv, "body": target.value, "timestamp":timestamp, "reply":global.convs[global.state.activeConv].reply, "attachments":attachments}
-        handleMessageGroup(message)
+    const body = target.value
+    const hasAttachments = global.state?.currentMessageAttachments?.length > 0
+    if (body.trim() === '' && !hasAttachments) return
 
-        addElement('global.convs['.concat(global.state.activeConv,'].messages'), message)
-        bumpConvActivity(global.state.activeConv, timestamp)
+    // Send attachment objects with metadata for the backend.
+    const attachmentData = (global.state.currentMessageAttachments || []).map(a => ({
+        dataUrl: a.dataUrl,
+        filename: a.name,
+        mimeType: a.type
+    }))
 
-        target.value = ''
-        resizeHeight(undefined, target)
-        updateSendButton(target)
-        cancelReply()
-        removeAllAttachments()
+    const conv = global.state.activeConv
+    // Optimistic message: render it immediately with a sentinel id and a
+    // "pending" state, then reconcile against the server response (real id +
+    // stored attachment paths). The sentinel can't collide with a real DB id.
+    const tempId = 'tmp_' + (global.state._tmpSeq = (global.state._tmpSeq || 0) + 1)
+    const message = {
+        "id": tempId,
+        "sender": global.user.id,
+        "place": conv,
+        "body": body,
+        "timestamp": Date.now(),
+        "reply": global.convs[conv].reply,
+        // local preview objects; swapped for server paths on reconcile
+        "attachments": attachmentData.map(a => ({dataUrl: a.dataUrl, filename: a.filename, mime: a.mimeType})),
+        "sendState": "pending",
+        // everything deliverMessage() needs to (re)send, kept for retry
+        "_payload": {content: body, reply: global.convs[conv].reply, attachments: attachmentData}
     }
+    handleMessageGroup(message)
+    addElement('global.convs['.concat(conv,'].messages'), message)
+    bumpConvActivity(conv, message.timestamp)
+    scrollConvToBottom()
 
-    if (target.value.trim() !== '' || global.state?.currentMessageAttachments?.length>0){
-        // Send attachment objects with metadata for backend
-        const attachmentData = (global.state.currentMessageAttachments || []).map(a => ({
-            dataUrl: a.dataUrl,
-            filename: a.name,
-            mimeType: a.type
-        }))
-        xhr("send_message?conv=".concat(encodeURI(JSON.stringify({'id':global.state.activeConv})), "&content=", encodeURIComponent(target.value),"&reply=",global.convs[global.state.activeConv].reply), onload,"POST",true,{"attachments":attachmentData})
-    }
+    // Clear the composer right away so it feels instant.
+    target.value = ''
+    resizeHeight(undefined, target)
+    updateSendButton(target)
+    cancelReply()
+    removeAllAttachments()
+
+    deliverMessage(message)
 }
 window.sendCurrentMessage = sendCurrentMessage
+
+// Fire (or re-fire) the actual send for an optimistic message and wire up
+// success/failure. Reused by retrySend().
+function deliverMessage(message){
+    setMessageSendState(message, 'pending')
+    const p = message._payload
+    const onload = function(){
+        if (this.status >= 200 && this.status < 300){
+            reconcileSentMessage(message, this.responseText)
+        }else{
+            // Server responded with an error (5xx / 413 quota / …). onload fires
+            // for any completed response, so failure is detected by status.
+            handleQuotaError(this)   // shows the quota dialog when it's a 413
+            markMessageFailed(message)
+        }
+    }
+    const req = xhr(
+        "send_message?conv=".concat(encodeURI(JSON.stringify({'id':message.place})), "&content=", encodeURIComponent(p.content), "&reply=", p.reply),
+        onload, "POST", true, {"attachments": p.attachments}
+    )
+    // Network-level failures: offline / unreachable fire onerror; a hung
+    // connection fires ontimeout (there is no default timeout otherwise).
+    req.timeout = 15000
+    req.onerror = () => markMessageFailed(message)
+    req.ontimeout = () => markMessageFailed(message)
+}
+window.deliverMessage = deliverMessage
+
+// Swap the optimistic placeholder for the server's saved message: re-key it
+// under the real DB id (so reactions/edits/replies target the right row) and
+// adopt the stored attachment paths.
+function reconcileSentMessage(message, responseText){
+    let realId, serverAttachments
+    try {
+        const data = JSON.parse(responseText)
+        const m = data.message || data
+        realId = m.id
+        serverAttachments = m.attachments   // JSON string: [{mime,filename,filepath}]
+    } catch(e){ /* keep the temp id if the body isn't what we expect */ }
+
+    const conv = global.convs[message.place]
+    const tempId = message.id
+    if (conv && realId !== undefined && realId !== null && String(realId) !== String(tempId)){
+        delete conv.messages[tempId]
+        message.id = realId
+        conv.messages[realId] = message
+    }
+    if (typeof serverAttachments === 'string'){
+        try { message.attachments = JSON.parse(serverAttachments) } catch(e){}
+    }
+    message.sendState = 'sent'
+    delete message._payload
+    rerenderMessage(message, tempId)
+}
+
+function markMessageFailed(message){
+    setMessageSendState(message, 'failed')
+}
+
+function setMessageSendState(message, state){
+    message.sendState = state
+    rerenderMessage(message)
+}
+
+// Replace a single message's DOM node in place (its .group wrapper), so the
+// pending/failed/sent visuals and the real id-keyed reactive bindings refresh
+// without repainting the whole conversation.
+function rerenderMessage(message, oldId = message.id){
+    const el = document.getElementById('message-' + oldId)
+    const group = el?.closest('.group')
+    if (group){
+        group.outerHTML = fillWith('message', [message])
+    }
+}
+
+// Retry a message that failed to send, from the red retry icon.
+function retrySend(tempId){
+    const conv = global.convs[global.state.activeConv]
+    const message = conv?.messages?.[tempId]
+    if (!message || !message._payload) return
+    deliverMessage(message)
+}
+window.retrySend = retrySend
+
+// The message list is flex column-reverse, so the bottom (newest) sits at
+// scrollTop 0; scrolling up yields negative offsets.
+function getConvScrollable(){
+    return document.querySelector('#content .scrollable.bottom-margin')
+        || document.querySelector('#content .scrollable')
+}
+window.getConvScrollable = getConvScrollable
+
+function scrollConvToBottom(smooth = true){
+    const sc = getConvScrollable()
+    if (sc) sc.scrollTo({top: 0, behavior: smooth ? 'smooth' : 'auto'})
+}
+window.scrollConvToBottom = scrollConvToBottom
+
+// Called when a message arrives for the active conv. If the user is at the
+// bottom we keep them pinned; if they've scrolled up we surface a pill instead
+// of yanking the viewport.
+function onConvMessageArrived(){
+    const sc = getConvScrollable()
+    if (!sc) return
+    if (sc.scrollTop > -150){
+        scrollConvToBottom()
+    }else{
+        showNewMessagesPill(sc)
+    }
+}
+window.onConvMessageArrived = onConvMessageArrived
+
+function showNewMessagesPill(scrollable){
+    const host = scrollable.parentElement || scrollable
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative'
+    let pill = host.querySelector('.new-msg-pill')
+    if (!pill){
+        pill = document.createElement('div')
+        pill.className = 'new-msg-pill'
+        pill.innerHTML = `<img class="icon" src="/static/icons/material/down.svg"/><span>${_t('Nouveaux messages')}</span>`
+        pill.onclick = () => { scrollConvToBottom(); pill.remove() }
+        host.appendChild(pill)
+        // Drop the pill once the user reaches the bottom on their own.
+        const onScroll = () => {
+            if (scrollable.scrollTop > -50){
+                pill.remove()
+                scrollable.removeEventListener('scroll', onScroll)
+            }
+        }
+        scrollable.addEventListener('scroll', onScroll)
+    }
+}
+window.showNewMessagesPill = showNewMessagesPill
 
 function sendMessage(event){
     // On mobile, Enter inserts a newline; the send button is used to send instead

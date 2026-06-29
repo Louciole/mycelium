@@ -169,7 +169,9 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
         if total_attachment_size > 0:
             self._adjustUserStorage(uid, total_attachment_size)
 
-    return json.dumps(attachmentList)
+    # Return the saved message (with its real DB id) so the client can reconcile
+    # its optimistic placeholder. ``attachments`` is the JSON string stored in DB.
+    return json.dumps({"message": message}, default=str)
 
 
 @Server.expose

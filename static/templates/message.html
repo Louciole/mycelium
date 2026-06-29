@@ -1,5 +1,5 @@
 <div class="group">
-    <div class="message" id="message-${element.id}">
+    <div class="message ${element.sendState === 'failed' ? 'failed' : element.sendState === 'pending' ? 'pending' : ''}" id="message-${element.id}">
         <div class="content">
             <div class="meta"></div>
             <div class="inline message-opt">
@@ -35,6 +35,11 @@
                 ${fillWith('attachment',element.attachments)}
             </div>
             `}
+
+            ${element.sendState === 'pending' ? `<div class="send-status pending"><span class="spinner"></span></div>` : ''}
+            ${element.sendState === 'failed' ? `<div class="send-status failed" onclick="retrySend('${element.id}')" title="${_t('Échec — réessayer')}">
+                <img class="icon" src="/static/icons/material/refresh.svg"/><span>${_t('Échec — réessayer')}</span>
+            </div>` : ''}
 
             <div class="global-convs🪟${element.place}🥹-messages🪟${element.id}🥹-reactions reactions-container" id="reactions-${element.id}"
                  data-content="() => {

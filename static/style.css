@@ -7051,3 +7051,62 @@ body.offline [data-needs-network] {
     margin-left: 0.5rem;
     font-weight: 400;
 }
+
+/* ---- Optimistic message send: pending / failed states + jump-to-bottom pill ---- */
+.message.pending .content { opacity: 0.6; }
+
+.send-status { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.15rem; }
+
+.send-status.pending .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--text-secondary);
+    border-top-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    animation: send-spin 0.7s linear infinite;
+    opacity: 0.7;
+}
+@keyframes send-spin { to { transform: rotate(360deg); } }
+
+/* A message that failed to send: red body + a clickable retry affordance. */
+.message.failed .mdBlock,
+.message.failed .content > .messageAttachments { color: var(--red); }
+
+.send-status.failed {
+    cursor: pointer;
+    color: var(--red);
+    font-size: 0.8rem;
+    font-weight: 500;
+    width: fit-content;
+}
+.send-status.failed .icon {
+    width: 1rem;
+    height: 1rem;
+    filter: brightness(0) saturate(100%) invert(36%) sepia(72%) saturate(2700%) hue-rotate(335deg) brightness(95%) contrast(95%);
+}
+.send-status.failed:hover { text-decoration: underline; }
+
+.new-msg-pill {
+    position: absolute;
+    bottom: 4.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.9rem;
+    background: var(--red);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    z-index: 20;
+}
+.new-msg-pill .icon {
+    width: 1rem;
+    height: 1rem;
+    filter: brightness(0) invert(1);
+}

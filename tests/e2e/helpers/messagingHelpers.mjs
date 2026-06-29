@@ -150,13 +150,14 @@ export async function getMessageIdByBody(page, body) {
     await page.waitForFunction((expectedBody) => {
         const convId = window.global?.state?.activeConv;
         const messages = window.global?.convs?.[convId]?.messages || {};
-        return Object.values(messages).some((m) => m?.body === expectedBody);
+        // Wait for the reconciled (real, numeric) id, not the optimistic 'tmp_' placeholder.
+        return Object.values(messages).some((m) => m?.body === expectedBody && !String(m.id).startsWith('tmp_'));
     }, body, { timeout: 10000 });
 
     return page.evaluate((expectedBody) => {
         const convId = window.global.state.activeConv;
         const messages = Object.values(window.global.convs[convId].messages || {})
-            .filter((m) => m && m.body === expectedBody)
+            .filter((m) => m && m.body === expectedBody && !String(m.id).startsWith('tmp_'))
             .sort((a, b) => Number(a.id) - Number(b.id));
 
         return messages.length ? Number(messages[messages.length - 1].id) : null;
