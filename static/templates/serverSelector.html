@@ -44,10 +44,43 @@ ${Subscribe('global.state.callManager.callViewState', () => {
         <div class="item" style="${checkServRights('server-admin') ? '' : 'display:none'}" onclick="createCat()"><p>${_t("Créer une catégorie")}</p><img class="icon" src="/static/icons/material/add.svg"></div>
     </div>
     <hr>
+<!--    <div class="item" onclick="toggleModale('server-notif-modale',event)">${Subscribe('global.user.notif_prefs', () => {-->
+<!--        const pref = global.user?.notif_prefs?.[String(global.state.currentServer?.id)] ?? {}-->
+<!--        const level = pref.level ?? 1-->
+<!--        const labels = [_t("Tous les messages"), _t("Mentions uniquement"), _t("Aucune")]-->
+<!--        return `<p>${_t("Notifications")} — ${labels[level]}</p><img class="icon" src="/static/icons/material/sound.svg">`-->
+<!--    })}</div>-->
+<!--    <hr>-->
     <div class="item red" onclick="leaveServer()"><p>${_t("Quitter le serveur")}</p><img class="red icon" src="/static/icons/material/trash.svg"></div>
 </div>
+<!--<div class="modale" id="server-notif-modale">-->
+<!--    ${Subscribe('global.user.notif_prefs', () => {-->
+<!--        const pref = global.user?.notif_prefs?.[String(global.state.currentServer?.id)] ?? {}-->
+<!--        const level = pref.level ?? 1-->
+<!--        const suppressEveryone = !!pref.suppress_everyone-->
+<!--        return `-->
+<!--        <div class="item ${level===0?'selected':''}" onclick="setServerNotifPref({level:0})">${_t("Tous les messages")}</div>-->
+<!--        <div class="item ${level===1?'selected':''}" onclick="setServerNotifPref({level:1})">${_t("Mentions uniquement")}</div>-->
+<!--        <div class="item ${level===2?'selected':''}" onclick="setServerNotifPref({level:2})">${_t("Aucune notification")}</div>-->
+<!--        <hr>-->
+<!--        <div class="item ${suppressEveryone?'selected':''}" onclick="setServerNotifPref({suppress_everyone:${!suppressEveryone}})">${_t("Ignorer @everyone et @here")}</div>-->
+<!--        `-->
+<!--    })}-->
+<!--</div>-->
 <div class="modale" id="edit-channel-modale">
-    <div class="item" onclick="closeFM();openMenu('channels-params')">${_t("Edit channel")}</div>
+    <div class="item" style="${checkServRights('edit') ? '' : 'display:none'}" onclick="closeFM();openMenu('channels-params')">${_t("Edit channel")}</div>
+    ${Subscribe('global.user.channel_mutes', () => {
+        const chanId = parseInt(global.state.modaltarget?.dataset?.id)
+        const mute = global.user?.channel_mutes?.find(m => m.channel === chanId)
+        const isMuted = !!mute
+        return isMuted
+            ? `<div class="item" onclick="unmuteChannel()">${_t("Unmute channel")}</div>`
+            : `<div class="item" onclick="muteChannel(null)">${_t("Mute channel")}</div>
+               <div class="item" onclick="muteChannel(15)">${_t("Mute 15 min")}</div>
+               <div class="item" onclick="muteChannel(60)">${_t("Mute 1h")}</div>
+               <div class="item" onclick="muteChannel(480)">${_t("Mute 8h")}</div>
+               <div class="item" onclick="muteChannel(1440)">${_t("Mute 24h")}</div>`
+    })}
 </div>
 <div class="modale" id="edit-cat-modale">
     <div class="item" onclick="closeFM();openMenu('cat-params')">${_t("Edit category")}</div>

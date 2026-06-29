@@ -709,8 +709,17 @@ function getAnswerBlock(element){
 window.getAnswerBlock = getAnswerBlock
 
 export function displayNotif(notif){
-    const notifSound = new Audio('static/sounds/notification.mp3');
-    notifSound.play();
+    // First-column notif bubbles are exclusively for DMs/group convs. A notif whose
+    // "place" isn't a known conversation (e.g. a server channel that slipped through,
+    // or a conv not yet loaded) must not render — it would produce a broken bubble
+    // with no avatar/name. Channel messages are surfaced via the server badge instead.
+    if (notif.content.place && !global.convs?.[notif.content.place]) {
+        return
+    }
+    if (global.user?.status?.mode !== 2) {
+        const notifSound = new Audio('static/sounds/notification.mp3');
+        notifSound.play();
+    }
     const bubbles = document.getElementsByClassName("notifIndicator")
     if(notif.content.place){
         const conv_elt = document.getElementById("conv"+notif.content?.place.toString())

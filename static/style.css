@@ -807,6 +807,23 @@ section{
     color: var(--text);
 }
 
+.conv.unread {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.conv.muted {
+    opacity: 0.45;
+}
+
+.global-user-server_mention_counts{
+    transform: translate(-38px, 7px);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 0.4em;
+}
+
 .voc .icon, .conv .icon{
     height: 1.4rem;
 }

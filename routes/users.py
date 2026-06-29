@@ -84,11 +84,67 @@ def get_user_info(self):
     uid = self.getUser()
     user = self.db.getSomething("mycelium_account", uid)
     self.getUsersStatus([user], detailed=True)
-    user["notifs"] = self.db.getAll("offline_notifs", uid, "account")
+    user["channel_unreads"] = self.db.getAll("channel_unread", uid, "account") or []
+    # Split offline notifs: DM notifs become standalone first-column bubbles, while
+    # channel mentions only feed the per-server badge (never a separate notif bubble —
+    # those are exclusively for DMs).
+    all_notifs = self.db.getAll("offline_notifs", uid, "account") or []
+    dm_notifs = []
+    server_mention_counts = {}
+    for notif in all_notifs:
+        # A first-column bubble is only valid for a real DM/group conversation.
+        if self.db.getSomething("conversation", notif["conversation"]):
+            dm_notifs.append(notif)
+            continue
+        # Otherwise it's a channel mention → feed the per-server badge instead of
+        # rendering a broken standalone bubble. (Forum/other channels just drop here.)
+        ch = self.db.getSomething("textual_channel", notif["conversation"])
+        if ch:
+            sid = str(ch["server"])
+            server_mention_counts[sid] = server_mention_counts.get(sid, 0) + notif["number"]
+    user["notifs"] = dm_notifs
+    user["server_mention_counts"] = server_mention_counts
+    # Per-server unread flag: how many channels in each server have unread messages
+    # (mention or not) — drives the small white indicator on the server icon.
+    server_unread = {}
+    for cu in user["channel_unreads"]:
+        ch = self.db.getSomething("textual_channel", cu["channel"])
+        if ch:
+            sid = str(ch["server"])
+            server_unread[sid] = server_unread.get(sid, 0) + 1
+    user["server_unread"] = server_unread
+    prefs = self.db.getAll("notification_pref", uid, "account")
+    user["notif_prefs"] = {str(p["server"]): {"level": p["level"], "suppress_everyone": p["suppress_everyone"]} for p in prefs} if prefs else {}
+    mutes = self.db.getAll("channel_mute", uid, "account")
+    user["channel_mutes"] = [{"channel": m["channel"], "muted_until": str(m["muted_until"]) if m["muted_until"] else None} for m in mutes] if mutes else []
     user["additional_emails"] = self.uniauth.getAll("additional_mail", uid, "account")
     user["isAdmin"] = self.isAdmin(uid)
     user["storage_quota"] = USER_STORAGE_QUOTA
     return json.dumps(user, default=str)
+
+
+@Server.expose
+def set_server_notif_pref(self, server_id, level=None, suppress_everyone=None):
+    uid = self.getUser()
+    if level is not None:
+        level = int(level)
+        if level not in (0, 1, 2):
+            raise HTTPError(self.response, 400, "invalid level")
+    existing = self.db.getFilters("notification_pref", ["account", "=", uid, "and", "server", "=", int(server_id)])
+    if existing:
+        row_id = existing[0]["id"]
+        if level is not None:
+            self.db.edit("notification_pref", row_id, "level", level)
+        if suppress_everyone is not None:
+            self.db.edit("notification_pref", row_id, "suppress_everyone", suppress_everyone == "true")
+    else:
+        row = {"account": uid, "server": int(server_id)}
+        if level is not None:
+            row["level"] = level
+        if suppress_everyone is not None:
+            row["suppress_everyone"] = suppress_everyone == "true"
+        self.db.insertDict("notification_pref", row)
+    return json.dumps({"ok": True})
 
 
 # --------------------------- friends & blocks ------------------------------

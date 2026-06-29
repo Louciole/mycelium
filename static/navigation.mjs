@@ -293,12 +293,78 @@ function mobileHideContent(){
 }
 window.mobileHideContent = mobileHideContent
 
+function applyChannelUnreads() {
+    const now = Date.now()
+    const unreads = global.user?.channel_unreads || []
+    const mutes = global.user?.channel_mutes || []
+    const mutedIds = new Set(
+        mutes
+            .filter(m => !m.muted_until || new Date(m.muted_until).getTime() > now)
+            .map(m => m.channel)
+    )
+    for (const u of unreads) {
+        if (mutedIds.has(u.channel)) continue
+        const elt = document.getElementById('channel-conv-' + u.channel)
+        if (elt) elt.classList.add('unread')
+    }
+    for (const id of mutedIds) {
+        const elt = document.getElementById('channel-conv-' + id)
+        if (elt) { elt.classList.add('muted'); elt.classList.remove('unread') }
+    }
+}
+window.applyChannelUnreads = applyChannelUnreads
+
+// Authoritative "channel read" action: clears the white unread marker and the
+// channel's contribution to the server's red mention badge. The backend reports
+// how many mentions it cleared so the badge stays correct even for live mentions
+// (which never get a global.user.notifs entry). Network call is debounced so a
+// busy active channel doesn't fire a request per message.
+const _channelReadTimers = {}
+function markChannelRead(id, serverId){
+    const sid = String(serverId ?? global.state.currentServer?.id ?? '')
+    // Optimistic UI: drop the channel's unread marker immediately.
+    document.getElementById('channel-conv-' + id)?.classList.remove('unread')
+    const wasUnread = (global.user?.channel_unreads || []).some(u => u.channel === id)
+    if (global.user?.channel_unreads) {
+        global.user.channel_unreads = global.user.channel_unreads.filter(u => u.channel !== id)
+    }
+    // Drop the server's small unread dot if this was its last unread channel.
+    if (wasUnread && sid) {
+        const su = global.user.server_unread || {}
+        su[sid] = Math.max(0, (su[sid] || 0) - 1)
+        if (!su[sid]) delete su[sid]
+        setElement('global.user.server_unread', su)
+    }
+    const onload = function(){
+        let cleared = 0
+        try { cleared = (JSON.parse(this.responseText || '{}').mentions_cleared) || 0 } catch(e){}
+        // Drop any seeded notifs for this channel so they can't be double-counted.
+        if (global.user?.notifs) {
+            global.user.notifs = global.user.notifs.filter(n => n.conversation !== id)
+        }
+        if (cleared && sid) {
+            const counts = global.user.server_mention_counts || {}
+            counts[sid] = Math.max(0, (counts[sid] || 0) - cleared)
+            if (!counts[sid]) delete counts[sid]
+            setElement('global.user.server_mention_counts', counts)
+        }
+    }
+    clearTimeout(_channelReadTimers[id])
+    _channelReadTimers[id] = setTimeout(() => {
+        xhr(`mark_channel_read?channel_id=${id}`, onload, "POST")
+    }, 600)
+}
+window.markChannelRead = markChannelRead
+
 function goToChannel(id){
     let targetElt
     if(global.state.activeChan){
         targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
         targetElt?.classList.remove("selected")
     }
+
+    // Opening a channel marks it read (clears unread dot + its server badge share).
+    markChannelRead(id, global.state.currentServer?.id)
 
     global.state.activeConv = id
     global.state.activeChan = {id:id, slug:"-conv-"+id, type:"conv"}

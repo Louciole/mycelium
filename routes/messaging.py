@@ -173,6 +173,45 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
 
 
 @Server.expose
+def mute_channel(self, channel_id, minutes=None):
+    uid = self.getUser()
+    muted_until = None
+    if minutes is not None:
+        muted_until = datetime.datetime.now() + datetime.timedelta(minutes=int(minutes))
+    existing = self.db.getFilters("channel_mute", ["account", "=", uid, "and", "channel", "=", int(channel_id)])
+    if existing:
+        self.db.edit("channel_mute", existing[0]["id"], "muted_until", muted_until)
+    else:
+        self.db.insertDict("channel_mute", {"account": uid, "channel": int(channel_id), "muted_until": muted_until})
+    return json.dumps({"ok": True, "muted_until": str(muted_until) if muted_until else None})
+
+
+@Server.expose
+def unmute_channel(self, channel_id):
+    uid = self.getUser()
+    rows = self.db.getFilters("channel_mute", ["account", "=", uid, "and", "channel", "=", int(channel_id)])
+    for row in rows:
+        self.db.deleteSomething("channel_mute", row["id"])
+
+
+@Server.expose
+def mark_channel_read(self, channel_id):
+    uid = self.getUser()
+    cid = int(channel_id)
+    rows = self.db.getFilters("channel_unread", ["account", "=", uid, "and", "channel", "=", cid])
+    for row in rows:
+        self.db.deleteSomething("channel_unread", row["id"])
+    # Reading a channel also clears its mention notifications (Discord-style), so the
+    # server's red badge drops by however many mentions were pending in this channel.
+    mentions_cleared = 0
+    notif_rows = self.db.getFilters("offline_notifs", ["account", "=", uid, "and", "conversation", "=", cid]) or []
+    for n in notif_rows:
+        mentions_cleared += n.get("number", 1)
+        self.db.deleteSomething("offline_notifs", n["id"])
+    return json.dumps({"ok": True, "mentions_cleared": mentions_cleared})
+
+
+@Server.expose
 def consult_notifs(self, notif_id):
     uid = self.getUser()
     if not self.db.getFilters("offline_notifs", ["account", "=", uid, "and", "id", "=", notif_id]):

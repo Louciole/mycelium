@@ -1215,6 +1215,8 @@ export function loadServer(id){
         if (global.state.currentServer?.id === id) {
             setElement('global.state.currentServer', serv);
         }
+        // Restore unread channel markers after DOM re-renders
+        setTimeout(() => window.applyChannelUnreads?.(), 0)
     };
     xhr("get_serv_content?server_id=".concat(id.toString()),onload,"GET",false)
 }
@@ -1775,3 +1777,51 @@ function leaveServer(){
     xhr("leave_server?server_id=".concat(serverId), onload, "POST")
 }
 window.leaveServer = leaveServer
+
+function muteChannel(minutes){
+    const chanId = parseInt(global.state.modaltarget?.dataset?.id)
+    if (!chanId) return
+    const url = minutes !== null ? `mute_channel?channel_id=${chanId}&minutes=${minutes}` : `mute_channel?channel_id=${chanId}`
+    const onload = function() {
+        const resp = JSON.parse(this.responseText)
+        if (!global.user.channel_mutes) global.user.channel_mutes = []
+        global.user.channel_mutes = global.user.channel_mutes.filter(m => m.channel !== chanId)
+        global.user.channel_mutes.push({ channel: chanId, muted_until: resp.muted_until })
+        setElement('global.user.channel_mutes', global.user.channel_mutes)
+        // Remove unread marker on muted channel
+        document.getElementById('channel-conv-' + chanId)?.classList.remove('unread')
+        closeFM()
+    }
+    xhr(url, onload, "POST")
+}
+window.muteChannel = muteChannel
+
+function unmuteChannel(){
+    const chanId = parseInt(global.state.modaltarget?.dataset?.id)
+    if (!chanId) return
+    const onload = function() {
+        global.user.channel_mutes = (global.user.channel_mutes || []).filter(m => m.channel !== chanId)
+        setElement('global.user.channel_mutes', global.user.channel_mutes)
+        closeFM()
+    }
+    xhr(`unmute_channel?channel_id=${chanId}`, onload, "POST")
+}
+window.unmuteChannel = unmuteChannel
+
+function setServerNotifPref(opts){
+    const serverId = global.state.currentServer?.id
+    if (!serverId) return
+    const params = new URLSearchParams({ server_id: serverId })
+    if (opts.level !== undefined) params.set('level', opts.level)
+    if (opts.suppress_everyone !== undefined) params.set('suppress_everyone', opts.suppress_everyone)
+    const onload = function() {
+        if (!global.user.notif_prefs) global.user.notif_prefs = {}
+        if (!global.user.notif_prefs[String(serverId)]) global.user.notif_prefs[String(serverId)] = {}
+        if (opts.level !== undefined) global.user.notif_prefs[String(serverId)].level = opts.level
+        if (opts.suppress_everyone !== undefined) global.user.notif_prefs[String(serverId)].suppress_everyone = opts.suppress_everyone
+        setElement('global.user.notif_prefs', global.user.notif_prefs)
+        closeFM()
+    }
+    xhr(`set_server_notif_pref?${params}`, onload, "POST")
+}
+window.setServerNotifPref = setServerNotifPref

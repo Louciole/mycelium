@@ -16,7 +16,7 @@
 // Changing these bytes makes the browser/WebView re-install the worker and drop
 // older caches — that is the self-updating "patch" loop.
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `mycelium-shell-${VERSION}`;
 
 // Minimal: only what the app needs to boot. Everything else is runtime-cached.
@@ -77,14 +77,17 @@ self.addEventListener('fetch', (event) => {
             url.pathname === '/capacitor.js');
 
     if (isAsset) {
-        event.respondWith(
-            caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-                if (res && res.ok) {
-                    const copy = res.clone();
-                    caches.open(SHELL).then((c) => c.put(req, copy));
-                }
-                return res;
-            }))
+event.respondWith(
+            caches.open(SHELL).then((cache) =>
+                cache.match(req).then((hit) => {
+                    const network = fetch(req).then((res) => {
+                        if (res && res.ok) cache.put(req, res.clone());
+                        return res;
+                    }).catch(() => hit);
+                    if (hit) event.waitUntil(network);  // keep SW alive for bg refresh
+                    return hit || network;
+                })
+            )
         );
     }
     // Anything else (the /get_* data API, cross-origin) → straight to network.

@@ -5,6 +5,13 @@ import {setElement, pushElement, deleteElement, addElement} from "../framework/v
 import {handleMessageGroup, bumpConvActivity} from "../crud.mjs";
 import { notifyMessage, setBadge, callStarted, callEnded, isNative } from "../capacitor-bridge.mjs";
 
+function isChannelMuted(channelId) {
+    const now = Date.now()
+    return (global.user?.channel_mutes || []).some(
+        m => m.channel === channelId && (!m.muted_until || new Date(m.muted_until).getTime() > now)
+    )
+}
+
 export async function onMessage(event) {
     console.log("Received message from Python server:", event.data);
     const message = JSON.parse(event.data)
@@ -26,13 +33,40 @@ export async function onMessage(event) {
                     const timestamp = currentDate.getTime()
                     message.content.content["timestamp"] = timestamp
                     bumpConvActivity(message.content.content.place, timestamp)
+                    const content = message.content.content
+                    const isChannel = content.server !== undefined && content.server !== null
                     if(message.content.content.place === global.state.activeConv){
                         handleMessageGroup(message.content.content)
                         addElement('global.convs['.concat(message.content.content.place,'].messages'), message.content.content)
+                        // Reading live: keep the server-side read state in sync so the
+                        // channel doesn't re-appear unread on the next reload.
+                        if (isChannel && document.visibilityState === 'visible') {
+                            window.markChannelRead?.(content.place, content.server)
+                        }
                     }else{
-                        displayNotif(message.content)
+                        if (isChannel) {
+                            // Server channel: mark unread (the ping sound fires only on a
+                            // targeted "mention" event). Respect a channel or server mute.
+                            const serverMuted = global.user?.notif_prefs?.[String(content.server)]?.level === 2
+                            if (!isChannelMuted(content.place) && !serverMuted) {
+                                document.getElementById('channel-conv-' + content.place)?.classList.add('unread')
+                                if (!global.user.channel_unreads) global.user.channel_unreads = []
+                                if (!global.user.channel_unreads.some(u => u.channel === content.place)) {
+                                    global.user.channel_unreads.push({ channel: content.place })
+                                    // Light up the server's small unread dot.
+                                    const sid = String(content.server)
+                                    if (!global.user.server_unread) global.user.server_unread = {}
+                                    global.user.server_unread[sid] = (global.user.server_unread[sid] || 0) + 1
+                                    setElement('global.user.server_unread', global.user.server_unread)
+                                }
+                            }
+                        } else {
+                            // DM/group conv: every message is a notification
+                            displayNotif(message.content)
+                        }
                         // Native notification when app is in background
-                        if (isNative && document.visibilityState === 'hidden') {
+                        // (skip channels the user has muted locally)
+                        if (isNative && document.visibilityState === 'hidden' && !(isChannel && isChannelMuted(content.place))) {
                             const sender = global.users?.[message.content.content.sender];
                             const convName = global.convs?.[message.content.content.place]?.name || 'Mycelium';
                             notifyMessage({
@@ -57,6 +91,30 @@ export async function onMessage(event) {
                         setElement(`global.convs[${conversationId}].messages[${msgId}].reactions`, reactionsDict);
                     }
                     break;
+                case "mention": {
+                    // Server-channel notification: play sound, and (for real @mentions,
+                    // badge=true) bump the server's red mention badge.
+                    const mention = message.content.content
+                    const viewing = mention.channel_id === global.state.activeConv && document.visibilityState === 'visible'
+                    if (viewing) {
+                        // Already reading this channel — just clear the server-side state.
+                        window.markChannelRead?.(mention.channel_id, mention.server_id)
+                        break
+                    }
+                    if (global.user?.status?.mode !== 2) {
+                        new Audio('static/sounds/notification.mp3').play().catch(() => {})
+                    }
+                    // badge !== false: real @mentions set badge=true; "All Messages"
+                    // sets badge=false. Default to badging when the field is absent so
+                    // an older backend payload still updates the count.
+                    if (mention.badge !== false) {
+                        const sid = String(mention.server_id)
+                        if (!global.user.server_mention_counts) global.user.server_mention_counts = {}
+                        global.user.server_mention_counts[sid] = (global.user.server_mention_counts[sid] || 0) + 1
+                        setElement('global.user.server_mention_counts', global.user.server_mention_counts)
+                    }
+                    break;
+                }
                 case "friend_request":
                     loadUsers([message.content.content["kopinprincipal"]])
                     pushElement('global.user.invitations', message.content.content)
