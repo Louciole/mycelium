@@ -1,7 +1,7 @@
 import {initNavigation, printWatermark, goTo} from "/static/framework/navigation.mjs"
 import {handleHashRoute} from "/static/navigation.mjs"
 import {initWebSockets} from "./framework/websockets.mjs";
-import {loadServers, loadUser, loadConvs, loadUsers, handleMessageGroup, sendTyping, lookFor, orderServDirs, bumpConvActivity} from "/static/crud.mjs"
+import {loadServers, loadUser, loadConvs, loadUsers, refreshUsers, handleMessageGroup, sendTyping, lookFor, orderServDirs, bumpConvActivity} from "/static/crud.mjs"
 import global from "/static/framework/global.mjs"
 import {MDToHTML} from "/static/markdown/utils.mjs"; // DO NOT REMOVE
 import {} from "/static/admin.mjs"; // DO NOT REMOVE
@@ -988,6 +988,7 @@ if (_snapshot) {
 
 // Network bootstrap (always): refreshes the cache paint when online, fails
 // silently when offline.
+refreshUsers()
 loadUser()
 xhr("get_blocked", onBlockedLoaded)
 xhr("get_friends", onFriendsLoaded)

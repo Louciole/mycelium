@@ -91,12 +91,26 @@ export function loadConvs(renderOnly = false){
 
     const onload = function() {
         const keys = JSON.parse(this.responseText)
+        const liveIds = new Set(keys.map(k => k.id.toString()))
         for(let key of keys){
             global.privateConvs[key.id] = key // HACK
             global.convs[key.id] = global.privateConvs[key.id]
             global.convs[key.id].ongoingCall = null; // Initialize call state
             addElement("global.privateConvs", key);
             loadUsers(global.convs[key.id].members)
+        }
+
+        // Prune ghosts: a DM left/deleted on another client lingers in the
+        // snapshot otherwise — we overwrite returned ids but never drop the ones
+        // the server stopped returning. Key off privateConvs (DMs only); channel
+        // content also lives in global.convs under channel ids, and a channel may
+        // share a conv's numeric id, so only clear the convs mirror when it's the
+        // very object we set for this DM.
+        for (const id of Object.keys(global.privateConvs)) {
+            if (liveIds.has(id.toString())) continue
+            const ghost = global.privateConvs[id]
+            deleteElementDict("global.privateConvs", id)
+            if (global.convs[id] === ghost) deleteElementDict("global.convs", id)
         }
 
         render()
@@ -117,22 +131,43 @@ export function bumpConvActivity(convId){
 }
 window.bumpConvActivity = bumpConvActivity
 
-export function loadUsers(keys){
-    const diff = difference(keys, global.users)
+export function loadUsers(keys, force = false){
+    // Offline: the cached / snapshotted profiles are all we have. Never hit the
+    // network (the sync XHR below would just fail and stall the boot).
+    if (global.state.offline) return
 
-    if(diff.length === 0){
+
+    const toLoad = force
+        ? Array.from(new Set(keys.map(k => k.toString())))
+        : difference(keys, global.users)
+
+    if (toLoad.length === 0){
         return
     }
 
     const onload = function() {
-        const keys = JSON.parse(this.responseText)
-        for(let key of keys){
-            global.users[key.id] = key
+        const users = JSON.parse(this.responseText)
+        for(let user of users){
+            global.users[user.id] = user
         }
     };
-    xhr("get_users_info?users="+JSON.stringify(diff), onload, "GET",false)
+    // Kept synchronous: callers such as getConvName() read global.users[...] on
+    // the very next line and rely on the value being present.
+    xhr("get_users_info?users="+JSON.stringify(toLoad), onload, "GET",false)
 }
 window.loadUsers = loadUsers
+
+export function refreshUsers(){
+    if (global.state.offline) return
+    const selfId = String(global.user?.id)
+    const ids = Object.keys(global.users).filter(id => id !== selfId)
+    if (ids.length === 0) return
+    loadUsers(ids, true)
+    // Re-paint the surfaces that read display names out of the now-fresh cache.
+    updateElement('global.user.friends')
+    updateElement('global.convs')
+}
+window.refreshUsers = refreshUsers
 
 export function loadConv(key){
     // Offline: the snapshot already holds this conv's processed messageGroups.
