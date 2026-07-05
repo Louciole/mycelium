@@ -2,25 +2,32 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mycelium | Your new sanctuary.</title>
-    <meta charset="UTF-8">
+    <title>Mycelium | Chat, calls, files & docs — all in one open-source app</title>
     <meta name="referrer" content="always">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+    <link rel="canonical" href="https://mycelium.carbonlab.dev">
 
-    <meta name="description" content="Mycelium is a sovereign digital sanctuary for creative collectives. Handcrafted, lightweight, and ethical messaging, drive, and forum for artists and FOSS enthusiasts.">
-    <meta name="keywords" content="messaging, privacy, FOSS, digital commons, artists, collective, drive, forum, sovereign digital space, open source, ethical software">
+    <meta name="description" content="Mycelium is an open-source, all-in-one app for chat, calls, file sharing and collaborative docs. Hosted in Europe, no ads, no data collection. Free to start.">
+    <meta name="keywords" content="all-in-one collaboration, chat app, voice and video calls, collaborative docs, cloud drive, open source, self-hosted, hosted in europe, privacy, no ads, artists, small teams">
     <meta name="author" content="Carbonlab">
-
-    <meta content="/static/images/logo.png" property="og:image">
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/x-icon" href="/static/images/favicon.ico">
     <link href="/static/home/home.css" rel="stylesheet">
 
     <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Mycelium">
+    <meta property="og:locale" content="en">
     <meta property="og:url" content="https://mycelium.carbonlab.dev">
-    <meta property="og:title" content="Mycelium | Your new sanctuary.">
-    <meta property="og:description" content="A handcrafted digital home for artists and collectives. Chat, forum, and cloud storage—built without bloat, owned by you.">
-    <meta property="og:image" content="/static/images/logo.png">
+    <meta property="og:title" content="Mycelium — Chat, calls, files & docs in one open-source app">
+    <meta property="og:description" content="One place to talk, call, share files and collaborate. Open source, hosted in Europe, no ads, no data collection. Free to start.">
+    <meta property="og:image" content="https://mycelium.carbonlab.dev/static/images/logo.png">
+    <meta property="og:image:alt" content="Mycelium — all-in-one open-source collaboration">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Mycelium — Chat, calls, files & docs in one open-source app">
+    <meta name="twitter:description" content="One place to talk, call, share files and collaborate. Open source, hosted in Europe, no ads, no data collection.">
+    <meta name="twitter:image" content="https://mycelium.carbonlab.dev/static/images/logo.png">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -30,20 +37,99 @@
         {
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
+            "@id": "https://mycelium.carbonlab.dev/#app",
             "name": "Mycelium",
-            "operatingSystem": "Web",
-            "applicationCategory": "CommunicationApplication",
+            "operatingSystem": "Web, Android",
+            "applicationCategory": "BusinessApplication",
+            "applicationSubCategory": "Communication",
+            "url": "https://mycelium.carbonlab.dev",
+            "inLanguage": "en",
+            "datePublished": "2024",
+            "isAccessibleForFree": true,
+            "description": "Open-source, all-in-one platform for chat, calls, file sharing and collaborative documents. Hosted in Europe, private by default, no ads and no data collection.",
+            "keywords": "chat, voice and video calls, cloud drive, collaborative documents, open source, self-hosted, hosted in Europe, privacy",
+            "featureList": ["Messaging", "Voice and video calls", "Cloud drive", "Collaborative notes and documents", "Spreadsheets", "Open source"],
+            "author": { "@id": "https://carbonlab.dev/#organization" },
+            "publisher": { "@id": "https://carbonlab.dev/#organization" },
             "offers": {
                 "@type": "Offer",
                 "price": "0",
                 "priceCurrency": "EUR"
             },
-            "description": "Sovereign digital sanctuary for creative collectives. Handcrafted, lightweight, and ethical messaging.",
-            "aggregateRating": {
-                "@type": "AggregateRating",
-                "ratingValue": "5",
-                "ratingCount": "1"
-            }
+            "sameAs": [
+                "https://gitlab.com/Louciole/mycelium",
+                "https://github.com/Louciole/mycelium",
+                "https://carbonlab.dev"
+            ]
+        }
+    </script>
+
+    <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@graph": [
+                {
+                    "@type": "Organization",
+                    "@id": "https://carbonlab.dev/#organization",
+                    "name": "Carbonlab",
+                    "url": "https://carbonlab.dev",
+                    "description": "A non-profit dedicated to the digital autonomy of creative people, communities and teams.",
+                    "logo": "https://mycelium.carbonlab.dev/static/images/logo.png",
+                    "sameAs": [
+                        "https://gitlab.com/Louciole/mycelium",
+                        "https://github.com/Louciole/mycelium"
+                    ]
+                },
+                {
+                    "@type": "WebSite",
+                    "@id": "https://mycelium.carbonlab.dev/#website",
+                    "name": "Mycelium",
+                    "url": "https://mycelium.carbonlab.dev",
+                    "inLanguage": "en",
+                    "publisher": { "@id": "https://carbonlab.dev/#organization" }
+                }
+            ]
+        }
+    </script>
+
+    <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": "What is Mycelium?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Mycelium is an open-source, all-in-one platform for chat, voice and video calls, file sharing and collaborative documents — one place for your community or team instead of a dozen separate apps."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "name": "Is Mycelium free?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Yes. Mycelium is free to start, with no ads and no data collection."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "name": "Is Mycelium open source?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Yes. Mycelium is fully open-source (FOSS) software, with its code available on GitLab and GitHub."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "name": "Where is my data stored?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Mycelium is hosted in Europe and is private by default — no ads and no data collection."
+                    }
+                }
+            ]
         }
     </script>
 </head>
@@ -71,12 +157,12 @@
             <div class="grid-line grid-h" style="top: 75%;"></div>
         </div>
 
-        <h1 id="hero-title" class="reveal">SOVEREIGN<br>SPACES.</h1>
+        <h1 id="hero-title" class="reveal">CHAT. SHARE.<br><span style="color: var(--accent)">CREATE.</span></h1>
         <div class="hero-meta reveal">
             <p class="hero-sub">
-                Digital sanctuaries handcrafted for creative people. Own your tools, protect your privacy, chat and meet people.
+                One place to talk, call, share files, collaborate and create - your community, your rules. Open source, hosted in Europe, no ads and no data collection. Ever.
             </p>
-            <a href="/channels" class="btn-magnetic">Build your own space</a>
+            <a href="/channels" class="btn-magnetic">Get started free</a>
         </div>
 
         <div class="scroll-indicator reveal" aria-hidden="true">
@@ -86,16 +172,16 @@
     </section>
 
     <section class="manifesto container" aria-labelledby="manifesto-title">
-        <h2 id="manifesto-title" class="visually-hidden">Our Manifesto</h2>
+        <h2 id="manifesto-title" class="visually-hidden">Why Mycelium: open source, private, and hosted in Europe</h2>
         <p class="reveal">
-            We believe digital life should be <span class="dim">intentional, not invasive.</span>
-            Mycelium is a quiet, powerful <span class="dim">canvas for connection.</span>
-            Built for those who refuse to <span class="dim">live in someone else's garden.</span>
+            Your team shouldn't live across <span class="dim">a dozen scattered tabs.</span>
+            In Mycelium you create the place that works the way you do! <span class="dim">Store files, create collaborative docs, chat, and automate actions to have a seamless workflow.</span>
+            Open source and hosted in Europe, <span class="dim">private at all costs.</span>
         </p>
     </section>
 
     <section class="container" id="features" aria-labelledby="features-title">
-        <h2 id="features-title" class="visually-hidden">Core Features</h2>
+        <h2 id="features-title" class="visually-hidden">Mycelium features: chat, calls, cloud drive, notes and documents</h2>
         <div class="bento">
             <!-- Card 1: Integrated Drive -->
             <div class="card span-4 reveal">
@@ -109,9 +195,9 @@
                 </svg>
                 <div class="ani-blob" style="top: 20%; left: 30%;" aria-hidden="true"></div>
                 <div>
-                    <span class="card-tag">Architecture</span>
-                    <h3>Integrated Drive</h3>
-                    <p>Your assets are part of the conversation. Use drive channels to centralize all your data in one place.</p>
+                    <span class="card-tag">Storage</span>
+                    <h3>A drive in the chat</h3>
+                    <p>Share files, images and assets right where you talk. Dedicated drive channels keep everything your team needs in one place.</p>
                 </div>
             </div>
 
@@ -124,9 +210,9 @@
                 </svg>
                 <div class="ani-blob" style="bottom: 10%; right: 10%;" aria-hidden="true"></div>
                 <div>
-                    <span class="card-tag">Privacy</span>
-                    <h3><span class="stealth-dot"></span>Stealth mode</h3>
-                    <p>No data-collection. No ads. <br>De-activable typing indicators. <br>Think and read in absolute silence.</p>
+                    <span class="card-tag">Messaging</span>
+                    <h3><span class="stealth-dot"></span>Chat that stays yours</h3>
+                    <p>Rich messaging with full markdown and text coloring. No ads, no data-mining, optional typing indicators. Talk freely, in absolute privacy.</p>
                 </div>
             </div>
 
@@ -148,9 +234,9 @@
                     <line x1="20" y1="20" x2="20" y2="80" />
                 </svg>
                 <div>
-                    <span class="card-tag">Structure</span>
-                    <h3>Do more</h3>
-                    <p>More than a messaging app, a forum. Discover your next community. <br>Make your voice heard.</p>
+                    <span class="card-tag">Productivity</span>
+                    <h3>Notes, docs &amp; spreadsheets</h3>
+                    <p>Write documents, keep shared notes, and build spreadsheets right beside your conversations. Everything you need to get real work done &mdash; no extra apps.</p>
                 </div>
             </div>
 
@@ -162,9 +248,9 @@
                 </svg>
                 <div class="chroma-bg" aria-hidden="true"></div>
                 <div>
-                    <span class="card-tag">Identity</span>
-                    <h3>Chromatic Voice</h3>
-                    <p>Full markdown and text coloring. Because every conversation has its own aesthetic.</p>
+                    <span class="card-tag">Voice &amp; Video</span>
+                    <h3>Calls built in</h3>
+                    <p>Clear voice and video, from a quick 1:1 to a full room. Jump in with one click &mdash; no plugins, no downloads.</p>
                 </div>
             </div>
         </div>
@@ -174,17 +260,19 @@
 <footer id="footer" role="contentinfo">
     <div class="container">
         <h2 class="footer-cta reveal">
-            CLAIM YOUR<br><span style="color: var(--accent)">SPACE.</span>
+            BUILD YOUR<br><span style="color: var(--accent)">HOME.</span>
         </h2>
+        <a href="/channels" class="btn-magnetic reveal">Get started free</a>
 
         <div class="footer-grid">
             <div class="footer-brand">
                 <h3>CARBONLAB_</h3>
-                <p>A non-profit architecture for the digital autonomy of creative collectives.</p>
+                <p>Ethical software for creative people</p>
             </div>
             <div class="footer-links">
-                <h3>Protocol</h3>
+                <h3>THE PROJECT</h3>
                 <ul>
+                    <li><a href="https://status.carbonlab.dev" target="_blank">Status</a></li>
                     <li><a href="https://synapse.carbonlab.dev/project?uid=6&access=read-only" target="_blank">Roadmap</a></li>
                 </ul>
             </div>
@@ -193,13 +281,14 @@
                 <ul>
                     <li><a href="#manifesto">Manifesto</a></li>
                     <li><a href="/privacy">Privacy Policy</a></li>
-                    <li><a href="https://gitlab.com/Louciole/mycelium/-/blob/maine/LICENSE.md?ref_type=heads" target="_blank">FOSS License</a></li>
+                    <li><a href="/TOS">Terms of Service</a></li>
+                    <li><a href="https://gitlab.com/Louciole/disclone/-/blob/maine/LICENSE.md?ref_type=heads" target="_blank">FOSS License</a></li>
                 </ul>
             </div>
             <div class="footer-links">
                 <h3>Network</h3>
                 <ul>
-                    <li><a href="https://gitlab.com/Louciole/mycelium" target="_blank">GitLab</a></li>
+                    <li><a href="https://gitlab.com/Louciole/disclone" target="_blank">GitLab</a></li>
                     <li><a href="https://github.com/Louciole/mycelium" target="_blank">GitHub [Mirror]</a></li>
                     <li><a href="https://carbonlab.dev" target="_blank">Our Home</a></li>
                 </ul>
@@ -208,7 +297,7 @@
 
         <div class="footer-bottom">
             <div>EST. 2024 / BETA BUILD / VANILLA STACK</div>
-            <div style="text-align: right;">CRAFTED BY ARTISTS FOR EVERYONE</div>
+            <div style="text-align: right;">OPEN SOURCE / HOSTED IN EUROPE</div>
         </div>
     </div>
 </footer>

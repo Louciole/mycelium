@@ -4,7 +4,7 @@
 🌍 Production : https://mycelium.carbonlab.dev <br>
 🟢 Status : https://status.carbonlab.dev <br>
 🏀 Roadmap : https://synapse.carbonlab.dev/project?uid=6&access=read-only <br>
-🏡 Home : https://gitlab.com/Louciole/mycelium
+🏡 Home : https://gitlab.com/Louciole/disclone
 
 
 ## 🏎️ getting started
