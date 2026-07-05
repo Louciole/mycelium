@@ -131,6 +131,10 @@ class Mycelium(ForumMixin, Server):
         return self.file(PATH + "/static/home/tos.html")
 
     @Server.expose
+    def legal(self):
+        return self.file(PATH + "/static/home/legal.html")
+
+    @Server.expose
     def sw(self):
         # Service worker served at root so its scope covers '/channels' (the app
         # entry), not just '/static'. no-cache so version bumps propagate fast.

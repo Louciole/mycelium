@@ -17,7 +17,7 @@
     <meta property="og:title" content="Mycelium | Privacy Policy">
     <meta property="og:description" content="Open source, hosted in Europe. We collect as little as possible, run no ads or trackers, and never sell your data.">
     <meta property="og:image" content="https://mycelium.carbonlab.dev/static/images/logo.png">
-    <meta property="og:image:alt" content="Mycelium — all-in-one open-source collaboration">
+    <meta property="og:image:alt" content="Mycelium - all-in-one open-source collaboration">
 
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Mycelium | Privacy Policy">
@@ -57,7 +57,7 @@
             <p>
                 Mycelium is built on a simple principle: <span class="dim">your data belongs to you.</span>
                 We collect as little as possible, store nothing we don't need, and will never sell, share, or monetize your information.
-                This document explains exactly what we do — and don't do — with your data.
+                This document explains exactly what we do - and don't do - with your data.
             </p>
         </div>
 
@@ -66,20 +66,20 @@
                 <h2>1. What we collect</h2>
                 <p>To provide the service, we store the following data when you create an account:</p>
                 <ul>
-                    <li><strong>Email address</strong> — used for authentication and account recovery only.</li>
-                    <li><strong>Username</strong> — chosen by you, displayed to other users.</li>
-                    <li><strong>Password</strong> — stored as a salted hash. We cannot read it.</li>
-                    <li><strong>Messages and files</strong> — stored to deliver the messaging and drive features.</li>
-                    <li><strong>Device tokens</strong> — used solely to deliver push notifications if you opt in.</li>
+                    <li><strong>Email address</strong> - used for authentication and account recovery only.</li>
+                    <li><strong>Username</strong> - chosen by you, displayed to other users.</li>
+                    <li><strong>Password</strong> - stored as a salted hash. We cannot read it.</li>
+                    <li><strong>Messages and files</strong> - stored to deliver the messaging and drive features.</li>
+                    <li><strong>Device tokens</strong> - used solely to deliver push notifications if you opt in.</li>
                 </ul>
-                <p>We do not collect your real name, phone number, location, IP address logs, or any behavioral analytics.</p>
+                <p>We do not collect your real name, phone number, location, or any behavioral analytics, and we keep no IP address logs of our own (see section 7 for the network provider that routes our traffic).</p>
             </section>
 
             <section class="privacy-section reveal">
                 <h2>2. What we don't do</h2>
                 <ul>
                     <li>We do not run ads, ever.</li>
-                    <li>We do not sell or share your data with third parties.</li>
+                    <li>We do not sell or share your data with third parties for their own use.</li>
                     <li>We do not track you across the web.</li>
                     <li>We do not use third-party analytics (no Google Analytics, no tracking pixels).</li>
                     <li>We do not read your private messages.</li>
@@ -90,7 +90,7 @@
                 <h2>3. Cookies &amp; sessions</h2>
                 <p>
                     Mycelium uses a single session cookie (<code>jwt</code>) to keep you authenticated.
-                    This cookie contains a signed token that identifies your session — it holds no personal information and is never shared with third parties.
+                    This cookie contains a signed token that identifies your session - it holds no personal information and is never shared with third parties.
                     No tracking cookies are used.
                 </p>
             </section>
@@ -108,7 +108,7 @@
                 <h2>5. Security</h2>
                 <p>
                     All data is transmitted over HTTPS and hosted in Europe. Passwords are hashed using bcrypt before storage.
-                    Mycelium is open source — you can audit the full codebase on
+                    Mycelium is open source - you can audit the full codebase on
                     <a href="https://gitlab.com/Louciole/disclone" target="_blank" rel="noopener">GitLab</a>.
                 </p>
             </section>
@@ -126,7 +126,33 @@
             </section>
 
             <section class="privacy-section reveal">
-                <h2>7. Contact</h2>
+                <h2>7. Service providers</h2>
+                <p>
+                    We keep external services to a strict minimum. Two providers are involved in running Mycelium:
+                </p>
+                <ul>
+                    <li>
+                        <strong>OVH</strong> (OVHcloud, France) - our email provider, used solely to deliver account
+                        emails such as sign-in, verification and account-recovery messages. Your email address and the
+                        content of those messages pass through OVH's mail servers for that purpose only.
+                    </li>
+                    <li>
+                        <strong>Gcore</strong> (Gcore, Luxembourg) - an EU-based content-delivery and security network
+                        that sits in front of our servers to protect the service and speed it up. Because all traffic is
+                        routed through it, Gcore processes technical connection data - including your IP address - to
+                        deliver requests and block abuse. It acts on our behalf and does not use this data for its own
+                        purposes.
+                    </li>
+                </ul>
+                <p>
+                    Both act as data processors on our behalf, and both are EU-based companies subject to EU
+                    data-protection law. Together with our own servers in Nantes (France) and Brussels (Belgium), your
+                    data is processed within the European Union.
+                </p>
+            </section>
+
+            <section class="privacy-section reveal">
+                <h2>8. Contact</h2>
                 <p>
                     Questions about this policy or your data? Reach us at
                     <a href="mailto:contact@carbonlab.dev" target="_blank" rel="noopener">contact@carbonlab.dev</a>
@@ -158,6 +184,7 @@
                     <li><a href="/#manifesto">Manifesto</a></li>
                     <li><a href="/privacy">Privacy Policy</a></li>
                     <li><a href="/TOS">Terms of Service</a></li>
+                    <li><a href="/legal">Legal Notice</a></li>
                     <li><a href="https://gitlab.com/Louciole/disclone/-/blob/maine/LICENSE.md?ref_type=heads" target="_blank">FOSS License</a></li>
                 </ul>
             </div>
