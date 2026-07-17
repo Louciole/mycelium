@@ -53,6 +53,7 @@ export let lang = {
     "Réinitialiser": "Réinitialiser",
     "Attention, il reste des modifications non enregistrées !": "Attention, il reste des modifications non enregistrées !",
     "ABOUT ME": "À PROPOS DE MOI",
+    "Remove role": "Retirer le rôle",
     "APERCU": "APERÇU",
     "Si tu veux, tu peux utiliser la syntaxe Markdown et des liens.": "Si tu veux, tu peux utiliser la syntaxe Markdown et des liens.",
     "A PROPOS DE MOI": "À PROPOS DE MOI",

@@ -46,6 +46,7 @@ export let lang = {
     "Réinitialiser": "Adderaouekaat",
     "Attention, il reste des modifications non enregistrées !": "Diwall, kemmoù n'int ket bet enrollet a chom c'hoazh !",
     "ABOUT ME": "DIWAR MA PHENN",
+    "Remove role": "Lemel ar roll",
     "APERCU": "RAGWEL",
     "Si tu veux, tu peux utiliser la syntaxe Markdown et des liens.": "Mar fell dit, e c'hellez implijout ar sintaks Markdown hag liammoù.",
     "A PROPOS DE MOI": "DIWAR MA PHENN",
@@ -253,4 +254,11 @@ export let lang = {
     "vote": "voaz",
     "votes": "voazoù",
     "Émojis": "Emojiioù",
+
+    "Rechercher salons, fichiers, posts…": "Klask saloñsoù, restroù, postoù…",
+    "Aucun résultat": "Disoc'h ebet",
+    "Tape pour chercher partout": "Skriv evit klask e pep lec'h",
+    "↑↓ naviguer · Entrée ouvrir · Échap fermer": "↑↓ merdeiñ · Enankañ digeriñ · Achap serriñ",
+    "Serveur": "Servijer",
+    "Message privé": "Kemennadenn brevez",
 }

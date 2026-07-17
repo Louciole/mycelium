@@ -13,6 +13,7 @@
         </div>
     </div>
     <span class="content editable-block ${element.type!=='text'?'note-'+element.type:''}" contenteditable="true"
+          spellcheck="false"
           data-placeholder="Press '/' for commands"
           oninput="global.state.noteEditor.onInput('${element.uuid}', event)"
           onkeydown="global.state.noteEditor.onKeyDown('${element.uuid}', event)"

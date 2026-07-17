@@ -47,6 +47,7 @@ export let lang = {
     "Réinitialiser": "Restarigi",
     "Attention, il reste des modifications non enregistrées !": "Averto: restas nekonservitaj ŝanĝoj!",
     "ABOUT ME": "PRI MI",
+    "Remove role": "Forigi rolon",
     "APERCU": "ANTAŬVIDO",
     "Si tu veux, tu peux utiliser la syntaxe Markdown et des liens.": "Se vi volas, vi povas uzi Markdown-sintakson kaj ligilojn.",
     "A PROPOS DE MOI": "PRI MI",
@@ -254,4 +255,11 @@ export let lang = {
     "vote": "voĉo",
     "votes": "voĉoj",
     "Émojis": "Emojioj",
+
+    "Rechercher salons, fichiers, posts…": "Serĉi kanalojn, dosierojn, afiŝojn…",
+    "Aucun résultat": "Neniu rezulto",
+    "Tape pour chercher partout": "Tajpu por serĉi ĉie",
+    "↑↓ naviguer · Entrée ouvrir · Échap fermer": "↑↓ navigi · Enigklavo malfermi · Esk fermi",
+    "Serveur": "Servilo",
+    "Message privé": "Privata mesaĝo",
 }

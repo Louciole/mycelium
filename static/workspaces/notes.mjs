@@ -376,6 +376,9 @@ class Editor {
             const text = event.currentTarget.innerText
             if (text.startsWith('/')) {
                 this._showSlashMenu(blockId, event.currentTarget, text.slice(1))
+            } else if (/^#{1,6}$/.test(text)) {
+                // A run of only '#' → offer the heading levels (block selector).
+                this._showHeadingMenu(blockId, event.currentTarget, text)
             } else {
                 this._hideSlashMenu()
             }
@@ -557,6 +560,8 @@ class Editor {
         this._hideSlashMenu()
         // switching from editor preview to rendered view
         const block = this.blocks[blockId];
+        // Spellcheck only while editing — turn it off in the rendered view.
+        event.currentTarget.spellcheck = false
         event.currentTarget.innerHTML = MDToRender(block.content)
         this.saveBlock(blockId)
     }
@@ -564,6 +569,7 @@ class Editor {
     onFocus(blockId, event) {
         // switching from rendered view to editor preview
         const block = this.blocks[blockId];
+        event.currentTarget.spellcheck = true
         event.currentTarget.innerHTML = MDToPreview(block.content)
     }
 
@@ -655,6 +661,25 @@ class Editor {
             query,
             selectedIndex,
             items: filtered.map((item, i) => ({...item, index: i})),
+            top: rect.bottom + 4,
+            left: rect.left,
+        })
+    }
+
+    _showHeadingMenu(blockId, anchorEl, hashes) {
+        const items = this._slashMenuItems().filter(item =>
+            item.type === "heading1" || item.type === "heading2" || item.type === "heading3")
+
+        const rect = anchorEl.getBoundingClientRect()
+        // Preselect the level matching how many '#' were typed (# → H1, ## → H2…)
+        const selectedIndex = Math.min(hashes.length, items.length) - 1
+
+        setElement('global.state.slashMenu', {
+            visible: true,
+            blockId,
+            query: hashes,
+            selectedIndex,
+            items: items.map((item, i) => ({...item, index: i})),
             top: rect.bottom + 4,
             left: rect.left,
         })
@@ -763,11 +788,18 @@ function mountChecklist(blockUuid, containerEl) {
             if (event.key === 'Enter') {
                 event.preventDefault()
                 const currentLines = block.content.split('\n').filter(l => l !== '')
+                // Persist the text just typed into this item before inserting a new
+                // one, otherwise the re-mount below reverts it to its stale content.
+                if (i < currentLines.length) {
+                    const isChecked = currentLines[i].startsWith('[x]')
+                    currentLines[i] = (isChecked ? '[x] ' : '[ ] ') + span.innerText.trim()
+                }
                 currentLines.splice(i + 1, 0, '[ ] ')
                 block.content = currentLines.join('\n')
                 mountChecklist(blockUuid, containerEl)
                 const items = containerEl.querySelectorAll('.checklist-item-text')
                 if (items[i + 1]) items[i + 1].focus()
+                editor.saveBlock(blockUuid)
             } else if (event.key === 'Backspace' && span.innerText.trim() === '') {
                 event.preventDefault()
                 const currentLines = block.content.split('\n').filter(l => l !== '')

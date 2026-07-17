@@ -741,6 +741,7 @@ import routes.messaging      # noqa: E402,F401
 import routes.calls          # noqa: E402,F401
 import routes.workspaces     # noqa: E402,F401
 import routes.drive          # noqa: E402,F401
+import routes.search         # noqa: E402,F401
 
 server = Mycelium(path=PATH, configFile="/server.ini")
 

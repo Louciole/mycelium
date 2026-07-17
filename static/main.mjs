@@ -8,6 +8,7 @@ import {} from "/static/admin.mjs"; // DO NOT REMOVE
 import {} from "/static/access.mjs"; // DO NOT REMOVE
 import {} from "/static/avatar.mjs"; // DO NOT REMOVE
 import {} from "/static/imageEditor.mjs"; // Image crop/resize editor
+import {} from "/static/search.mjs"; // Ctrl+K global search palette
 import { initDrag } from "./drag.mjs";
 import emojis from "/static/emojis.mjs";
 import {addElement, deleteElement, pushElement, setElement, updateElement} from "/static/framework/vesta.mjs";
@@ -337,6 +338,7 @@ function fuzzyScore(query, text) {
     // Only return score if all query characters were found
     return queryIndex === query.length ? score : 0
 }
+window.fuzzyScore = fuzzyScore // shared with the Ctrl+K palette (search.mjs)
 /**
  * Search emojis and update the emoji board
  * @param {Event} event - Input event
@@ -551,8 +553,10 @@ function Save(endpoint="change_profile"){
                 xhr("edit_server_channel?server_id=".concat(global.state.currentServer.id, "&value=", encodeURIComponent(newValue), "&field=name&targetId=", id, "&channel_type=", type), undefined, "POST", false)
             }else if (endpoint === "editRole") {
                 const id = global.state.currentRole.id
-                xhr("edit_server_role?server_id=".concat(global.state.currentServer.id, "&value=", encodeURIComponent(global.state["currentForm"][key].value), "&field=name&targetId=", id), undefined, "POST", false)
-                // setElement("global.state.currentServer.".concat(target), global.state["currentForm"][key].value)
+                const newValue = global.state["currentForm"][key].value
+                xhr("edit_server_role?server_id=".concat(global.state.currentServer.id, "&value=", encodeURIComponent(newValue), "&field=name&targetId=", id), undefined, "POST", false)
+                setElement("global.state.currentRole.name", newValue)
+                setElement("global.state.currentServer.roles[" + id + "].name", newValue)
             }else{
                 xhr(endpoint+"?element=".concat(target,"&value=",encodeURIComponent(global.state["currentForm"][key].value)), undefined,"POST",false)
                 setElement("global.user.".concat(target), global.state["currentForm"][key].value)

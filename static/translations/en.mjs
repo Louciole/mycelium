@@ -47,6 +47,7 @@ export let lang = {
     "Réinitialiser": "Reset",
     "Attention, il reste des modifications non enregistrées !": "Warning, there are unsaved changes!",
     "ABOUT ME": "ABOUT ME",
+    "Remove role": "Remove role",
     "APERCU": "PREVIEW",
     "Si tu veux, tu peux utiliser la syntaxe Markdown et des liens.": "If you want, you can use Markdown syntax and links.",
     "A PROPOS DE MOI": "ABOUT ME",
@@ -253,4 +254,11 @@ export let lang = {
     "vote": "vote",
     "votes": "votes",
     "Émojis": "Emojis",
+
+    "Rechercher salons, fichiers, posts…": "Search channels, files, posts…",
+    "Aucun résultat": "No results",
+    "Tape pour chercher partout": "Type to search everywhere",
+    "↑↓ naviguer · Entrée ouvrir · Échap fermer": "↑↓ navigate · Enter open · Esc close",
+    "Serveur": "Server",
+    "Message privé": "Direct message",
 }

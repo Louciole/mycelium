@@ -335,6 +335,10 @@ window.mentionNoteOnInput = function(blockId, event) {
     const el = event.currentTarget
     const textBefore = getTextBeforeCaret(el)
 
+    // A run of only '#' at the very start of a block is a heading initiator,
+    // not a channel link — let the note editor show its block/heading selector.
+    if (/^#+$/.test(textBefore)) { closePopup(); activeBlockEl = null; return }
+
     let i = textBefore.length - 1
     while (i >= 0) {
         const ch = textBefore[i]

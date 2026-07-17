@@ -1,0 +1,17 @@
+<section class="menu-wrapper" id="search-palette" style="display:none" onclick="event.target === event.currentTarget && closeSearchPalette()">
+    <div class="menu search-palette-menu" onclick="event.stopPropagation()">
+        <input type="text" id="search-palette-input" class="dark" autocomplete="off" spellcheck="false"
+               maxlength="100" aria-label="${_t('Rechercher salons, fichiers, posts…')}"
+               placeholder="${_t('Rechercher salons, fichiers, posts…')}"
+               oninput="searchPalette(event)" onkeydown="searchPaletteKeydown(event)"/>
+        <div class="scrollable search-palette-results">
+            ${Subscribe('global.state.searchResults', () => {
+                const items = global.state.searchResults || []
+                if (items.length) return fillWith('search-result-item', items)
+                if (global.state.searchQuery) return `<div class="search-palette-empty">${_t('Aucun résultat')}</div>`
+                return `<div class="search-palette-empty">${_t('Tape pour chercher partout')}</div>`
+            })}
+        </div>
+        <div class="search-palette-hint">${_t('↑↓ naviguer · Entrée ouvrir · Échap fermer')}</div>
+    </div>
+</section>

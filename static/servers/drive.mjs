@@ -44,6 +44,7 @@ function loadDriveContent(drive_id, parent_folder = null) {
     loadDriveFiles(drive_id, parent_folder)
     loadDriveFolders(drive_id, parent_folder)
 }
+window.loadDriveContent = loadDriveContent // Ctrl+K palette deep-opens folders (search.mjs)
 
 function loadDriveFiles(drive_id, parent_folder = null) {
     const onload = function() {

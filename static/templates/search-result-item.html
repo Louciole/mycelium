@@ -1,0 +1,7 @@
+<div class="item search-result${element._selected ? ' selected' : ''}" id="search-result-${element._idx}" onclick="openSearchResultAt(${element._idx})">
+    <img class="icon" src="/static/icons/material/${element._icon}.svg"/>
+    <div class="vertical fill">
+        <div class="search-result-name ellipsis">${escapeHTML(element.name)}</div>
+        ${element._subtitle ? `<div class="search-result-sub ellipsis">${escapeHTML(element._subtitle)}</div>` : ''}
+    </div>
+</div>

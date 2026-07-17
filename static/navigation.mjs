@@ -110,6 +110,8 @@ export function handleHashRoute(hash) {
                         goToNoteChannel(channelId)
                     } else if (dirs.forums?.some(c => c.id === channelId)) {
                         goToForumChannel(channelId)
+                    } else if (dirs.drives?.some(c => c.id === channelId)) {
+                        goToDriveChannel(channelId)
                     }
                 })
             }

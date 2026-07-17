@@ -1,4 +1,5 @@
 <div class="roleTag">
     <div class="circle" style="background-color: ${global.state.currentServer.roles[element].color}"></div>
     <div>${global.state.currentServer.roles[element].name}</div>
+    <div class="roleTag-remove" onclick="removeRoleFromUser(event, ${element})" title="${_t('Remove role')}">×</div>
 </div>

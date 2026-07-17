@@ -1,0 +1,28 @@
+<div class="op-panel">
+  <h2>${_t("Signalements")}</h2>
+  <div id="op-reports-list" class="mod-list scrollable">
+    <p class="muted">${_t("Chargement…")}</p>
+  </div>
+
+  <h2 style="margin-top:1.5rem">${_t("Suspendre un utilisateur")}</h2>
+  <div class="op-suspend-form">
+    <input id="op-suspend-account" type="text" placeholder="${_t('ID du compte')}"/>
+    <input id="op-suspend-reason" type="text" placeholder="${_t('Raison')}"/>
+    <input id="op-suspend-minutes" type="number" placeholder="${_t('Durée (min, vide = permanent)')}"/>
+    <div class="inline">
+      <div class="mod-action ban" onclick="opSuspendUser()">${_t("Suspendre")}</div>
+      <div class="mod-action" onclick="opUnsuspendUser()">${_t("Lever la suspension")}</div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:1.5rem">${_t("Supprimer un serveur")}</h2>
+  <div class="op-suspend-form">
+    <input id="op-delete-server" type="text" placeholder="${_t('ID du serveur')}"/>
+    <div class="mod-action ban" onclick="opDeleteServer()">${_t("Supprimer le serveur")}</div>
+  </div>
+
+  <h2 style="margin-top:1.5rem">${_t("Journal des actions plateforme")}</h2>
+  <div id="op-log-list" class="mod-list scrollable">
+    <p class="muted">${_t("Chargement…")}</p>
+  </div>
+</div>

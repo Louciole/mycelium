@@ -47,6 +47,7 @@ export let lang = {
     "Réinitialiser": "Zurücksetzen",
     "Attention, il reste des modifications non enregistrées !": "Achtung – Es gibt ungespeicherte Änderungen!",
     "ABOUT ME": "ÜBER MICH",
+    "Remove role": "Rolle entfernen",
     "APERCU": "VORSCHAU",
     "Si tu veux, tu peux utiliser la syntaxe Markdown et des liens.": "Du kannst Markdown‑Syntax und Links verwenden.",
     "A PROPOS DE MOI": "ÜBER MICH",
@@ -267,4 +268,11 @@ export let lang = {
     "vote": "Stimme",
     "votes": "Stimmen",
     "Émojis": "Emojis",
+
+    "Rechercher salons, fichiers, posts…": "Kanäle, Dateien, Posts durchsuchen…",
+    "Aucun résultat": "Keine Ergebnisse",
+    "Tape pour chercher partout": "Tippe, um überall zu suchen",
+    "↑↓ naviguer · Entrée ouvrir · Échap fermer": "↑↓ navigieren · Enter öffnen · Esc schließen",
+    "Serveur": "Server",
+    "Message privé": "Direktnachricht",
 }

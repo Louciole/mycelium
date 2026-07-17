@@ -1454,8 +1454,9 @@ window.deleteChannel = deleteChannel
 
 function createRole(){
     const onload = function() {
-        addElement("global.state.currentServer.roles",{"name":"new role", "id":this.responseText, "permissions":{}})
-        global.state.currentRole = global.state.currentServer.roles[this.responseText]
+        const roleId = JSON.parse(this.responseText).id
+        addElement("global.state.currentServer.roles",{"name":"new role", "id":roleId, "permissions":{}})
+        global.state.currentRole = global.state.currentServer.roles[roleId]
         goTo( 'setting-server-content', 'server-role-settings')
     }
 
@@ -1479,7 +1480,10 @@ function attributeRole(roleId){
             return;
         }
 
-        addElement("global.state.currentServer.members[global.state.profileInfo.id].roles", roleId)
+        pushElement("global.state.currentServer.members[global.state.profileInfo.id].roles", roleId)
+        // The role tags on the profile card subscribe to profileInfo, not to the
+        // nested roles path — repaint it so the new tag shows without reopening.
+        updateElement("global.state.profileInfo")
         const elt = document.getElementById("addRole")
         elt.style.display = "none"
     }
@@ -1487,6 +1491,23 @@ function attributeRole(roleId){
     xhr("edit_server_role?server_id="+global.state.currentServer.id+"&action=attribute&value="+global.state.profileInfo.id+"&targetId="+roleId, onload)
 }
 window.attributeRole = attributeRole
+
+function removeRoleFromUser(event, roleId){
+    event.stopPropagation()
+
+    const onload = function() {
+        if (this.status !== 200) {
+            return;
+        }
+
+        deleteVal("global.state.currentServer.members[global.state.profileInfo.id].roles", Number(roleId))
+        // Repaint the profile card so the removed tag disappears live.
+        updateElement("global.state.profileInfo")
+    }
+
+    xhr("edit_server_role?server_id="+global.state.currentServer.id+"&action=unattribute&value="+global.state.profileInfo.id+"&targetId="+roleId, onload)
+}
+window.removeRoleFromUser = removeRoleFromUser
 
 // Minimal API Keys actions used by the devs-settings template
 function createApiKey(){

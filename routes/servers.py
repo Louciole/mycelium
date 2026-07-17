@@ -426,7 +426,7 @@ def edit_server_category(self, server_id, action=None, field=None, value=None, t
 
 
 @Server.expose
-def edit_server_role(self, server_id, action, field=None, value=None, targetId=None):
+def edit_server_role(self, server_id, action=None, field=None, value=None, targetId=None):
     uid = self.getUser()
     # Role/permission management requires admin — otherwise an "edit" holder
     # could grant themselves a role carrying "server-admin".
@@ -448,6 +448,13 @@ def edit_server_role(self, server_id, action, field=None, value=None, targetId=N
         if self.db.getFilters("role_attribution", ["account", "=", value, "and", "role", "=", targetId, "and", "server", "=", server_id]):
             raise HTTPError(self.response, 403, "already attributed")
         self.db.insertDict("role_attribution", {"account": value, "role": targetId, "server": server_id}, getId=True)
+        self.invalidateAdminCache()
+        return json.dumps({"status": "ok"})
+
+    if action == "unattribute":
+        rows = self.db.getFilters("role_attribution", ["account", "=", value, "and", "role", "=", targetId, "and", "server", "=", server_id]) or []
+        for row in rows:
+            self.db.deleteSomething("role_attribution", row["id"])
         self.invalidateAdminCache()
         return json.dumps({"status": "ok"})
 
