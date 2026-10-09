@@ -4,32 +4,38 @@ Endpoints take the live Mycelium instance as ``self``; shared helpers remain on
 the class (see server.py).
 """
 import json
-import os
 import datetime
+import secrets
 
 from vesta import Server, HTTPError
-from message_helpers import notifyChannelMesage
+from message_helpers import notifyChannelMesage, notifyConvMessage, post_system_message, is_system_message
+
+DICE_MAX_COUNT = 20
+DICE_MIN_FACES, DICE_MAX_FACES = 2, 1000
 
 
 @Server.expose
-def send_message(self, conv, content, reply=False, attachments = [], poll=None, conv_block=None):
+def send_message(self, conv, content, reply=False, attachments = [], poll=None, conv_block=None, command=None):
     uid = self.getUser()
+
+    conv = json.loads(conv)
+    if not conv.get("id"):
+        conv["id"] = self.newConv("Noname", [uid, conv["dest"]])
+
+    # Check the right to post BEFORE writing anything (files, message rows)
+    channel, channel_type = _resolveMessagePlace(self, uid, conv)
+
+    # Slash command the server runs itself (the client expands the pure text ones).
+    # Validated now so an invalid one leaves nothing behind; run once the message is posted.
+    dice = _parseDiceCommand(self, command) if command else None
 
     total_attachment_size = sum(
         self._estimateBase64Size(a.get('dataUrl', ''))
         for a in attachments if a.get('dataUrl')
     )
-
-    # Determine channel/server and check quota before saving
-    conv_parsed = json.loads(conv)
-    place_id = conv_parsed.get("id")
-    channel = self.db.getSomething("textual_channel", place_id) if place_id else None
-    forum_post = self.db.getSomething("forum_post", place_id) if (place_id and not channel) else None
     if total_attachment_size > 0:
         if channel:
             self._checkQuota(channel["server"], total_attachment_size)
-        elif forum_post:
-            self._checkQuota(forum_post["server"], total_attachment_size)
         else:
             self._checkUserQuota(uid, total_attachment_size)
 
@@ -37,10 +43,6 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
     for attachment in attachments:
         filepath = self.saveFile(attachment.get('dataUrl', ''))
         attachmentList.append({"mime": attachment.get('mimeType', ''), "filename": attachment.get('filename', 'file'), "filepath": filepath})
-
-    conv = conv_parsed
-    if not conv.get("id"):
-        conv["id"] = self.newConv("Noname", [uid, conv["dest"]])
 
     # Handle poll creation
     if poll:
@@ -93,7 +95,6 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
             "votes": {}
         }
 
-        channel, channel_type = _resolveMessagePlace(self, uid, conv)
         if channel_type:
             notifyChannelMesage(self, uid, channel, message, channel_type)
         else:
@@ -144,7 +145,6 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
             "rows": rows, "cols": cols, "cells": cells, "col_widths": {}
         }
 
-        channel, channel_type = _resolveMessagePlace(self, uid, conv)
         if channel_type:
             notifyChannelMesage(self, uid, channel, msg_body, channel_type)
         else:
@@ -152,6 +152,8 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
 
         return json.dumps({"message": msg_body}, default=str)
 
+    if dice and not content.strip():
+        content = f"/d {dice[0]}d{dice[1]}"   # keep the command visible in the conversation
     message = {"sender": uid, "place": conv["id"], "body": content, "attachments": json.dumps(attachmentList)}
     if reply and reply != "undefined" and reply != "null":
         message["reply"] = reply
@@ -159,7 +161,6 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
     msgId = self.db.insertDict("message", message, getId=True)
     message["id"] = msgId
 
-    channel, channel_type = _resolveMessagePlace(self, uid, conv)
     if channel_type:
         notifyChannelMesage(self, uid, channel, message, channel_type)
         if total_attachment_size > 0:
@@ -171,7 +172,11 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
 
     # Return the saved message (with its real DB id) so the client can reconcile
     # its optimistic placeholder. ``attachments`` is the JSON string stored in DB.
-    return json.dumps({"message": message}, default=str)
+    response = {"message": message}
+    if dice:
+        # Posted after the "/d 6" message so everyone sees the command then its result
+        response["notice"] = _rollDice(self, uid, conv["id"], (channel, channel_type), *dice)
+    return json.dumps(response, default=str)
 
 
 @Server.expose
@@ -230,6 +235,8 @@ def edit_message(self, message_id, content):
 
     if not message or message["sender"] != uid:
         raise HTTPError(self.response, 403, "forbidden")
+    if is_system_message(message):
+        raise HTTPError(self.response, 403, "system messages can't be edited")
 
     self.db.edit("message", message["id"], "body", content)
     self.db.edit("message", message["id"], "edited", True)
@@ -266,43 +273,25 @@ def delete_message(self, message_id):
 
     messageId = message_id
     message = self.db.getSomething("message", message_id)
-
-    if not message or message["sender"] != uid:
+    if not message:
         raise HTTPError(self.response, 403, "forbidden")
 
-    # Clean up attachments and decrement storage
-    attachments = message.get("attachments")
-    if attachments:
-        if isinstance(attachments, str):
-            try:
-                attachments = json.loads(attachments)
-            except:
-                attachments = []
-        total_size = 0
-        for attach in attachments:
-            rel_path = attach.get("filepath", "")
-            if not rel_path:
-                continue
-            full_path = self.path + "/static/attachments/" + rel_path
-            if os.path.exists(full_path) and self._isFilepathOrphaned(rel_path, exclude_message_id=messageId):
-                total_size += os.path.getsize(full_path)
-                try:
-                    os.remove(full_path)
-                except Exception as e:
-                    print(f"Error deleting attachment {full_path}: {e}")
+    # Own message, or someone else's channel message with manage-messages
+    # (DMs stay sender-only: there is no DM moderation by server mods).
+    channel = self.db.getSomething("textual_channel", message["place"])
+    moderated = False
+    if message["sender"] != uid:
+        if not channel or not self.hasServerPerm(uid, channel["server"], "manage-messages"):
+            raise HTTPError(self.response, 403, "forbidden")
+        moderated = True
 
-        # Decrement storage
-        if total_size > 0:
-            channel = self.db.getSomething("textual_channel", message["place"])
-            if channel:
-                self._adjustStorage(channel["server"], -total_size)
-            else:
-                self._adjustUserStorage(message["sender"], -total_size)
-
-    self.db.deleteSomething("message", messageId)
+    # Removes orphaned attachment files and refunds the quota
+    self.deleteMessageWithCleanup(message)
+    if moderated:
+        self.logModeration(channel["server"], uid, "manage_messages_delete",
+                           target_account=message["sender"], metadata={"message_id": message["id"]})
 
     del_notif = {"type": "message_deleted", "content": {"id": messageId}}
-    channel = self.db.getSomething("textual_channel", message["place"])
     if channel:
         members = self.db.getFilters("accessserver", ["server", "=", channel["server"]])
         for member in members:
@@ -326,8 +315,10 @@ def toggle_reaction(self, message_id, emoji):
         
     channel = self.db.getSomething("textual_channel", message["place"])
     if channel:
-        if channel.get("is_private") and not self.checkChannelAccess(uid, channel["id"], "textual", "view"):
+        # checkChannelAccess also requires membership, so kicked/banned users can't react.
+        if not self.checkChannelAccess(uid, channel["id"], "textual", "view"):
             raise HTTPError(self.response, 403, "no permission to view this channel")
+        self.enforceNotTimedOut(uid, channel["server"])
     else:
         conv = self.db.getFilters("accessconversation", ["conversation", "=", message["place"], "and", "account", "=", uid])
         if not conv:
@@ -526,6 +517,7 @@ def _resolveMessagePlace(self, uid, conv):
     if channel:
         if not self.checkChannelAccess(uid, place_id, "textual", "send-messages"):
             raise HTTPError(self.response, 403, "no permission to send messages in this channel")
+        self.enforceNotTimedOut(uid, channel["server"])
         return channel, "textual"
 
     post = self.db.getSomething("forum_post", place_id) if place_id else None
@@ -534,8 +526,9 @@ def _resolveMessagePlace(self, uid, conv):
             raise HTTPError(self.response, 403, "post is locked")
         if not self.checkChannelAccess(uid, post["forum"], "forum", "send-messages"):
             raise HTTPError(self.response, 403, "no permission to send messages in this forum")
-        self.db.edit("forum_post", post["id"], "last_activity", datetime.datetime.now())
         forum = self.db.getSomething("forum_channel", post["forum"])
+        self.enforceNotTimedOut(uid, forum["server"])
+        self.db.edit("forum_post", post["id"], "last_activity", datetime.datetime.now())
         return forum, "forum"
 
     if place_id and not self.db.getFilters("accessconversation", ["conversation", "=", place_id, "and", "account", "=", uid]):
@@ -543,29 +536,31 @@ def _resolveMessagePlace(self, uid, conv):
     return None, None
 
 
-def notifyConvMessage(self,uid ,conv, message):
-    members = self.db.getAll("accessconversation", conv["id"], "conversation")
-    sender = self.db.getSomething("mycelium_account", uid)
-    sender_name = sender.get("display", "User") if sender else "User"
-    sender_pfp = sender.get("pfp") if sender else None
-    avatar_url = f"https://mycelium.carbonlab.dev/static/attachments/{sender_pfp}" if sender_pfp else ""
+def _parseDiceCommand(self, command):
+    """Validate a client-parsed `/d` command → (count, faces). The client only
+    does the parsing; the server re-checks every bound since the payload is untrusted."""
+    if not isinstance(command, dict) or command.get("name") != "dice":
+        raise HTTPError(self.response, 400, "Unknown command")
+    try:
+        count = int(str(command.get("count", 1)))
+        faces = int(str(command.get("faces")))
+    except (TypeError, ValueError):
+        raise HTTPError(self.response, 400, "Invalid dice")
+    if not (1 <= count <= DICE_MAX_COUNT and DICE_MIN_FACES <= faces <= DICE_MAX_FACES):
+        raise HTTPError(self.response, 400, "Invalid dice")
+    return count, faces
 
-    for user in members:
-        if user["account"] != uid:
-            self.sendNotification(user["account"], {"type": "message", "content": message})
 
-            # Push Notification for DM
-            self.sendPushNotification(user["account"], {
-                "title": sender_name,
-                "body": message.get("body", "New message"),
-                "data": {"type": "message", "convId": str(conv["id"]), "avatarUrl": avatar_url}
-            })
-
-            notif  = self.db.getFilters("offline_notifs", ["account", "=", user['account'], "and", "conversation", "=", conv["id"]])
-            if notif != []:
-                self.db.edit("offline_notifs", notif[0]["id"], "number", notif[0]["number"] + 1)
-            else :
-                self.db.insertDict("offline_notifs", {"account": user['account'] , "conversation": conv["id"]})
+def _rollDice(self, uid, place_id, place, count, faces):
+    """Roll and post the result as a system notice. Rolled here, never on the
+    client, so nobody can forge a result."""
+    rolls = [secrets.randbelow(faces) + 1 for _ in range(count)]
+    total = sum(rolls)
+    return post_system_message(
+        self, uid, place_id, "dice",
+        {"count": count, "faces": faces, "rolls": rolls, "total": total},
+        body=f"🎲 {count}d{faces} → {total}", icon="dice", place=place,
+    )
 
 
 def _getPollConvAccess(self, uid, poll_id):

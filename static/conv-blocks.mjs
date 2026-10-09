@@ -30,7 +30,7 @@ function insertConvBlock(blockType, template = 'empty') {
         addElement('global.convs[' + convId + '].messages', msg)
     }
     xhr("send_message?conv=" + encodeURI(JSON.stringify({id: convId})) + "&content=",
-        onload, "POST", true, {convBlock: {type: blockType, template}})
+        onload, "POST", true, {conv_block: {type: blockType, template}})
 }
 window.insertConvBlock = insertConvBlock
 

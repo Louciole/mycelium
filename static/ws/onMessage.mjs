@@ -380,6 +380,26 @@ export async function onMessage(event) {
                     }
                     break;
 
+                // Moderation (static/moderation.mjs, routes/moderation.py)
+                case "message_deleted":
+                    window.removeMessageLocally?.(message.content.content.id);
+                    break;
+                case "server_member_removed":
+                    window.removeServerMember?.(message.content.content.server_id, message.content.content.account);
+                    break;
+                case "server_removed":
+                    window.onRemovedFromServer?.(message.content.content);
+                    break;
+                case "server_timeout":
+                    window.applyTimeoutState?.(message.content.content.server_id, message.content.content.expires_at);
+                    break;
+                case "server_timeout_removed":
+                    window.applyTimeoutState?.(message.content.content.server_id, null);
+                    break;
+                case "account_suspended":
+                    window.onAccountSuspended?.();
+                    break;
+
                 default:
                     break;
             }

@@ -102,7 +102,8 @@ function delMsg(msg_id){
     if (confirm('Voulez-vous vraiment supprimer ce message ?')) {
 
         const onload = function() { // request successful
-            //TODO delete message
+            // Other members get a message_deleted WS notif; the deleter doesn't.
+            if (this.status === 200) window.removeMessageLocally?.(msg_id)
         };
         xhr("delete_message?message_id="+msg_id, onload)
     }

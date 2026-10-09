@@ -1,0 +1,6 @@
+<div class="mod-actions">
+    ${element.canTimeout ? `<div class="mod-action" onclick="modTimeout()">${_t("Timeout")}</div>` : ''}
+    ${element.canKick ? `<div class="mod-action" onclick="modKick()">${_t("Expulser")}</div>` : ''}
+    ${element.canBan ? `<div class="mod-action ban" onclick="modBan()">${_t("Bannir")}</div>` : ''}
+    <div class="mod-action report" onclick="reportUser()">${_t("Signaler")}</div>
+</div>

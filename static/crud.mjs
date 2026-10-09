@@ -15,6 +15,7 @@ import {xhr} from "./framework/templating.mjs";
 import {goTo, initNavigation, closeFM} from "./framework/navigation.mjs";
 import imageEditor, { emojiImageEditor } from "/static/imageEditor.mjs"
 import {initActivity} from "./activity.mjs";
+import {isSystemMessage} from "./system-messages.mjs";
 
 function changeUsername(){
     const input = document.getElementById("username-input")
@@ -93,11 +94,18 @@ export function loadConvs(renderOnly = false){
         const keys = JSON.parse(this.responseText)
         const liveIds = new Set(keys.map(k => k.id.toString()))
         for(let key of keys){
-            global.privateConvs[key.id] = key // HACK
-            global.convs[key.id] = global.privateConvs[key.id]
-            global.convs[key.id].ongoingCall = null; // Initialize call state
-            addElement("global.privateConvs", key);
-            loadUsers(global.convs[key.id].members)
+            // Merge into the existing object instead of replacing it: this response
+            // lands asynchronously at boot, possibly after the conv was already opened
+            // (hash route, click on the snapshot paint) — replacing it would drop its
+            // loaded messages/messageGroups and the next send would crash.
+            // (ids are unique across convs and channels: their tables share one sequence)
+            const conv = global.convs[key.id] ? Object.assign(global.convs[key.id], key) : key
+            global.privateConvs[key.id] = conv // HACK
+            global.convs[key.id] = conv
+            // The open conv's call state comes from loadCallState(); the others' may be a stale snapshot
+            if (String(key.id) !== String(global.state.activeConv)) conv.ongoingCall = null
+            addElement("global.privateConvs", conv);
+            loadUsers(conv.members)
         }
 
         // Prune ghosts: a DM left/deleted on another client lingers in the
@@ -185,8 +193,7 @@ export function loadConv(key){
         global.convs[key][element] = elements[element]
     }
 
-    let lastSender = undefined
-    let lastTimestamp = undefined
+    let prev = null
     global.convs[key].messageGroups = []
 
     const messagesArray = global.convs[key].messages || []
@@ -203,13 +210,12 @@ export function loadConv(key){
         global.convs[key].messages[message.id] = message
 
         // Group consecutive messages from same sender
-        if(message.sender === lastSender && (new Date(message.timestamp)-new Date(lastTimestamp))/60000<3 && getTimeStr(message.timestamp, { locale: "fr-FR",hour: undefined, minute: undefined}) === getTimeStr(lastTimestamp, { locale: "fr-FR",hour: undefined, minute: undefined}) && !message.reply){
+        if(canGroupWith(prev, message)){
             global.convs[key].messageGroups[global.convs[key].messageGroups.length-1].messages.push(message)
         }else{
-            lastSender = message.sender
             newMessageGroup(key, message)
         }
-        lastTimestamp = message.timestamp
+        prev = message
     }
 }
 
@@ -230,8 +236,7 @@ export function loadChan(key){
         global.convs[key][element] = elements[element]
     }
 
-    let lastSender = undefined
-    let lastTimestamp = undefined
+    let prev = null
     global.convs[key].messageGroups = []
 
     // Convert messages array to dict
@@ -248,13 +253,12 @@ export function loadChan(key){
         global.convs[key].messages[message.id] = message
 
         // Group consecutive messages - messageGroups contain REFERENCES to messages dict objects
-        if(message.sender === lastSender && (new Date(message.timestamp)-new Date(lastTimestamp))/60000<3 && getTimeStr(message.timestamp, { locale: "fr-FR",hour: undefined, minute: undefined}) === getTimeStr(lastTimestamp, { locale: "fr-FR",hour: undefined, minute: undefined}) && !message.reply){
+        if(canGroupWith(prev, message)){
             global.convs[key].messageGroups[global.convs[key].messageGroups.length-1].messages.push(message)
         }else{
-            lastSender = message.sender
             newMessageGroup(key, message)
         }
-        lastTimestamp = message.timestamp
+        prev = message
     }
 }
 
@@ -344,8 +348,7 @@ export function loadForumPost(postId){
         created_at: elements.created_at,
     }
 
-    let lastSender = undefined
-    let lastTimestamp = undefined
+    let prev = null
     global.convs[postId].messageGroups = []
 
     const messagesArray = elements.messages || []
@@ -360,13 +363,12 @@ export function loadForumPost(postId){
 
         global.convs[postId].messages[message.id] = message
 
-        if(message.sender === lastSender && (new Date(message.timestamp)-new Date(lastTimestamp))/60000<3 && getTimeStr(message.timestamp, { locale: "fr-FR",hour: undefined, minute: undefined}) === getTimeStr(lastTimestamp, { locale: "fr-FR",hour: undefined, minute: undefined}) && !message.reply){
+        if(canGroupWith(prev, message)){
             global.convs[postId].messageGroups[global.convs[postId].messageGroups.length-1].messages.push(message)
         }else{
-            lastSender = message.sender
             newMessageGroup(postId, message)
         }
-        lastTimestamp = message.timestamp
+        prev = message
     }
 
     goTo('content','server-forum-post',undefined,false)
@@ -548,6 +550,19 @@ function newMessageGroup(conv, message){
 }
 
 /**
+ * Whether `message` joins the group `prev` belongs to: same sender, < 3 min
+ * apart, same day, not a reply. System notices always stand alone.
+ */
+function canGroupWith(prev, message){
+    if (!prev || isSystemMessage(prev) || isSystemMessage(message)) return false
+    const day = ts => getTimeStr(ts, { locale: "fr-FR",hour: undefined, minute: undefined})
+    return message.sender === prev.sender
+        && (new Date(message.timestamp)-new Date(prev.timestamp))/60000<3
+        && day(message.timestamp) === day(prev.timestamp)
+        && !message.reply
+}
+
+/**
  * Handle grouping of a new message
  * Groups consecutive messages from the same sender within 3 minutes
  * @param {object} message - Message object to group
@@ -559,18 +574,10 @@ export function handleMessageGroup(message){
     }
     if (!message.attachments) message.attachments = []
 
-    const lastMsg = getLastMessage(message.place)
-    if (lastMsg !== null){
-        // Group if same sender, < 3 min apart, same day, and not a reply
-        if(message.sender === lastMsg.sender && (new Date(message.timestamp)-new Date(lastMsg.timestamp))/60000<3 && getTimeStr(message.timestamp, { locale: "fr-FR",hour: undefined, minute: undefined}) === getTimeStr(lastMsg.timestamp, { locale: "fr-FR",hour: undefined, minute: undefined}) && !message.reply){
-            // Add reference to existing group
-            global.convs[message.place].messageGroups[global.convs[message.place].messageGroups.length-1].messages.push(message)
-        }else{
-            // Create new group
-            newMessageGroup(message.place, message)
-        }
+    if(canGroupWith(getLastMessage(message.place), message)){
+        // Add reference to existing group
+        global.convs[message.place].messageGroups[global.convs[message.place].messageGroups.length-1].messages.push(message)
     }else{
-        // First message - create new group
         newMessageGroup(message.place, message)
     }
 }

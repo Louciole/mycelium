@@ -1,0 +1,37 @@
+<div class="message-group system-message" id="message-${element.id}">
+    <div class="system-icon">
+        <img class="icon" src="/static/icons/material/${getSystemIcon(element)}.svg"/>
+    </div>
+    <div class="system-body">
+        <p class="system-text">
+            <b class="global-users🪟${element.sender}🥹-display system-actor" onclick="toggleProfileInfo(${element.sender},event)"
+               data-content="() => escapeHTML(global.users[${element.sender}]?.display)">${escapeHTML(global.users[element.sender]?.display)}</b>
+            ${renderSystemText(element)}
+            <span class="system-time">${getTimeStr(element.timestamp)}</span>
+        </p>
+        <div class="global-convs🪟${element.place}🥹-messages🪟${element.id}🥹-reactions reactions-container" id="reactions-${element.id}"
+             data-content="() => {
+                 const reactions = global.convs['${element.place}']?.messages['${element.id}']?.reactions;
+                 if (!reactions) return '';
+                 const reactionElements = Object.keys(reactions).map(emoji => ({
+                     messageId: ${element.id},
+                     place: ${element.place},
+                     emoji: emoji,
+                     voters: reactions[emoji]
+                 }));
+                 return fillWith('reaction-badge', reactionElements);
+             }">
+            ${element.reactions ? fillWith('reaction-badge', Object.keys(element.reactions).map(emoji => ({
+                messageId: element.id,
+                place: element.place,
+                emoji: emoji,
+                voters: element.reactions[emoji],
+            }))) : ''}
+        </div>
+    </div>
+    <div class="inline message-opt">
+        <div class="icon-wrapper" onclick="openReactionPicker(event, ${element.id})">
+            <img class="icon" src="/static/icons/material/emoji.svg"/>
+        </div>
+    </div>
+</div>

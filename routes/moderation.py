@@ -1,8 +1,9 @@
 """Moderation endpoints — server-level (Discord-parity) and platform-level (op users).
 
 Endpoints take the live Mycelium instance as ``self``; shared enforcement helpers
-(hasServerPerm, isBannedFromServer, activeServerTimeout, enforceNotTimedOut,
-logModeration, deleteMessageWithCleanup, isAdmin) live on the class in server.py.
+(hasServerPerm/require_mod_perm, isBannedFromServer, activeServerTimeout,
+enforceNotTimedOut, logModeration, logPlatform, activeSuspension,
+forceDisconnectUser, deleteMessageWithCleanup, isAdmin) live on the class in server.py.
 
 See docs/moderation.md for the full spec.
 """
@@ -10,11 +11,24 @@ import json
 import datetime
 
 from vesta import Server, HTTPError
+from message_helpers import _lookupMessagePlace
+
+REPORT_REASON_MAX = 1000
+PURGE_DAYS_MAX = 7                   # Discord parity
+TIMEOUT_MINUTES_MAX = 28 * 24 * 60   # Discord parity: 28 days
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+def _ints(self, *values):
+    """int() every query param, 400 (not 500) on garbage."""
+    try:
+        return [int(v) for v in values]
+    except (TypeError, ValueError):
+        raise HTTPError(self.response, 400, "invalid number")
+
 
 def _notify_server(self, server_id, notif, exclude=None):
     """WS-notify every member of a server (optionally excluding one account)."""
@@ -58,8 +72,8 @@ def _account_label(self, account_id):
 @Server.expose
 def kick_member(self, server_id, account_id, reason=None):
     uid = self.getUser()
-    server_id, account_id = int(server_id), int(account_id)
-    self.require_server_perm(uid, server_id, "kick-members")
+    server_id, account_id = _ints(self, server_id, account_id)
+    self.require_mod_perm(uid, server_id, "kick-members")
     _guard_target(self, server_id, account_id)
 
     _remove_membership(self, server_id, account_id)
@@ -75,8 +89,9 @@ def kick_member(self, server_id, account_id, reason=None):
 @Server.expose
 def ban_member(self, server_id, account_id, reason=None, purge_days=0):
     uid = self.getUser()
-    server_id, account_id, purge_days = int(server_id), int(account_id), int(purge_days or 0)
-    self.require_server_perm(uid, server_id, "ban-members")
+    server_id, account_id, purge_days = _ints(self, server_id, account_id, purge_days or 0)
+    purge_days = max(0, min(purge_days, PURGE_DAYS_MAX))
+    self.require_mod_perm(uid, server_id, "ban-members")
     _guard_target(self, server_id, account_id)
 
     # Record the ban (idempotent on the UNIQUE(server, account) constraint).
@@ -134,7 +149,7 @@ def _purge_member_messages(self, server_id, account_id, purge_days):
 def unban_member(self, server_id, account_id):
     uid = self.getUser()
     server_id, account_id = int(server_id), int(account_id)
-    self.require_server_perm(uid, server_id, "ban-members")
+    self.require_mod_perm(uid, server_id, "ban-members")
 
     rows = self.db.getFilters("server_ban", ["server", "=", server_id, "and", "account", "=", account_id]) or []
     for row in rows:
@@ -147,7 +162,7 @@ def unban_member(self, server_id, account_id):
 def get_server_bans(self, server_id):
     uid = self.getUser()
     server_id = int(server_id)
-    self.require_server_perm(uid, server_id, "ban-members")
+    self.require_mod_perm(uid, server_id, "ban-members")
 
     bans = self.db.getFilters("server_ban", ["server", "=", server_id]) or []
     out = []
@@ -166,9 +181,11 @@ def get_server_bans(self, server_id):
 @Server.expose
 def timeout_member(self, server_id, account_id, minutes, reason=None):
     uid = self.getUser()
-    server_id, account_id, minutes = int(server_id), int(account_id), int(minutes)
-    self.require_server_perm(uid, server_id, "timeout-members")
+    server_id, account_id, minutes = _ints(self, server_id, account_id, minutes)
+    self.require_mod_perm(uid, server_id, "timeout-members")
     _guard_target(self, server_id, account_id)
+    if not 0 < minutes <= TIMEOUT_MINUTES_MAX:
+        raise HTTPError(self.response, 400, f"minutes must be between 1 and {TIMEOUT_MINUTES_MAX}")
 
     expires_at = datetime.datetime.now() + datetime.timedelta(minutes=minutes)
     existing = self.db.getFilters("server_timeout", ["server", "=", server_id, "and", "account", "=", account_id])
@@ -194,7 +211,7 @@ def timeout_member(self, server_id, account_id, minutes, reason=None):
 def remove_timeout(self, server_id, account_id):
     uid = self.getUser()
     server_id, account_id = int(server_id), int(account_id)
-    self.require_server_perm(uid, server_id, "timeout-members")
+    self.require_mod_perm(uid, server_id, "timeout-members")
 
     rows = self.db.getFilters("server_timeout", ["server", "=", server_id, "and", "account", "=", account_id]) or []
     for row in rows:
@@ -211,7 +228,7 @@ def get_moderation_log(self, server_id, limit=50, before=None):
     uid = self.getUser()
     server_id = int(server_id)
     # Read access = the lowest mod tier (kick-members).
-    self.require_server_perm(uid, server_id, "kick-members")
+    self.require_mod_perm(uid, server_id, "kick-members")
 
     lim = max(1, min(int(limit), 200))
     with self.db.pool.connection() as conn:
@@ -285,9 +302,14 @@ def report_content(self, target_message=None, target_account=None, reason=""):
         message = self.db.getSomething("message", tmsg)
         if not message:
             raise HTTPError(self.response, 404, "message not found")
-        channel = self.db.getSomething("textual_channel", message["place"])
+        # Only a message the reporter can actually see (no probing of other
+        # servers' / DMs' message ids).
+        channel, channel_type = _lookupMessagePlace(self, message["place"])
         if channel:
+            self.require_channel_access(uid, channel["id"], channel_type, "view")
             server_id = channel["server"]
+        elif not self.db.getFilters("accessconversation", ["conversation", "=", message["place"], "and", "account", "=", uid]):
+            raise HTTPError(self.response, 403, "forbidden")
         # Default the reported account to the message author if not given.
         if not target_account:
             target_account = message["sender"]
@@ -297,7 +319,7 @@ def report_content(self, target_message=None, target_account=None, reason=""):
         "target_message": tmsg,
         "target_account": int(target_account) if target_account else None,
         "server": server_id,
-        "reason": reason.strip(),
+        "reason": reason.strip()[:REPORT_REASON_MAX],
         "status": "open",
     }, getId=True)
     return json.dumps({"ok": True, "id": row_id})

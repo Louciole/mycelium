@@ -1,12 +1,10 @@
 // Moderation frontend: server-level actions (kick/ban/timeout) from the member
 // profile card, the server-settings Moderation tab (ban list + log), message/
-// profile reporting, and the op-only platform panel (reports queue, suspend,
-// action log). See docs/moderation.md.
+// profile reporting, the op-only platform panel (reports queue, suspend, action
+// log) and the live effects of moderation WS notifications. See docs/moderation.md.
 import global from "./framework/global.mjs";
 import {xhr} from "./framework/templating.mjs";
 import {deleteElementDict} from "./framework/vesta.mjs";
-
-function t(s) { return (window._t ? window._t(s) : s); }
 
 // Synchronous JSON GET (mirrors admin.mjs/getDashboard's pattern).
 function apiGet(endpoint) {
@@ -17,9 +15,41 @@ function apiGet(endpoint) {
     return null;
 }
 
-function esc(s) {
-    return String(s ?? "").replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+// HTTPError bodies are plain text ("403 FORBIDDEN {json}"): pull the JSON part.
+function parseErrorBody(req) {
+    const text = req?.responseText || "";
+    const start = text.indexOf("{");
+    if (start < 0) return null;
+    try { return JSON.parse(text.slice(start)); } catch (e) { return null; }
 }
+
+// server-admin (and the owner, via checkServRights) imply every moderation right,
+// same as hasServerPerm() on the backend.
+function canModerate(right) {
+    if (!global.state.isServer || !global.state.currentServer) return false;
+    return !!(window.checkServRights?.(right) || window.checkServRights?.("server-admin"));
+}
+window.canModerate = canModerate;
+
+const ACTION_LABELS = {
+    "kick": "Expulsion",
+    "ban": "Bannissement",
+    "unban": "Débannissement",
+    "timeout": "Timeout",
+    "untimeout": "Fin du timeout",
+    "purge": "Purge",
+    "manage_messages_delete": "Message supprimé",
+    "delete_message": "Message supprimé",
+    "suspend_user": "Suspension",
+    "unsuspend_user": "Suspension levée",
+    "delete_server": "Serveur supprimé",
+    "resolve_report": "Signalement traité",
+    "dismiss_report": "Signalement rejeté",
+};
+function modActionLabel(action) {
+    return ACTION_LABELS[action] ? _t(ACTION_LABELS[action]) : String(action ?? "");
+}
+window.modActionLabel = modActionLabel;
 
 // ---------------------------------------------------------------------------
 // Server-level actions (member profile card)
@@ -32,31 +62,31 @@ function _target() {
 function modKick() {
     const { uid, sid } = _target();
     if (!uid || !sid) return;
-    if (!confirm(t("Expulser ce membre du serveur ?"))) return;
-    const reason = prompt(t("Raison (optionnel) :")) || "";
+    if (!confirm(_t("Expulser ce membre du serveur ?"))) return;
+    const reason = prompt(_t("Raison (optionnel) :")) || "";
     xhr(`kick_member?server_id=${sid}&account_id=${uid}&reason=${encodeURIComponent(reason)}`,
-        function () { if (this.status === 200) window.closeFM?.(); }, "POST");
+        function () { if (this.status === 200) { removeServerMember(sid, uid); window.closeFM?.(); } }, "POST");
 }
 window.modKick = modKick;
 
 function modBan() {
     const { uid, sid } = _target();
     if (!uid || !sid) return;
-    if (!confirm(t("Bannir ce membre ? Il ne pourra plus rejoindre le serveur."))) return;
-    const reason = prompt(t("Raison (optionnel) :")) || "";
-    const purge = prompt(t("Purger les messages des N derniers jours (0 = aucun) :"), "0") || "0";
-    xhr(`ban_member?server_id=${sid}&account_id=${uid}&reason=${encodeURIComponent(reason)}&purge_days=${encodeURIComponent(purge)}`,
-        function () { if (this.status === 200) window.closeFM?.(); }, "POST");
+    if (!confirm(_t("Bannir ce membre ? Il ne pourra plus rejoindre le serveur."))) return;
+    const reason = prompt(_t("Raison (optionnel) :")) || "";
+    const purge = Math.max(0, parseInt(prompt(_t("Purger les messages des N derniers jours (0 = aucun) :"), "0"), 10) || 0);
+    xhr(`ban_member?server_id=${sid}&account_id=${uid}&reason=${encodeURIComponent(reason)}&purge_days=${purge}`,
+        function () { if (this.status === 200) { removeServerMember(sid, uid); window.closeFM?.(); } }, "POST");
 }
 window.modBan = modBan;
 
 function modTimeout() {
     const { uid, sid } = _target();
     if (!uid || !sid) return;
-    const minutes = prompt(t("Durée du timeout en minutes (5, 10, 60, 1440…) :"), "10");
-    if (!minutes) return;
-    const reason = prompt(t("Raison (optionnel) :")) || "";
-    xhr(`timeout_member?server_id=${sid}&account_id=${uid}&minutes=${encodeURIComponent(minutes)}&reason=${encodeURIComponent(reason)}`,
+    const minutes = parseInt(prompt(_t("Durée du timeout en minutes (5, 10, 60, 1440…) :"), "10"), 10);
+    if (!(minutes > 0)) return;
+    const reason = prompt(_t("Raison (optionnel) :")) || "";
+    xhr(`timeout_member?server_id=${sid}&account_id=${uid}&minutes=${minutes}&reason=${encodeURIComponent(reason)}`,
         function () { if (this.status === 200) window.closeFM?.(); }, "POST");
 }
 window.modTimeout = modTimeout;
@@ -64,46 +94,44 @@ window.modTimeout = modTimeout;
 function reportUser() {
     const { uid } = _target();
     if (!uid) return;
-    const reason = prompt(t("Signaler cet utilisateur — raison :"));
+    const reason = prompt(_t("Signaler cet utilisateur — raison :"));
     if (!reason) return;
     xhr(`report_content?target_account=${uid}&reason=${encodeURIComponent(reason)}`,
-        function () { if (this.status === 200) alert(t("Signalement envoyé.")); }, "POST");
+        function () { if (this.status === 200) alert(_t("Signalement envoyé.")); }, "POST");
 }
 window.reportUser = reportUser;
 
 function reportMessage(msgId) {
-    const reason = prompt(t("Signaler ce message — raison :"));
+    const reason = prompt(_t("Signaler ce message — raison :"));
     if (!reason) return;
     xhr(`report_content?target_message=${msgId}&reason=${encodeURIComponent(reason)}`,
-        function () { if (this.status === 200) alert(t("Signalement envoyé.")); }, "POST");
+        function () { if (this.status === 200) alert(_t("Signalement envoyé.")); }, "POST");
 }
 window.reportMessage = reportMessage;
 
-// Buttons rendered inside the member profile card, gated on the viewer's rights.
-// Mirrors the checkServRights('server-admin') gating used elsewhere.
+// Buttons rendered inside the member profile card (profile-info.html). Anyone
+// but yourself can be reported; moderation needs the matching right, a target
+// that is still a member, and never applies to the owner.
 function renderModActions() {
-    if (!global.state.isServer) return "";
     const targetId = global.state.profileInfo?.id;
-    if (!targetId || targetId === global.user?.id) {
-        // You can still report others from a DM profile card.
-        return targetId && targetId !== global.user?.id
-            ? `<div class="mod-actions"><div class="mod-action report" onclick="reportUser()">${t("Signaler")}</div></div>` : "";
-    }
-    const serv = global.state.currentServer;
-    if (serv && serv.owner === targetId) return "";  // never moderate the owner
-
-    let html = '<div class="mod-actions">';
-    if (window.checkServRights?.("timeout-members"))
-        html += `<div class="mod-action" onclick="modTimeout()">${t("Timeout")}</div>`;
-    if (window.checkServRights?.("kick-members"))
-        html += `<div class="mod-action" onclick="modKick()">${t("Expulser")}</div>`;
-    if (window.checkServRights?.("ban-members"))
-        html += `<div class="mod-action ban" onclick="modBan()">${t("Bannir")}</div>`;
-    html += `<div class="mod-action report" onclick="reportUser()">${t("Signaler")}</div>`;
-    html += '</div>';
-    return html;
+    if (!targetId || targetId === global.user?.id) return "";
+    const serv = global.state.isServer ? global.state.currentServer : null;
+    const moderatable = !!(serv?.members?.[targetId] && serv.owner !== targetId);
+    return fillWith("mod-actions", [{
+        canTimeout: moderatable && canModerate("timeout-members"),
+        canKick: moderatable && canModerate("kick-members"),
+        canBan: moderatable && canModerate("ban-members"),
+    }]);
 }
 window.renderModActions = renderModActions;
+
+// Message actions (message.html): deleting someone else's message needs
+// manage-messages, and only applies to textual channels (DMs stay sender-only).
+function canManageMessage(message) {
+    if (!canModerate("manage-messages")) return false;
+    return !!global.state.currentServer.dirs?.channels?.some(c => c.id === message.place);
+}
+window.canManageMessage = canManageMessage;
 
 // ---------------------------------------------------------------------------
 // Server settings — Moderation tab (ban list + moderation log)
@@ -126,12 +154,7 @@ function renderBanList() {
     const box = document.getElementById("mod-ban-list");
     if (!box || !sid) return;
     const bans = apiGet(`get_server_bans?server_id=${sid}`) || [];
-    if (!bans.length) { box.innerHTML = `<p class="muted">${t("Aucun bannissement.")}</p>`; return; }
-    box.innerHTML = bans.map(b => `
-        <div class="mod-row inline space-between">
-            <div><b>${esc(b.account_name || b.account)}</b> <span class="muted">${esc(b.reason || "")}</span></div>
-            <div class="mod-action" onclick="unbanMember(${b.account})">${t("Débannir")}</div>
-        </div>`).join("");
+    box.innerHTML = bans.length ? fillWith("mod-ban-row", bans) : `<p class="muted">${_t("Aucun bannissement.")}</p>`;
 }
 window.renderBanList = renderBanList;
 
@@ -139,7 +162,7 @@ function unbanMember(accountId) {
     const sid = global.state.currentServer?.id;
     if (!sid) return;
     xhr(`unban_member?server_id=${sid}&account_id=${accountId}`,
-        function () { if (this.status === 200) renderBanList(); }, "POST");
+        function () { if (this.status === 200) renderModerationSettings(); }, "POST");
 }
 window.unbanMember = unbanMember;
 
@@ -148,15 +171,7 @@ function renderModLog() {
     const box = document.getElementById("mod-log-list");
     if (!box || !sid) return;
     const log = apiGet(`get_moderation_log?server_id=${sid}&limit=50`) || [];
-    if (!log.length) { box.innerHTML = `<p class="muted">${t("Journal vide.")}</p>`; return; }
-    box.innerHTML = log.map(e => `
-        <div class="mod-row">
-            <span class="mod-badge">${esc(e.action)}</span>
-            <b>${esc(e.moderator_name || e.moderator)}</b>
-            ${e.target_name ? "→ " + esc(e.target_name) : ""}
-            <span class="muted">${esc(e.reason || "")}</span>
-            <span class="muted mod-date">${esc((e.created_at || "").slice(0, 19))}</span>
-        </div>`).join("");
+    box.innerHTML = log.length ? fillWith("mod-log-row", log) : `<p class="muted">${_t("Journal vide.")}</p>`;
 }
 window.renderModLog = renderModLog;
 
@@ -180,20 +195,7 @@ function renderReports() {
     const box = document.getElementById("op-reports-list");
     if (!box) return;
     const reports = apiGet(`get_reports?status=open&limit=50`) || [];
-    if (!reports.length) { box.innerHTML = `<p class="muted">${t("Aucun signalement ouvert.")}</p>`; return; }
-    box.innerHTML = reports.map(r => `
-        <div class="mod-row op-report" data-id="${r.id}">
-            <div>
-                <b>${esc(r.reporter_name || r.reporter)}</b> ${t("a signalé")}
-                ${r.target_message ? t("un message") + " #" + r.target_message : esc(r.target_name || r.target_account || "")}
-                <div class="muted">${esc(r.reason || "")}</div>
-            </div>
-            <div class="inline">
-                ${r.target_message ? `<div class="mod-action ban" onclick="opDeleteMessage(${r.target_message}, ${r.id})">${t("Supprimer le message")}</div>` : ""}
-                <div class="mod-action" onclick="resolveReport(${r.id}, 'actioned')">${t("Traité")}</div>
-                <div class="mod-action" onclick="resolveReport(${r.id}, 'dismissed')">${t("Rejeter")}</div>
-            </div>
-        </div>`).join("");
+    box.innerHTML = reports.length ? fillWith("op-report-row", reports) : `<p class="muted">${_t("Aucun signalement ouvert.")}</p>`;
 }
 window.renderReports = renderReports;
 
@@ -204,11 +206,11 @@ function resolveReport(reportId, status) {
 window.resolveReport = resolveReport;
 
 function opDeleteMessage(messageId, reportId) {
-    const reason = prompt(t("Raison de la suppression :")) || "";
+    const reason = prompt(_t("Raison de la suppression :")) || "";
     xhr(`platform_delete_message?message_id=${messageId}&reason=${encodeURIComponent(reason)}`,
         function () {
             if (this.status === 200) {
-                window.removeMessageLocally?.(messageId);
+                removeMessageLocally(messageId);
                 if (reportId) resolveReport(reportId, 'actioned');
                 else { renderReports(); renderPlatformLog(); }
             }
@@ -220,12 +222,12 @@ function opSuspendUser() {
     const account = document.getElementById("op-suspend-account")?.value.trim();
     const reason = document.getElementById("op-suspend-reason")?.value.trim();
     const minutes = document.getElementById("op-suspend-minutes")?.value.trim();
-    if (!account || !reason) { alert(t("Compte et raison requis.")); return; }
+    if (!account || !reason) { alert(_t("Compte et raison requis.")); return; }
     let ep = `suspend_user?account_id=${encodeURIComponent(account)}&reason=${encodeURIComponent(reason)}`;
     if (minutes) ep += `&duration_minutes=${encodeURIComponent(minutes)}`;
     xhr(ep, function () {
-        if (this.status === 200) { alert(t("Utilisateur suspendu.")); renderPlatformLog(); }
-        else alert(t("Échec de la suspension."));
+        if (this.status === 200) { alert(_t("Utilisateur suspendu.")); renderPlatformLog(); }
+        else alert(_t("Échec de la suspension."));
     }, "POST");
 }
 window.opSuspendUser = opSuspendUser;
@@ -234,17 +236,17 @@ function opUnsuspendUser() {
     const account = document.getElementById("op-suspend-account")?.value.trim();
     if (!account) return;
     xhr(`unsuspend_user?account_id=${encodeURIComponent(account)}`,
-        function () { if (this.status === 200) { alert(t("Suspension levée.")); renderPlatformLog(); } }, "POST");
+        function () { if (this.status === 200) { alert(_t("Suspension levée.")); renderPlatformLog(); } }, "POST");
 }
 window.opUnsuspendUser = opUnsuspendUser;
 
 function opDeleteServer() {
     const sid = document.getElementById("op-delete-server")?.value.trim();
     if (!sid) return;
-    if (!confirm(t("Supprimer définitivement ce serveur ?"))) return;
-    const reason = prompt(t("Raison :")) || "";
+    if (!confirm(_t("Supprimer définitivement ce serveur ?"))) return;
+    const reason = prompt(_t("Raison :")) || "";
     xhr(`platform_delete_server?server_id=${encodeURIComponent(sid)}&reason=${encodeURIComponent(reason)}`,
-        function () { if (this.status === 200) { alert(t("Serveur supprimé.")); renderPlatformLog(); } }, "POST");
+        function () { if (this.status === 200) { alert(_t("Serveur supprimé.")); renderPlatformLog(); } }, "POST");
 }
 window.opDeleteServer = opDeleteServer;
 
@@ -252,20 +254,12 @@ function renderPlatformLog() {
     const box = document.getElementById("op-log-list");
     if (!box) return;
     const log = apiGet(`get_platform_action_log?limit=50`) || [];
-    if (!log.length) { box.innerHTML = `<p class="muted">${t("Journal vide.")}</p>`; return; }
-    box.innerHTML = log.map(e => `
-        <div class="mod-row">
-            <span class="mod-badge">${esc(e.action)}</span>
-            <b>${esc(e.moderator_name || e.moderator)}</b>
-            ${e.target_name ? "→ " + esc(e.target_name) : (e.target_server ? "→ srv#" + e.target_server : "")}
-            <span class="muted">${esc(e.reason || "")}</span>
-            <span class="muted mod-date">${esc((e.created_at || "").slice(0, 19))}</span>
-        </div>`).join("");
+    box.innerHTML = log.length ? fillWith("mod-log-row", log) : `<p class="muted">${_t("Journal vide.")}</p>`;
 }
 window.renderPlatformLog = renderPlatformLog;
 
 // ---------------------------------------------------------------------------
-// Shared: remove a message from local state + DOM (used by WS + op delete)
+// Live effects (moderator's own actions + WS notifications, see ws/onMessage.mjs)
 // ---------------------------------------------------------------------------
 
 function removeMessageLocally(msgId) {
@@ -279,6 +273,40 @@ function removeMessageLocally(msgId) {
 }
 window.removeMessageLocally = removeMessageLocally;
 
+// A member left the server (kick/ban): drop them from the member list.
+function removeServerMember(serverId, accountId) {
+    const current = global.state.currentServer;
+    const isCurrent = current?.id === Number(serverId);
+    // currentServer is usually the same object as global.servers[id]: delete
+    // through it first so its subscriptions repaint.
+    if (isCurrent && current.members?.[accountId]) deleteElementDict("global.state.currentServer.members", accountId);
+    const serv = global.servers?.[serverId];
+    if (serv?.members?.[accountId]) delete serv.members[accountId];
+    if (!isCurrent) return;
+    // The member list is a plain fillWith render: repaint it if it's on screen.
+    const list = document.getElementById("member-list");
+    if (list) list.outerHTML = getTemplate("member-list");
+}
+window.removeServerMember = removeServerMember;
+
+// The current user was kicked/banned: forget the server, leave it if open.
+function onRemovedFromServer(content) {
+    const sid = Number(content.server_id);
+    if (global.servers?.[sid]) deleteElementDict("global.servers", sid);
+    if (global.state.currentServer?.id === sid) {
+        global.state.isServer = false;
+        window.goTo('sec-column', "column-perso", undefined, true, () => { window.goTo('sec-selector', "privateMessage") });
+    }
+    const msg = content.kind === "ban" ? _t("Vous avez été banni·e d'un serveur.") : _t("Vous avez été expulsé·e d'un serveur.");
+    alert(content.reason ? msg + "\n" + _t("Raison :") + " " + content.reason : msg);
+}
+window.onRemovedFromServer = onRemovedFromServer;
+
+function onAccountSuspended() {
+    window.location.href = "/static/suspended.html";
+}
+window.onAccountSuspended = onAccountSuspended;
+
 // ---------------------------------------------------------------------------
 // Timed-out banner + composer lock for the current user
 // ---------------------------------------------------------------------------
@@ -291,6 +319,17 @@ function applyTimeoutState(serverId, expiresAt) {
 }
 window.applyTimeoutState = applyTimeoutState;
 
+// send_message refused with {"error": "timed_out"} (e.g. the WS notif was missed):
+// lock the composer. Returns true when it was a timeout error.
+function handleTimeoutError(req) {
+    if (req?.status !== 403) return false;
+    const err = parseErrorBody(req);
+    if (err?.error !== "timed_out") return false;
+    applyTimeoutState(err.server_id, err.expires_at);
+    return true;
+}
+window.handleTimeoutError = handleTimeoutError;
+
 function isTimedOut(serverId) {
     const exp = global.user?.server_timeouts?.[String(serverId)];
     if (!exp) return false;
@@ -300,7 +339,7 @@ function isTimedOut(serverId) {
 window.isTimedOut = isTimedOut;
 
 function updateComposerLock() {
-    const sid = global.state.currentServer?.id;
+    const sid = global.state.isServer ? global.state.currentServer?.id : null;
     const chatInput = document.querySelector(".chat-input");
     if (!chatInput) return;
     const locked = !!(sid && isTimedOut(sid));
@@ -318,7 +357,7 @@ function updateComposerLock() {
         }
         const exp = global.user.server_timeouts[String(sid)];
         banner.style.display = "flex";
-        banner.textContent = t("Vous êtes temporairement réduit·e au silence jusqu'au ") + String(exp).slice(0, 16);
+        banner.textContent = _t("Vous êtes temporairement réduit·e au silence jusqu'au ") + String(exp).slice(0, 16);
     } else if (banner) {
         banner.style.display = "none";
     }

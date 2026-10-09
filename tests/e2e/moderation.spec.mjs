@@ -35,6 +35,17 @@ async function channelId(page) {
     return page.evaluate(() => window.global?.state?.currentServer?.dirs?.channels?.[0]?.id);
 }
 
+// Moderation controls are targeted by their handler, not their label: the E2E
+// browser runs in en-US, so the French labels ("Expulser", "Bannissements"…)
+// are translated ("Kick", "Bans"…) and a text locator would only pass while the
+// en.mjs entries are missing.
+const MOD_ACTION = {
+    kick: '.mod-action[onclick="modKick()"]',
+    ban: '.mod-action[onclick="modBan()"]',
+    timeout: '.mod-action[onclick="modTimeout()"]',
+};
+const BANS_TAB = '#server-params .item[onclick*="openModerationSettings"]';
+
 // Auto-answer the confirm()/prompt()/alert() dialogs the moderation UI uses.
 function autoDialogs(page) {
     page.on('dialog', async (d) => {
@@ -120,7 +131,7 @@ test.describe('Server moderation', () => {
             !!window.global?.state?.currentServer?.members?.[id], memberId, { timeout: 10000 });
 
         const card = await openMemberCard(owner, memberId);
-        await card.locator('.mod-action', { hasText: 'Expulser' }).click();
+        await card.locator(MOD_ACTION.kick).click();
 
         // Member is gone from the owner's live member list.
         await owner.waitForFunction((id) =>
@@ -152,13 +163,13 @@ test.describe('Server moderation', () => {
             !!window.global?.state?.currentServer?.members?.[id], memberId, { timeout: 10000 });
 
         const card = await openMemberCard(owner, memberId);
-        await card.locator('.mod-action', { hasText: 'Bannir' }).click();
+        await card.locator(MOD_ACTION.ban).click();
         await owner.waitForFunction((id) =>
             !window.global?.state?.currentServer?.members?.[id], memberId, { timeout: 10000 });
 
         // Moderation tab renders the ban list with the banned account.
         await openServerSettings(owner);
-        await owner.locator('#server-params .item', { hasText: 'Bannissements' }).click();
+        await owner.locator(BANS_TAB).click();
         await owner.locator('#mod-ban-list').waitFor({ state: 'visible', timeout: 5000 });
         await expect(owner.locator(`#mod-ban-list .mod-row`).first()).toBeVisible({ timeout: 10000 });
 
@@ -194,7 +205,7 @@ test.describe('Server moderation', () => {
             !!window.global?.state?.currentServer?.members?.[id], memberId, { timeout: 10000 });
 
         const card = await openMemberCard(owner, memberId);
-        await card.locator('.mod-action', { hasText: 'Timeout' }).click();
+        await card.locator(MOD_ACTION.timeout).click();
         // Wait for the timeout to register server-side.
         await owner.waitForTimeout(500);
 

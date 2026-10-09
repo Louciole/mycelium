@@ -1,0 +1,8 @@
+<div class="mod-row inline space-between">
+    <div>
+        <b>${escapeHTML(element.account_name || element.account)}</b>
+        <span class="muted">${escapeHTML(element.reason || "")}</span>
+        <span class="muted mod-date">${escapeHTML((element.created_at || "").slice(0, 16))}</span>
+    </div>
+    <div class="mod-action" onclick="unbanMember(${Number(element.account)})">${_t("Débannir")}</div>
+</div>

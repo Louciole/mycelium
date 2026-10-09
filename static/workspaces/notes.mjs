@@ -386,6 +386,8 @@ class Editor {
             const parser = new InitiatorParser(text)
             const parsedInitiator = parser.parse()
             if (parsedInitiator.initiator) {
+                // The block is converted: the "/" menu shown above no longer applies
+                this._hideSlashMenu()
                 block.type = parsedInitiator.initiator.type
                 block.content = parsedInitiator.content
                 if (blockTypes[block.type].template) {
@@ -634,20 +636,23 @@ class Editor {
             { type: "heading2",    label: "Heading 2",   description: "Medium section heading" },
             { type: "heading3",    label: "Heading 3",   description: "Small section heading" },
             { type: "small",       label: "Small Text",  description: "Smaller font size" },
-            { type: "showcase",    label: "Showcase",    description: "Display a metric value" },
-            { type: "checklist",   label: "Checklist",   description: "To-do list with checkboxes" },
+            { type: "showcase",    label: "Showcase",    description: "Display a metric value", keywords: ["metric"] },
+            { type: "checklist",   label: "Checklist",   description: "To-do list with checkboxes", keywords: ["todo", "to-do"] },
             { type: "transport",   label: "Transport",   description: "Next arrivals for a stop" },
             { type: "synapse",     label: "Synapse",     description: "External component" },
-            { type: "database",    label: "Database",    description: "Inline database table" },
-            { type: "spreadsheet", label: "Spreadsheet", description: "Inline spreadsheet" },
+            { type: "database",    label: "Database",    description: "Inline database table", keywords: ["table", "db"] },
+            { type: "spreadsheet", label: "Spreadsheet", description: "Inline spreadsheet", keywords: ["sheet"] },
         ]
     }
 
     _showSlashMenu(blockId, anchorEl, query) {
         const all = this._slashMenuItems()
+        const q = query.toLowerCase()
         const filtered = query === ""
             ? all
-            : all.filter(item => item.label.toLowerCase().startsWith(query.toLowerCase()))
+            : all.filter(item =>
+                item.label.toLowerCase().startsWith(q)
+                || (item.keywords || []).some(k => k.startsWith(q)))
 
         if (filtered.length === 0) { this._hideSlashMenu(); return }
 

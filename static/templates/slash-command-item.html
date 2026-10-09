@@ -1,0 +1,7 @@
+<div class="mention-ac-item ${element.selected ? 'selected' : ''}" onmousedown="event.preventDefault(); slashPick(${element.index})">
+    <img class="mention-ac-icon icon" src="/static/icons/material/${element.icon}.svg"/>
+    <div class="mention-ac-info">
+        <span class="mention-ac-name">${escapeHTML(element.label)}${element.args ? ' <span class="slash-menu-args">' + escapeHTML(element.args) + '</span>' : ''}</span>
+        <span class="mention-ac-sub">${escapeHTML(element.description)}</span>
+    </div>
+</div>

@@ -153,10 +153,26 @@ export async function createSpreadsheetBlock(page, channelId) {
 }
 
 /**
+ * Root selector for a spreadsheet rendered as a note-channel block.
+ * (templates/spreadsheet-root.html gives the container an `id`.)
+ */
+export function sheetRoot(blockUuid) {
+    return `#sheet-${blockUuid}`;
+}
+
+/**
+ * Root selector for a spreadsheet rendered inline in a message (conv block).
+ * (templates/conv-spreadsheet-message.html has no `id`, only `data-block-id`.)
+ */
+export function convSheetRoot(blockUuid) {
+    return `.conv-spreadsheet-container[data-block-id="${blockUuid}"]`;
+}
+
+/**
  * Waits until the SpreadsheetView for `blockUuid` is registered in global state
  * (i.e., the async XHR load has completed) AND the table element is visible.
  */
-export async function waitForSpreadsheetLoaded(page, blockUuid) {
+export async function waitForSpreadsheetLoaded(page, blockUuid, root = sheetRoot(blockUuid)) {
     await page.waitForFunction(
         (uuid) => {
             const view = window.global?.state?.spreadsheetViews?.[uuid];
@@ -165,7 +181,7 @@ export async function waitForSpreadsheetLoaded(page, blockUuid) {
         blockUuid,
         { timeout: 15000 }
     );
-    await page.locator(`#sheet-${blockUuid} .sheet-table`).waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator(`${root} .sheet-table`).waitFor({ state: 'visible', timeout: 10000 });
 }
 
 /**
@@ -176,8 +192,8 @@ export async function waitForSpreadsheetLoaded(page, blockUuid) {
  * below (Excel-style rapid entry), so it never hides the input. Blur is the
  * app's commit-and-close path (handleInputBlur -> saveEdit), independent of row.
  */
-export async function editSpreadsheetCell(page, blockUuid, ref, value) {
-    const cellSel = `#sheet-${blockUuid} .sheet-cell[data-ref="${ref}"]`;
+export async function editSpreadsheetCell(page, blockUuid, ref, value, root = sheetRoot(blockUuid)) {
+    const cellSel = `${root} .sheet-cell[data-ref="${ref}"]`;
     await page.locator(cellSel).waitFor({ state: 'visible', timeout: 5000 });
     await page.locator(cellSel).click();
 
@@ -204,8 +220,8 @@ export async function cancelSpreadsheetCellEdit(page, blockUuid) {
 /**
  * Returns the text shown inside a cell's content div (the evaluated / display value).
  */
-export async function getSpreadsheetCellDisplayValue(page, blockUuid, ref) {
-    const sel = `#sheet-${blockUuid} .sheet-cell[data-ref="${ref}"] .sheet-cell-content`;
+export async function getSpreadsheetCellDisplayValue(page, blockUuid, ref, root = sheetRoot(blockUuid)) {
+    const sel = `${root} .sheet-cell[data-ref="${ref}"] .sheet-cell-content`;
     await page.locator(sel).waitFor({ state: 'visible', timeout: 5000 });
     return page.locator(sel).textContent();
 }

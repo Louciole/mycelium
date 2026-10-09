@@ -78,6 +78,63 @@ function bindGlobalSpreadsheetMouseCapture() {
 
 bindGlobalSpreadsheetMouseCapture()
 
+// Cell formatting palettes. Text colors are solid; backgrounds are translucent
+// (8-digit hex) so they read acceptably over both light and dark themes.
+export const SHEET_TEXT_COLORS = [
+    {label: 'Default', value: ''},
+    {label: 'Red', value: '#e03131'},
+    {label: 'Orange', value: '#e8590c'},
+    {label: 'Green', value: '#2f9e44'},
+    {label: 'Blue', value: '#1971c2'},
+    {label: 'Purple', value: '#9c36b5'},
+    {label: 'Gray', value: '#868e96'},
+]
+
+export const SHEET_BG_COLORS = [
+    {label: 'None', value: ''},
+    {label: 'Red', value: '#e0313133'},
+    {label: 'Orange', value: '#f08c0033'},
+    {label: 'Yellow', value: '#f5c21133'},
+    {label: 'Green', value: '#2f9e4433'},
+    {label: 'Blue', value: '#1971c233'},
+    {label: 'Purple', value: '#9c36b533'},
+    {label: 'Gray', value: '#86909633'},
+]
+
+const SHEET_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/
+
+// Only ever let a plain hex literal reach an inline style attribute.
+export function cleanSheetColor(value) {
+    const v = String(value || '').trim()
+    return SHEET_COLOR_RE.test(v) ? v : ''
+}
+
+const SHEET_ALIGNS = ['left', 'center', 'right']
+
+// The cell content div is a flex container, so horizontal alignment is driven by
+// justify-content, not text-align (which only affects the raw <input> editor).
+const ALIGN_JUSTIFY = {left: 'flex-start', center: 'center', right: 'flex-end'}
+
+export function cleanSheetAlign(value) {
+    const v = String(value || '').trim().toLowerCase()
+    return SHEET_ALIGNS.includes(v) ? v : ''
+}
+
+// "" means no decimal override; otherwise an int clamped to [0, 10].
+export function cleanSheetDecimals(value) {
+    if (value === '' || value === null || value === undefined) return ''
+    const n = parseInt(value, 10)
+    if (isNaN(n)) return ''
+    return Math.max(0, Math.min(10, n))
+}
+
+// Minimal Google-Sheets-style toolbar glyphs (inline SVG, currentColor).
+const ALIGN_ICONS = {
+    left: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="currentColor"><rect x="2" y="3" width="12" height="1.6"/><rect x="2" y="7" width="8" height="1.6"/><rect x="2" y="11" width="10" height="1.6"/></g></svg>',
+    center: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="currentColor"><rect x="2" y="3" width="12" height="1.6"/><rect x="4" y="7" width="8" height="1.6"/><rect x="3" y="11" width="10" height="1.6"/></g></svg>',
+    right: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="currentColor"><rect x="2" y="3" width="12" height="1.6"/><rect x="6" y="7" width="8" height="1.6"/><rect x="4" y="11" width="10" height="1.6"/></g></svg>',
+}
+
 export function computeResizedWidth(startWidth, deltaX, minWidth = 80, maxWidth = 800) {
     const width = Math.round(Number(startWidth || 0) + Number(deltaX || 0))
     return Math.max(minWidth, Math.min(maxWidth, width))
@@ -211,6 +268,7 @@ export class SpreadsheetView {
         this.rows = 3
         this.cols = 2
         this.cells = {} // { "A1": "value", "B2": "=SUM(A1:A2)" }
+        this.cellFormats = {} // { "A1": { color: "#e03131", bg: "#1971c233" } }
         this.evaluatedCells = {} // { "A1": "computed_value" }
 
         this.editingCell = null // e.g., "A1"
@@ -256,6 +314,7 @@ export class SpreadsheetView {
                 this.rows = data.rows || 3
                 this.cols = data.cols || 2
                 this.cells = data.cells || {}
+                this.cellFormats = data.cell_formats || {}
                 this.colWidths = data.col_widths || {}
                 this._normalizeColumnWidths()
                 this._updateOwnSnapshotCache()
@@ -525,7 +584,24 @@ export class SpreadsheetView {
                 const ref = colIndexToLetter(c) + r
                 const isHighlighted = !!(highlighted && highlighted.has(ref))
                 const classes = 'sheet-cell' + (this.editingCell === ref ? ' editing' : '') + (isHighlighted ? ' sheet-ref-highlight' : '')
-                html += '<td class="' + classes + '" data-ref="' + ref + '" '
+                const fmt = this.cellFormats[ref]
+                const bgColor = fmt ? cleanSheetColor(fmt.bg) : ''
+                const textColor = fmt ? cleanSheetColor(fmt.color) : ''
+                const align = fmt ? cleanSheetAlign(fmt.align) : ''
+                const tdStyle = bgColor ? ' style="background-color:' + bgColor + '"' : ''
+                const contentStyleParts = []
+                const inputStyleParts = []
+                if (textColor) {
+                    contentStyleParts.push('color:' + textColor)
+                    inputStyleParts.push('color:' + textColor)
+                }
+                if (align) {
+                    contentStyleParts.push('justify-content:' + ALIGN_JUSTIFY[align])
+                    inputStyleParts.push('text-align:' + align)
+                }
+                const contentStyle = contentStyleParts.length ? ' style="' + contentStyleParts.join(';') + '"' : ''
+                const inputStyle = inputStyleParts.length ? ' style="' + inputStyleParts.join(';') + '"' : ''
+                html += '<td class="' + classes + '"' + tdStyle + ' data-ref="' + ref + '" '
                 html += 'onmousedown="global.state.spreadsheetViews[\'' + this.blockUuid + '\'].onCellMouseDown(event, \'' + ref + '\')" '
                 html += 'oncontextmenu="global.state.spreadsheetViews[\'' + this.blockUuid + '\'].onCellContextMenu(event, \'' + ref + '\')" '
                 html += 'ontouchstart="global.state.spreadsheetViews[\'' + this.blockUuid + '\'].onCellTouchStart(event, \'' + ref + '\')" '
@@ -534,13 +610,14 @@ export class SpreadsheetView {
                 html += 'onclick="global.state.spreadsheetViews[\'' + this.blockUuid + '\'].onCellClick(event, \'' + ref + '\')">'
                 
                 if (this.editingCell === ref) {
-                    html += '<input id="sheet-input-' + this.blockUuid + '" type="text" value="' + this._esc(this.cells[ref] || '') + '" '
+                    html += '<input id="sheet-input-' + this.blockUuid + '" type="text"' + inputStyle + ' value="' + this._esc(this.cells[ref] || '') + '" '
                     html += 'oninput="global.state.spreadsheetViews[\'' + this.blockUuid + '\'].handleInput(event)" '
                     html += 'onblur="global.state.spreadsheetViews[\'' + this.blockUuid + '\'].handleInputBlur(\'' + ref + '\', this.value)" '
                     html += 'onkeydown="global.state.spreadsheetViews[\'' + this.blockUuid + '\'].handleKeyDown(event, \'' + ref + '\')" />'
                 } else {
                     const val = this.evaluatedCells[ref] !== undefined ? this.evaluatedCells[ref] : (this.cells[ref] || '')
-                    html += '<div class="sheet-cell-content" title="' + this._esc(this.cells[ref] || '') + '">' + this._esc(val) + '</div>'
+                    const shown = this._formatDisplayValue(ref, val)
+                    html += '<div class="sheet-cell-content"' + contentStyle + ' title="' + this._esc(this.cells[ref] || '') + '">' + this._esc(shown) + '</div>'
                 }
                 
                 html += '</td>'
@@ -556,6 +633,35 @@ export class SpreadsheetView {
     _esc(str) {
         if (str === null || str === undefined) return ''
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    }
+
+    // Display-only rounding: never mutates the stored value or what formulas see.
+    _formatDisplayValue(ref, val) {
+        const fmt = this.cellFormats[ref]
+        if (!fmt) return val
+        const decimals = cleanSheetDecimals(fmt.decimals)
+        if (decimals === '') return val
+        if (val === '' || val === null || val === undefined) return val
+        const num = typeof val === 'number' ? val : Number(String(val).trim())
+        if (!Number.isFinite(num)) return val
+        return num.toFixed(decimals)
+    }
+
+    // Decimal count a +/- step should start from when no override is set yet.
+    _inferDisplayedDecimals(ref) {
+        const val = this.evaluatedCells[ref] !== undefined ? this.evaluatedCells[ref] : (this.cells[ref] || '')
+        const num = typeof val === 'number' ? val : Number(String(val).trim())
+        if (val === '' || !Number.isFinite(num)) return 0
+        const parts = String(num).split('.')
+        return parts[1] ? Math.min(10, parts[1].length) : 0
+    }
+
+    _stepDecimals(ref, delta) {
+        const fmt = this.cellFormats[ref]
+        const current = fmt ? cleanSheetDecimals(fmt.decimals) : ''
+        const base = current === '' ? this._inferDisplayedDecimals(ref) : current
+        const next = Math.max(0, Math.min(10, base + delta))
+        this.setCellFormat(ref, {decimals: next})
     }
 
     _persistColumnWidth(colIdx) {
@@ -830,11 +936,191 @@ export class SpreadsheetView {
         }
     }
 
+    _buildColorRow(menu, label, kind, ref, palette) {
+        const row = document.createElement('div')
+        row.className = 'sheet-color-row'
+
+        const caption = document.createElement('span')
+        caption.className = 'sheet-color-label'
+        caption.textContent = label
+        row.appendChild(caption)
+
+        const current = this.cellFormats[ref] ? (this.cellFormats[ref][kind] || '') : ''
+
+        palette.forEach(entry => {
+            const swatch = document.createElement('button')
+            swatch.type = 'button'
+            swatch.className = 'sheet-color-swatch'
+            swatch.title = entry.label
+            if (entry.value === '') {
+                swatch.classList.add('is-none')
+            } else {
+                swatch.style.background = entry.value
+            }
+            if ((current || '') === entry.value) swatch.classList.add('is-selected')
+            swatch.onclick = (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                this.closeContextMenu()
+                this.setCellFormat(ref, {[kind]: entry.value})
+            }
+            row.appendChild(swatch)
+        })
+
+        menu.appendChild(row)
+    }
+
+    _buildAlignRow(menu, ref) {
+        const row = document.createElement('div')
+        row.className = 'sheet-color-row sheet-align-row'
+
+        const caption = document.createElement('span')
+        caption.className = 'sheet-color-label'
+        caption.textContent = 'Align'
+        row.appendChild(caption)
+
+        const current = this.cellFormats[ref] ? cleanSheetAlign(this.cellFormats[ref].align) : ''
+
+        SHEET_ALIGNS.forEach(value => {
+            const btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'sheet-tool-btn'
+            btn.title = 'Align ' + value
+            btn.innerHTML = ALIGN_ICONS[value]
+            if (current === value) btn.classList.add('is-selected')
+            btn.onclick = (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                this.closeContextMenu()
+                // Clicking the active alignment clears it back to default.
+                this.setCellFormat(ref, {align: current === value ? '' : value})
+            }
+            row.appendChild(btn)
+        })
+
+        menu.appendChild(row)
+    }
+
+    _buildDecimalsRow(menu, ref) {
+        const row = document.createElement('div')
+        row.className = 'sheet-color-row sheet-align-row'
+
+        const caption = document.createElement('span')
+        caption.className = 'sheet-color-label'
+        caption.textContent = 'Decimals'
+        row.appendChild(caption)
+
+        const dec = document.createElement('button')
+        dec.type = 'button'
+        dec.className = 'sheet-tool-btn'
+        dec.title = 'Decrease decimal places'
+        dec.textContent = '.0←'
+        dec.onclick = (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            this.closeContextMenu()
+            this._stepDecimals(ref, -1)
+        }
+        row.appendChild(dec)
+
+        const inc = document.createElement('button')
+        inc.type = 'button'
+        inc.className = 'sheet-tool-btn'
+        inc.title = 'Increase decimal places'
+        inc.textContent = '.00→'
+        inc.onclick = (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            this.closeContextMenu()
+            this._stepDecimals(ref, 1)
+        }
+        row.appendChild(inc)
+
+        menu.appendChild(row)
+    }
+
+    setCellFormat(ref, changes) {
+        const prev = this.cellFormats[ref] || {}
+        const next = {
+            color: cleanSheetColor('color' in changes ? changes.color : prev.color),
+            bg: cleanSheetColor('bg' in changes ? changes.bg : prev.bg),
+            align: cleanSheetAlign('align' in changes ? changes.align : prev.align),
+            decimals: cleanSheetDecimals('decimals' in changes ? changes.decimals : prev.decimals),
+        }
+
+        const empty = !next.color && !next.bg && !next.align && next.decimals === ''
+        if (empty) {
+            delete this.cellFormats[ref]
+        } else {
+            this.cellFormats[ref] = next
+        }
+
+        this._applyCellFormatToDom(ref)
+
+        xhr("/save_spreadsheet_cell_format?" + this.placeParam
+            + "&spreadsheet_id=" + this.id
+            + "&cell_id=" + encodeURIComponent(ref)
+            + "&text_color=" + encodeURIComponent(next.color)
+            + "&bg_color=" + encodeURIComponent(next.bg)
+            + "&align=" + encodeURIComponent(next.align)
+            + "&decimals=" + encodeURIComponent(next.decimals === '' ? '' : String(next.decimals)),
+            () => {}, "POST")
+    }
+
+    _applyCellFormatToDom(ref) {
+        const container = this._viewEl
+        if (!container) return
+        const td = container.querySelector('.sheet-cell[data-ref="' + ref + '"]')
+        if (!td) return
+
+        const fmt = this.cellFormats[ref]
+        const bg = fmt ? cleanSheetColor(fmt.bg) : ''
+        const color = fmt ? cleanSheetColor(fmt.color) : ''
+        const align = fmt ? cleanSheetAlign(fmt.align) : ''
+
+        td.style.backgroundColor = bg || ''
+        const content = td.querySelector('.sheet-cell-content')
+        if (content) {
+            content.style.color = color || ''
+            content.style.justifyContent = align ? ALIGN_JUSTIFY[align] : ''
+            // Decimal formatting changes the displayed text, so recompute it.
+            const val = this.evaluatedCells[ref] !== undefined ? this.evaluatedCells[ref] : (this.cells[ref] || '')
+            content.textContent = this._formatDisplayValue(ref, val)
+        }
+        const input = td.querySelector('input')
+        if (input) {
+            input.style.color = color || ''
+            input.style.textAlign = align || ''
+        }
+    }
+
     openCellContextMenu(ref, x, y) {
         this.closeContextMenu()
 
         const menu = document.createElement('div')
         menu.className = 'sheet-context-menu'
+
+        this._buildColorRow(menu, 'Text', 'color', ref, SHEET_TEXT_COLORS)
+        this._buildColorRow(menu, 'Fill', 'bg', ref, SHEET_BG_COLORS)
+        this._buildAlignRow(menu, ref)
+        this._buildDecimalsRow(menu, ref)
+
+        const clearBtn = document.createElement('button')
+        clearBtn.type = 'button'
+        clearBtn.className = 'sheet-context-item'
+        clearBtn.textContent = 'Clear formatting'
+        clearBtn.disabled = !this.cellFormats[ref]
+        clearBtn.onclick = (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            this.closeContextMenu()
+            this.setCellFormat(ref, {color: '', bg: '', align: '', decimals: ''})
+        }
+        menu.appendChild(clearBtn)
+
+        const separator = document.createElement('div')
+        separator.className = 'sheet-context-separator'
+        menu.appendChild(separator)
 
         const actions = [
             {label: 'Add column left', op: 'add-col-left'},
@@ -931,7 +1217,10 @@ export class SpreadsheetView {
         }
 
         const nextCells = {}
-        for (const oldRef in this.cells) {
+        const nextFormats = {}
+        // Format-only cells hold no value, so shift the union of both key sets.
+        const allRefs = new Set([...Object.keys(this.cells), ...Object.keys(this.cellFormats)])
+        for (const oldRef of allRefs) {
             const pos = this._parseRef(oldRef)
             if (!pos) continue
             let c = pos.col
@@ -949,9 +1238,15 @@ export class SpreadsheetView {
                 if (r > deleteRow) r -= 1
             }
 
+            const newRef = this._toRef(c, r)
             const value = this.cells[oldRef]
-            if (value === undefined || value === null || String(value) === '') continue
-            nextCells[this._toRef(c, r)] = value
+            if (value !== undefined && value !== null && String(value) !== '') {
+                nextCells[newRef] = value
+            }
+            const fmt = this.cellFormats[oldRef]
+            if (fmt && (fmt.color || fmt.bg)) {
+                nextFormats[newRef] = fmt
+            }
         }
 
         this.rows = nextRows
@@ -959,6 +1254,7 @@ export class SpreadsheetView {
         this.colWidths = shiftColumnWidthsMap(this.colWidths, insertCol, deleteCol, nextCols, this.defaultColWidth)
         this._normalizeColumnWidths()
         this.cells = nextCells
+        this.cellFormats = nextFormats
         this.editingCell = null
         this.liveEditValue = ''
         this._clearFormulaEditorIfOwned()

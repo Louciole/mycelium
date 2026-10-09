@@ -21,7 +21,10 @@ import {} from "/static/constants.mjs"; // Expose and parseJsonArray globally
 import {} from "/static/mentions.mjs"; // Mention autocomplete system
 import {} from "/static/poll.mjs"; // Poll creation and voting
 import {} from "/static/conv-blocks.mjs"; // Conversation block insertion
+import {resolveSlashCommand, showSlashError, closeSlashMenu} from "/static/slash-commands.mjs"; // "/" commands in the composer
+import {} from "/static/system-messages.mjs"; // System notices (dice rolls…) in conversations
 import {} from "/static/forum.mjs"; // Forum channels: posts, tags, layouts
+import {} from "/static/moderation.mjs"; // Kick/ban/timeout, reports, Moderation tab, op panel
 // Capacitor bridge — only activates when running inside a native shell
 import { hideSplash, registerPushNotifications } from "/static/capacitor-bridge.mjs";
 
@@ -498,7 +501,13 @@ function repaintConv(sub, value){
     const conv = global.convs[global.state.activeConv]
     if (!conv?.messageGroups?.length) return
 
-    if(conv.messageGroups[conv.messageGroups.length-1].messages.length > 1){
+    // Broad updates (e.g. updateElement('global.convs') when the conv list loads) also
+    // land here: only paint the last message if it isn't on screen yet, or it'd be duplicated
+    const lastGroup = conv.messageGroups[conv.messageGroups.length-1]
+    const lastMsg = lastGroup.messages[lastGroup.messages.length-1]
+    if (sub.querySelector('#message-' + CSS.escape(String(lastMsg.id)))) return
+
+    if(lastGroup.messages.length > 1){
         sub.lastChild.remove()
         if (sub.children[sub.children.length-1].classList.contains("separator")){
             sub.children[sub.children.length-1].remove()
@@ -579,9 +588,15 @@ export function getRelevantUser(element){
 window.getRelevantUser = getRelevantUser
 
 function sendCurrentMessage(target){
-    const body = target.value
+    let body = target.value
     const hasAttachments = global.state?.currentMessageAttachments?.length > 0
     if (body.trim() === '' && !hasAttachments) return
+
+    // "/shrug" is expanded here; "/d 6" is sent as typed with a `command` the server runs
+    const slash = resolveSlashCommand(body)
+    if (slash?.error){ showSlashError(target); return }
+    if (slash?.text !== undefined) body = slash.text
+    closeSlashMenu()
 
     // Send attachment objects with metadata for the backend.
     const attachmentData = (global.state.currentMessageAttachments || []).map(a => ({
@@ -606,7 +621,7 @@ function sendCurrentMessage(target){
         "attachments": attachmentData.map(a => ({dataUrl: a.dataUrl, filename: a.filename, mime: a.mimeType})),
         "sendState": "pending",
         // everything deliverMessage() needs to (re)send, kept for retry
-        "_payload": {content: body, reply: global.convs[conv].reply, attachments: attachmentData}
+        "_payload": {content: body, reply: global.convs[conv].reply, attachments: attachmentData, command: slash?.command}
     }
     handleMessageGroup(message)
     addElement('global.convs['.concat(conv,'].messages'), message)
@@ -636,12 +651,13 @@ function deliverMessage(message){
             // Server responded with an error (5xx / 413 quota / …). onload fires
             // for any completed response, so failure is detected by status.
             handleQuotaError(this)   // shows the quota dialog when it's a 413
+            window.handleTimeoutError?.(this)   // 403 timed_out: lock the composer
             markMessageFailed(message)
         }
     }
     const req = xhr(
         "send_message?conv=".concat(encodeURI(JSON.stringify({'id':message.place})), "&content=", encodeURIComponent(p.content), "&reply=", p.reply),
-        onload, "POST", true, {"attachments": p.attachments}
+        onload, "POST", true, {"attachments": p.attachments, "command": p.command}
     )
     // Network-level failures: offline / unreachable fire onerror; a hung
     // connection fires ontimeout (there is no default timeout otherwise).
@@ -655,12 +671,13 @@ window.deliverMessage = deliverMessage
 // under the real DB id (so reactions/edits/replies target the right row) and
 // adopt the stored attachment paths.
 function reconcileSentMessage(message, responseText){
-    let realId, serverAttachments
+    let realId, serverAttachments, notice
     try {
         const data = JSON.parse(responseText)
         const m = data.message || data
         realId = m.id
         serverAttachments = m.attachments   // JSON string: [{mime,filename,filepath}]
+        notice = data.notice                // system notice posted by a slash command (dice roll)
     } catch(e){ /* keep the temp id if the body isn't what we expect */ }
 
     const conv = global.convs[message.place]
@@ -676,6 +693,13 @@ function reconcileSentMessage(message, responseText){
     message.sendState = 'sent'
     delete message._payload
     rerenderMessage(message, tempId)
+
+    if (notice){
+        notice.timestamp = Date.now()
+        handleMessageGroup(notice)
+        addElement('global.convs['.concat(notice.place,'].messages'), notice)
+        scrollConvToBottom()
+    }
 }
 
 function markMessageFailed(message){

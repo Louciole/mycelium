@@ -40,7 +40,7 @@
                     </div>
                     <input type="file" id="chat-file-upload" multiple style="display:none" onchange="handleChatFileUpload(event)"/>
                     <label style="flex: 1;height: fit-content;">
-                        <textarea class="selected" rows="1" placeholder="${_t('Envoyer un message à')} ${global.convs[global.state.activeConv].name}" onkeydown="if(!mentionOnKeyDown(event))sendMessage(event)" oninput="resizeHeight(event);mentionOnInput(event)" onblur="saveCursorPosition(event);mentionOnBlur()" onpaste="pasteFileMessage(event)"></textarea>
+                        <textarea class="selected" rows="1" placeholder="${_t('Envoyer un message à')} ${global.convs[global.state.activeConv].name}" onkeydown="if(!slashOnKeyDown(event) && !mentionOnKeyDown(event))sendMessage(event)" oninput="resizeHeight(event);slashOnInput(event);mentionOnInput(event)" onblur="saveCursorPosition(event);mentionOnBlur();slashOnBlur()" onpaste="pasteFileMessage(event)"></textarea>
                     </label>
                     <div class="icon-wrapper" onclick="silent_typing()">
                         <img class="icon" src="/static/icons/material/keyboard.svg"/>

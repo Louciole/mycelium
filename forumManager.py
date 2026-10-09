@@ -82,6 +82,7 @@ class ForumMixin:
             raise HTTPError(self.response, 404, "forum not found")
         if not self.checkChannelAccess(uid, forum_id, "forum", "send-messages"):
             raise HTTPError(self.response, 403, "forbidden")
+        self.enforceNotTimedOut(uid, forum["server"])
 
         title = (title or "").strip()
         if not title:

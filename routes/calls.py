@@ -109,6 +109,7 @@ def join_vocal_channel(self, channel_id):
 
     if chan.get("is_private") and not self.checkChannelAccess(uid, int(channel_id), "vocal", "view"):
         raise HTTPError(self.response, 403, "No access to this vocal channel")
+    self.enforceNotTimedOut(uid, chan["server"])
 
     result = self.callManager.create_call_for_vocal_channel(int(channel_id), uid)
     if not result:

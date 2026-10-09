@@ -1,22 +1,26 @@
 .spreadsheet-wrapper {
+    /* Hug the table: a 2-column sheet stays small, and the box only grows with
+       the columns up to the note width, then scrolls horizontally. */
+    width: fit-content;
+    max-width: 100%;
     overflow-x: auto;
     margin: 10px 0;
-    border: 1px solid var(--border-color, #ccc);
+    border: 1px solid var(--text2bis);
     border-radius: 4px;
-    background: var(--bg-color, #fff);
+    background: var(--bg);
 }
 
 .sheet-table {
     border-collapse: collapse;
-    width: 100%;
-    table-layout: auto;
-    min-width: max-content;
+    /* fixed layout: column widths from <colgroup> are absolute, so resizing one
+       column changes only that column instead of re-proportioning the rest. */
+    table-layout: fixed;
+    width: auto;
 }
 
 .sheet-table th, .sheet-table td {
-    border: 1px solid var(--border-color, #ccc);
+    border: 1px solid var(--text2bis);
     padding: 0;
-    min-width: 80px;
     height: 20px;
     font-size: 0.8rem;
     text-align: left;
@@ -25,18 +29,21 @@
 }
 
 .sheet-table th {
-    background: var(--bg-secondary, #f5f5f5);
+    background: var(--bg4);
     text-align: center;
     font-weight: bold;
     user-select: none;
-    color: var(--text-color, #333);
+    color: var(--text2);
 }
 
 .sheet-col-resizer {
     position: absolute;
     top: 0;
-    right: -3px;
-    width: 8px;
+    /* Sit fully inside the cell's right edge. A negative offset here would make
+       the last column's handle stick out past the table and create a few px of
+       phantom horizontal scroll in the wrapper. */
+    right: 0;
+    width: 7px;
     height: 100%;
     cursor: col-resize;
     touch-action: none;
@@ -44,7 +51,7 @@
 }
 
 .sheet-col-resizer:hover {
-    background: rgba(0, 123, 255, 0.25);
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 body.sheet-col-resizing,
@@ -56,34 +63,35 @@ body.sheet-col-resizing * {
 .sheet-corner {
     width: 40px;
     min-width: 40px;
-    background: var(--bg-secondary, #f5f5f5);
+    background: var(--bg4);
 }
 
 .sheet-row-header {
     width: 40px;
     min-width: 40px;
-    background: var(--bg-secondary, #f5f5f5);
+    background: var(--bg4);
     text-align: center !important;
     font-weight: bold;
     user-select: none;
-    color: var(--text-color, #333);
+    color: var(--text2);
 }
 
 .sheet-cell {
     cursor: text;
-    background: var(--bg-color, #fff);
+    background: var(--bg);
 }
 
 .sheet-cell.editing {
-    border: 2px solid var(--accent-color, #007bff);
-    padding: 0;
+    --highlight-color: #007de3;
+    box-shadow: inset 0 0 0 2px var(--highlight-color);
     outline: none;
     z-index: 10;
 }
 
 .sheet-cell.sheet-ref-highlight {
-    background: rgba(0, 123, 255, 0.12);
-    box-shadow: inset 0 0 0 1px rgba(0, 123, 255, 0.45);
+    --highlight-color: #007de3;
+    background: color-mix(in srgb, var(--highlight-color) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--highlight-color) 55%, transparent);
 }
 
 .sheet-cell input {
@@ -96,7 +104,7 @@ body.sheet-col-resizing * {
     font-family: inherit;
     font-size: inherit;
     background: transparent;
-    color: var(--text-color, #000);
+    color: var(--text);
 }
 
 .sheet-cell-content {
@@ -107,16 +115,16 @@ body.sheet-col-resizing * {
     height: 100%;
     display: flex;
     align-items: center;
-    color: var(--text-color, #000);
+    color: var(--text);
 }
 
 .sheet-context-menu {
     z-index: 9999;
     min-width: 190px;
-    background: var(--bg-color, #fff);
-    border: 1px solid var(--border-color, #ccc);
+    background: var(--bg2);
+    border: 1px solid var(--text2bis);
     border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
     padding: 6px;
     display: flex;
     flex-direction: column;
@@ -126,7 +134,7 @@ body.sheet-col-resizing * {
 .sheet-context-item {
     border: none;
     background: transparent;
-    color: var(--text-color, #222);
+    color: var(--text);
     text-align: left;
     border-radius: 6px;
     padding: 8px 10px;
@@ -135,7 +143,7 @@ body.sheet-col-resizing * {
 }
 
 .sheet-context-item:hover {
-    background: rgba(0, 0, 0, 0.06);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .sheet-context-item:disabled {
@@ -144,13 +152,101 @@ body.sheet-col-resizing * {
 }
 
 .sheet-context-item.danger {
-    color: #b42318;
+    color: var(--red);
+}
+
+.sheet-context-separator {
+    height: 1px;
+    background: var(--text2bis);
+    margin: 4px 2px;
+}
+
+.sheet-color-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+}
+
+.sheet-color-label {
+    width: 34px;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    color: var(--text2);
+    user-select: none;
+}
+
+.sheet-color-swatch {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--text2bis);
+    cursor: pointer;
+    background: transparent;
+    flex-shrink: 0;
+}
+
+.sheet-color-swatch:hover {
+    transform: scale(1.15);
+}
+
+.sheet-color-swatch.is-selected {
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+.sheet-align-row {
+    gap: 6px;
+}
+
+.sheet-tool-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 4px;
+    border: 1px solid var(--text2bis);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.72rem;
+    line-height: 1;
+}
+
+.sheet-tool-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.sheet-tool-btn.is-selected {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* "no color" swatch: diagonal strike to read as empty. */
+.sheet-color-swatch.is-none {
+    background:
+        linear-gradient(to top right,
+            transparent calc(50% - 1px),
+            var(--red) calc(50% - 1px),
+            var(--red) calc(50% + 1px),
+            transparent calc(50% + 1px)),
+        var(--bg);
+}
+
+.sheet-loading {
+    color: var(--text2);
+    padding: 10px;
+    text-align: center;
 }
 
 .sheet-error {
-    color: #d32f2f;
+    color: var(--red);
     padding: 10px;
-    background: #ffebee;
+    background: color-mix(in srgb, var(--red) 15%, transparent);
     border-radius: 4px;
     text-align: center;
 }

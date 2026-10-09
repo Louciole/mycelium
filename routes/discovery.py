@@ -157,6 +157,9 @@ def join_community_server(self, server_id):
     if existing:
         raise HTTPError(self.response, 400, "Already a member of this server")
 
+    if self.isBannedFromServer(uid, server_id):
+        raise HTTPError(self.response, 403, "banned from this server")
+
     # Add user to server
     self.db.insertDict('accessserver', {'account': uid, 'server': server_id})
 
@@ -232,6 +235,8 @@ def join_server(self, invite_code):
             raise HTTPError(self.response, 403, "forbidden")
         if self.db.getFilters("accessserver", ["account", "=", uid, "and", "server", "=", res["server"]]):
             raise HTTPError(self.response, 403, "you're already in this server")
+        if self.isBannedFromServer(uid, res["server"]):
+            raise HTTPError(self.response, 403, "banned from this server")
         self.db.insertDict("accessserver", {"account": uid, "server": res["server"]})
         raise HTTPRedirect(self.response, "/channels")
     raise HTTPError(self.response, 404, "Not Found")

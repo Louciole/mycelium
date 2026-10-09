@@ -14,7 +14,12 @@
                 <div class="icon-wrapper" onclick="reply(${element.id})">
                     <img class="icon" src="/static/icons/material/reply.svg"/>
                 </div>
-                ${element.sender === global.user.id ? `
+                ${element.sender !== global.user.id ? `
+                <div class="icon-wrapper" onclick="reportMessage(${element.id})" title="${_t('Signaler')}">
+                    <img class="icon" src="/static/icons/material/flag_outlined.svg"/>
+                </div>
+                ` : ''}
+                ${element.sender === global.user.id || window.canManageMessage?.(element) ? `
                 <div class="icon-wrapper" onclick="delMsg(${element.id})">
                     <img class="icon" src="/static/icons/material/trash.svg"/>
                 </div>

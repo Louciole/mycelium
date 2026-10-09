@@ -1,0 +1,12 @@
+<div class="mod-row op-report inline space-between" data-id="${Number(element.id)}">
+    <div>
+        <b>${escapeHTML(element.reporter_name || element.reporter)}</b> ${_t("a signalé")}
+        ${element.target_message ? _t("un message") + " #" + Number(element.target_message) + (element.target_name ? " (" + escapeHTML(element.target_name) + ")" : "") : escapeHTML(element.target_name || element.target_account || "")}
+        <div class="muted">${escapeHTML(element.reason || "")}</div>
+    </div>
+    <div class="inline">
+        ${element.target_message ? `<div class="mod-action ban" onclick="opDeleteMessage(${Number(element.target_message)}, ${Number(element.id)})">${_t("Supprimer le message")}</div>` : ""}
+        <div class="mod-action" onclick="resolveReport(${Number(element.id)}, 'actioned')">${_t("Traité")}</div>
+        <div class="mod-action" onclick="resolveReport(${Number(element.id)}, 'dismissed')">${_t("Rejeter")}</div>
+    </div>
+</div>

@@ -117,6 +117,12 @@ def get_user_info(self):
     user["notif_prefs"] = {str(p["server"]): {"level": p["level"], "suppress_everyone": p["suppress_everyone"]} for p in prefs} if prefs else {}
     mutes = self.db.getAll("channel_mute", uid, "account")
     user["channel_mutes"] = [{"channel": m["channel"], "muted_until": str(m["muted_until"]) if m["muted_until"] else None} for m in mutes] if mutes else []
+    # Active server timeouts ({server_id: expires_at}) so the composer lock
+    # survives a reload (static/moderation.mjs → updateComposerLock).
+    user["server_timeouts"] = {}
+    for t in self.db.getAll("server_timeout", uid, "account") or []:
+        if self.activeServerTimeout(uid, t["server"]):
+            user["server_timeouts"][str(t["server"])] = str(t["expires_at"]) if t["expires_at"] else None
     user["additional_emails"] = self.uniauth.getAll("additional_mail", uid, "account")
     user["isAdmin"] = self.isAdmin(uid)
     user["storage_quota"] = USER_STORAGE_QUOTA

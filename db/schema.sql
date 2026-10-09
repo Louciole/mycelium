@@ -330,6 +330,10 @@ create table if not exists note_spreadsheet_cell (
     row_idx integer NOT NULL CHECK (row_idx >= 1),
     col_idx integer NOT NULL CHECK (col_idx >= 0),
     value text DEFAULT '',
+    text_color varchar(9),
+    bg_color varchar(9),
+    align varchar(6),
+    decimals smallint,
     UNIQUE(spreadsheet_id, row_idx, col_idx)
 );
 
@@ -346,6 +350,12 @@ create index if not exists idx_note_spreadsheet_cell_sheet on note_spreadsheet_c
 create index if not exists idx_note_spreadsheet_cell_sheet_row on note_spreadsheet_cell(spreadsheet_id, row_idx);
 create index if not exists idx_note_spreadsheet_cell_sheet_col on note_spreadsheet_cell(spreadsheet_id, col_idx);
 create index if not exists idx_note_spreadsheet_col_sheet on note_spreadsheet_col(spreadsheet_id);
+
+-- Per-cell formatting (color, alignment, decimals). Added after initial ship.
+ALTER TABLE note_spreadsheet_cell ADD COLUMN IF NOT EXISTS text_color varchar(9);
+ALTER TABLE note_spreadsheet_cell ADD COLUMN IF NOT EXISTS bg_color varchar(9);
+ALTER TABLE note_spreadsheet_cell ADD COLUMN IF NOT EXISTS align varchar(6);
+ALTER TABLE note_spreadsheet_cell ADD COLUMN IF NOT EXISTS decimals smallint;
 
 create table if not exists API_key (
     id bigserial NOT NULL PRIMARY KEY,
@@ -558,4 +568,74 @@ create index if not exists idx_drive_folder_name_trgm
 
 -- get_frecency aggregates the caller's own recent messages by place.
 create index if not exists idx_message_sender_time on message (sender, timestamp);
+
+-- Moderation (docs/moderation.md, routes/moderation.py). Mirrored in db/migrate_moderation.sql.
+-- Server-level: bans, timeouts (expires_at NULL = indefinite) and the per-server log.
+create table if not exists server_ban (
+    id bigserial NOT NULL PRIMARY KEY,
+    server integer NOT NULL references server(id) ON DELETE CASCADE,
+    account integer NOT NULL,
+    reason text,
+    banned_by integer NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(server, account)
+);
+
+create table if not exists server_timeout (
+    id bigserial NOT NULL PRIMARY KEY,
+    server integer NOT NULL references server(id) ON DELETE CASCADE,
+    account integer NOT NULL,
+    reason text,
+    moderator integer NOT NULL,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(server, account)
+);
+
+create table if not exists moderation_log (
+    id bigserial NOT NULL PRIMARY KEY,
+    server integer NOT NULL references server(id) ON DELETE CASCADE,
+    moderator integer NOT NULL,
+    target_account integer,
+    action varchar(24) NOT NULL, -- kick | ban | unban | timeout | untimeout | purge | manage_messages_delete
+    reason text,
+    metadata jsonb DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+create index if not exists idx_moderation_log_server on moderation_log(server);
+
+-- Platform-level (op users): suspensions (expires_at NULL = indefinite), reports, op audit log.
+create table if not exists account_suspension (
+    id bigserial NOT NULL PRIMARY KEY,
+    account integer NOT NULL UNIQUE,
+    reason text NOT NULL,
+    suspended_by integer NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP
+);
+
+create table if not exists report (
+    id bigserial NOT NULL PRIMARY KEY,
+    reporter integer NOT NULL,
+    target_message integer,   -- message(id), nullable
+    target_account integer,   -- nullable; user-level report if no message
+    server integer,           -- nullable (DM reports have no server)
+    reason text NOT NULL,
+    status varchar(16) NOT NULL DEFAULT 'open', -- open | actioned | dismissed
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_by integer,
+    resolved_at TIMESTAMP
+);
+create index if not exists idx_report_status on report(status);
+
+create table if not exists platform_action_log (
+    id bigserial NOT NULL PRIMARY KEY,
+    moderator integer NOT NULL,
+    action varchar(32) NOT NULL, -- suspend_user | unsuspend_user | delete_server | delete_message | resolve_report | dismiss_report
+    target_account integer,
+    target_server integer,
+    reason text,
+    metadata jsonb DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 

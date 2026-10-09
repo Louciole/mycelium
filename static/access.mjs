@@ -3,6 +3,11 @@ import global from "./framework/global.mjs";
 
 const rights = {
     "server-admin": {'name': 'server-admin' ,'category': 'advanced', 'description': 'Administrate the server, delete it, do everything'},
+    // Moderation rights (routes/moderation.py). server-admin implies all of them.
+    "kick-members": {'name': 'kick-members', 'category': 'moderation', 'description': 'Expulser des membres du serveur'},
+    "ban-members": {'name': 'ban-members', 'category': 'moderation', 'description': 'Bannir et débannir des membres, purger leurs messages récents'},
+    "timeout-members": {'name': 'timeout-members', 'category': 'moderation', 'description': 'Réduire temporairement des membres au silence'},
+    "manage-messages": {'name': 'manage-messages', 'category': 'moderation', 'description': 'Supprimer les messages des autres membres'},
 }
 window.rights = rights;
 

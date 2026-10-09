@@ -7,6 +7,7 @@
       <div class="item">${_t("Confidentialité & sécurité")}</div>
       <div class="item">${_t("Demandes d'amis")}</div>
       <div class="item" onclick="goTo('setting-content', 'devs-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Developers")}</div>
+      ${global.user?.isAdmin ? `<div class="item" onclick="openOpPanel(event)">${_t("Modération plateforme")}</div>` : ''}
       <hr>
       <h3>${_t("PARAMÈTRES DE L'APPLI")}</h3>
       <div class="item">${_t("Voix & Vidéo")}</div>

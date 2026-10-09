@@ -1,0 +1,7 @@
+<div class="mod-row">
+    <span class="mod-badge">${escapeHTML(modActionLabel(element.action))}</span>
+    <b>${escapeHTML(element.moderator_name || element.moderator)}</b>
+    ${element.target_name ? "→ " + escapeHTML(element.target_name) : (element.target_server ? "→ " + _t("serveur") + " #" + Number(element.target_server) : "")}
+    <span class="muted">${escapeHTML(element.reason || "")}</span>
+    <span class="muted mod-date">${escapeHTML((element.created_at || "").slice(0, 16))}</span>
+</div>

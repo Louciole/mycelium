@@ -209,7 +209,23 @@ def get_spreadsheet_content(self, block_uuid, channel=None, conv_id=None):
 
     sheet_id = sheet_info["id"]
     cells_data = self.db.getFilters("note_spreadsheet_cell", ["spreadsheet_id", "=", sheet_id]) or []
-    cells = {self._sheet_ref(c["col_idx"], c["row_idx"]): c["value"] for c in cells_data}
+    cells = {}
+    cell_formats = {}
+    for c in cells_data:
+        ref = self._sheet_ref(c["col_idx"], c["row_idx"])
+        if c["value"] not in (None, ""):
+            cells[ref] = c["value"]
+        tc = c.get("text_color")
+        bc = c.get("bg_color")
+        al = c.get("align")
+        dc = c.get("decimals")
+        if tc or bc or al or dc is not None:
+            cell_formats[ref] = {
+                "color": tc or "",
+                "bg": bc or "",
+                "align": al or "",
+                "decimals": dc if dc is not None else "",
+            }
     col_widths = self._get_sheet_col_widths(sheet_id)
 
     result = {
@@ -218,6 +234,7 @@ def get_spreadsheet_content(self, block_uuid, channel=None, conv_id=None):
         "rows": sheet_info["rows"],
         "cols": sheet_info["cols"],
         "cells": cells,
+        "cell_formats": cell_formats,
         "col_widths": col_widths,
     }
     return json.dumps(result, default=str)
@@ -268,10 +285,14 @@ def save_spreadsheet_cell(self, spreadsheet_id, cell_id, value, channel=None, co
         ["spreadsheet_id", "=", spreadsheet_id, "and", "row_idx", "=", row_idx, "and", "col_idx", "=", col_idx]
     )
     if existing:
-        if value == "":
-            self.db.deleteSomething("note_spreadsheet_cell", existing[0]["id"])
+        row = existing[0]
+        # Keep a value-less cell alive when it still carries formatting.
+        has_format = (bool(row.get("text_color")) or bool(row.get("bg_color"))
+                      or bool(row.get("align")) or row.get("decimals") is not None)
+        if value == "" and not has_format:
+            self.db.deleteSomething("note_spreadsheet_cell", row["id"])
         else:
-            self.db.edit("note_spreadsheet_cell", existing[0]["id"], "value", value)
+            self.db.edit("note_spreadsheet_cell", row["id"], "value", value)
     else:
         if value != "":
             self.db.insertDict("note_spreadsheet_cell", {
@@ -280,6 +301,62 @@ def save_spreadsheet_cell(self, spreadsheet_id, cell_id, value, channel=None, co
                 "col_idx": col_idx,
                 "value": value
             })
+
+
+@Server.expose
+def save_spreadsheet_cell_format(self, spreadsheet_id, cell_id, text_color=None, bg_color=None,
+                                 align=None, decimals=None, channel=None, conv_id=None):
+    uid = self.getUser()
+    sheet_info = _get_sheet_info(self, uid, spreadsheet_id, channel=channel, conv_id=conv_id)
+
+    parsed = _parse_sheet_ref(self, cell_id)
+    if not parsed:
+        raise HTTPError(self.response, 400)
+
+    row_idx = parsed["row"]
+    col_idx = parsed["col"]
+    if row_idx < 1 or row_idx > int(sheet_info["rows"]) or col_idx < 0 or col_idx >= int(sheet_info["cols"]):
+        raise HTTPError(self.response, 400)
+
+    tc = _clean_sheet_color(text_color)
+    bc = _clean_sheet_color(bg_color)
+    al = _clean_sheet_align(align)
+    dc = _clean_sheet_decimals(decimals)
+    if tc is None or bc is None or al is None or dc is None:
+        raise HTTPError(self.response, 400)
+
+    # "" / None means the column carries no override.
+    tc_val = tc or None
+    bc_val = bc or None
+    al_val = al or None
+    dc_val = dc if dc != "" else None
+    has_format = bool(tc) or bool(bc) or bool(al) or dc_val is not None
+
+    existing = self.db.getFilters(
+        "note_spreadsheet_cell",
+        ["spreadsheet_id", "=", spreadsheet_id, "and", "row_idx", "=", row_idx, "and", "col_idx", "=", col_idx]
+    )
+    if existing:
+        row = existing[0]
+        # A cell with no value and no formatting has nothing left to store.
+        if not has_format and (row.get("value") or "") == "":
+            self.db.deleteSomething("note_spreadsheet_cell", row["id"])
+        else:
+            self.db.edit("note_spreadsheet_cell", row["id"], "text_color", tc_val)
+            self.db.edit("note_spreadsheet_cell", row["id"], "bg_color", bc_val)
+            self.db.edit("note_spreadsheet_cell", row["id"], "align", al_val)
+            self.db.edit("note_spreadsheet_cell", row["id"], "decimals", dc_val)
+    elif has_format:
+        self.db.insertDict("note_spreadsheet_cell", {
+            "spreadsheet_id": spreadsheet_id,
+            "row_idx": row_idx,
+            "col_idx": col_idx,
+            "value": "",
+            "text_color": tc_val,
+            "bg_color": bc_val,
+            "align": al_val,
+            "decimals": dc_val,
+        })
 
 
 @Server.expose
@@ -413,7 +490,15 @@ def save_spreadsheet_structure(self, spreadsheet_id, op, ref, channel=None, conv
             if r > delete_row:
                 r -= 1
 
-        shifted.append({"col_idx": c, "row_idx": r, "value": cell.get("value", "")})
+        shifted.append({
+            "col_idx": c,
+            "row_idx": r,
+            "value": cell.get("value", ""),
+            "text_color": cell.get("text_color"),
+            "bg_color": cell.get("bg_color"),
+            "align": cell.get("align"),
+            "decimals": cell.get("decimals"),
+        })
 
     # Rewrite cells to avoid UNIQUE collisions while shifting coordinates.
     for cell in existing:
@@ -421,13 +506,22 @@ def save_spreadsheet_structure(self, spreadsheet_id, op, ref, channel=None, conv
 
     for cell in shifted:
         value = cell.get("value", "")
-        if value == "":
+        tc = cell.get("text_color")
+        bc = cell.get("bg_color")
+        al = cell.get("align")
+        dc = cell.get("decimals")
+        # Drop cells that carry neither a value nor any formatting.
+        if value == "" and not tc and not bc and not al and dc is None:
             continue
         self.db.insertDict("note_spreadsheet_cell", {
             "spreadsheet_id": spreadsheet_id,
             "row_idx": cell["row_idx"],
             "col_idx": cell["col_idx"],
-            "value": value
+            "value": value,
+            "text_color": tc,
+            "bg_color": bc,
+            "align": al,
+            "decimals": dc,
         })
 
     # Shift persisted column widths on column insert/delete.
@@ -736,6 +830,56 @@ def _get_sheet_info(self, uid, spreadsheet_id, channel=None, conv_id=None):
     else:
         raise HTTPError(self.response, 400)
     return sheet_info
+
+
+_SHEET_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+
+
+def _clean_sheet_color(value):
+    """Return a normalized hex color, "" for no color, or None if invalid.
+
+    Colors are rendered into inline CSS on the client, so we only ever accept a
+    plain hex literal — never arbitrary CSS — to keep style injection impossible.
+    """
+    if value is None:
+        return ""
+    value = str(value).strip()
+    if value == "":
+        return ""
+    if _SHEET_COLOR_RE.match(value):
+        return value.lower()
+    return None
+
+
+_SHEET_ALIGNS = ("left", "center", "right")
+
+
+def _clean_sheet_align(value):
+    """Return a valid alignment, "" for default, or None if invalid."""
+    if value is None:
+        return ""
+    value = str(value).strip().lower()
+    if value == "":
+        return ""
+    if value in _SHEET_ALIGNS:
+        return value
+    return None
+
+
+def _clean_sheet_decimals(value):
+    """Return an int in [0, 10], "" for no override, or None if invalid."""
+    if value is None:
+        return ""
+    value = str(value).strip()
+    if value == "":
+        return ""
+    try:
+        n = int(value)
+    except (ValueError, TypeError):
+        return None
+    if n < 0 or n > 10:
+        return None
+    return n
 
 
 def _parse_sheet_ref(self, cell_id):

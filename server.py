@@ -1,5 +1,5 @@
 import fastpysgi
-from vesta import Server, HTTPError
+from vesta import Server, HTTPError, HTTPRedirect
 import json
 import os
 import datetime
@@ -150,7 +150,11 @@ class Mycelium(ForumMixin, Server):
 
     @Server.expose
     def channels(self, uid="me"):
-        self.checkJwt()
+        print("channels called with uid:", uid)
+        info = Server.checkJwt(self)  # base check: a suspended account gets its screen, not a 403
+        if self.activeSuspension(info["username"]):
+            raise HTTPRedirect(self.response, "/static/suspended.html")
+        print("JWT check passed for uid:", uid)
         self.response.headers.append(('Permissions-Policy', 'microphone=(self), camera=(self), geolocation=()'))
         return self.file(PATH + "/static/main.html")
 
@@ -361,7 +365,10 @@ class Mycelium(ForumMixin, Server):
 
         for user_op_serv in users_op_servs:
             server_id = user_op_serv["server"]
-            if self.checkAccessRights(uid, server_id, "mycelium_admin"):
+            # "mycelium-admin" is the key the role editor writes (static/access.mjs);
+            # the legacy underscore spelling is still honoured for existing roles.
+            if (self.checkAccessRights(uid, server_id, "mycelium-admin")
+                    or self.checkAccessRights(uid, server_id, "mycelium_admin")):
                 return True
 
         return False
@@ -515,6 +522,124 @@ class Mycelium(ForumMixin, Server):
         if not self.checkChannelAccess(uid, channel_id, channel_type, action):
             raise HTTPError(self.response, 403, "forbidden")
         return chan
+
+    # --------------------------------MODERATION--------------------------------
+    # Enforcement + logging helpers shared by routes/moderation.py and the
+    # endpoints moderation touches (joins, send_message, reactions, vocal, delete).
+
+    def hasServerPerm(self, uid, server_id, perm):
+        """True if uid holds `perm` on server_id. server-admin (and the owner,
+        via checkAccessRights) imply every moderation right."""
+        return (self.checkAccessRights(uid, server_id, perm)
+                or self.checkAccessRights(uid, server_id, "server-admin"))
+
+    def require_mod_perm(self, uid, server_id, perm):
+        """403 unless uid holds the moderation right `perm` (or server-admin) on server_id."""
+        if not self.hasServerPerm(uid, server_id, perm):
+            raise HTTPError(self.response, 403, "forbidden")
+
+    def isBannedFromServer(self, uid, server_id):
+        return bool(self.db.getFilters("server_ban", ["server", "=", server_id, "and", "account", "=", uid]))
+
+    def activeServerTimeout(self, uid, server_id):
+        """The unexpired server_timeout row for (server, uid), or None. Expired rows
+        are lazily deleted (same treatment as channel_mute.muted_until)."""
+        rows = self.db.getFilters("server_timeout", ["server", "=", server_id, "and", "account", "=", uid])
+        if not rows:
+            return None
+        row = rows[0]
+        if row["expires_at"] is not None and row["expires_at"] <= datetime.datetime.now():
+            self.db.deleteSomething("server_timeout", row["id"])
+            return None
+        return row
+
+    def enforceNotTimedOut(self, uid, server_id):
+        row = self.activeServerTimeout(uid, server_id)
+        if row:
+            raise HTTPError(self.response, 403, json.dumps({
+                "error": "timed_out",
+                "server_id": server_id,
+                "expires_at": str(row["expires_at"]) if row["expires_at"] else None,
+            }))
+
+    def logModeration(self, server_id, moderator, action, target_account=None, reason=None, metadata=None):
+        self.db.insertDict("moderation_log", {
+            "server": server_id, "moderator": moderator, "target_account": target_account,
+            "action": action, "reason": reason or None, "metadata": json.dumps(metadata or {}),
+        })
+
+    def logPlatform(self, moderator, action, target_account=None, target_server=None, reason=None, metadata=None):
+        self.db.insertDict("platform_action_log", {
+            "moderator": moderator, "action": action, "target_account": target_account,
+            "target_server": target_server, "reason": reason or None, "metadata": json.dumps(metadata or {}),
+        })
+
+    def activeSuspension(self, uid):
+        """The unexpired account_suspension row for uid, or None (expired rows lazily deleted)."""
+        rows = self.db.getFilters("account_suspension", ["account", "=", uid])
+        if not rows:
+            return None
+        row = rows[0]
+        if row["expires_at"] is not None and row["expires_at"] <= datetime.datetime.now():
+            self.db.deleteSomething("account_suspension", row["id"])
+            return None
+        return row
+
+    def checkJwt(self, verif=False):
+        """Vesta's JWT check + the platform suspension gate: a suspended account is
+        cut off on its next request, not only at its next login. (my_suspension
+        calls the base Server.checkJwt to read its own status.)"""
+        info = super().checkJwt(verif)
+        row = self.activeSuspension(info["username"])
+        if row:
+            raise HTTPError(self.response, 403, json.dumps({
+                "error": "account_suspended",
+                "reason": row["reason"],
+                "expires_at": str(row["expires_at"]) if row["expires_at"] else None,
+            }))
+        return info
+
+    def forceDisconnectUser(self, uid, notif):
+        """Tell the user's live clients why, then drop them from the WS pool so they
+        stop receiving notifications and fail checkWSAuth. The sockets are left to
+        close on their own (they live on the WS thread's event loop); re-auth is
+        refused by the suspension gate."""
+        self.sendNotification(uid, notif)
+        for client in self.db.getAll("active_client", uid, "userid") or []:
+            self.pool.pop(client["id"], None)
+            self.db.deleteSomething("active_client", client["id"])
+            self.db.deleteSomething("subscription", client["id"], selector="client")
+
+    def deleteMessageWithCleanup(self, message):
+        """Delete a message row, removing its now-orphaned attachment files and
+        refunding their size to the server/user quota. Callers handle authz + WS."""
+        attachments = message.get("attachments")
+        if isinstance(attachments, str):
+            try:
+                attachments = json.loads(attachments)
+            except ValueError:
+                attachments = []
+        total_size = 0
+        for attach in attachments or []:
+            rel_path = attach.get("filepath", "") if isinstance(attach, dict) else ""
+            if not rel_path:
+                continue
+            full_path = self.path + "/static/attachments/" + rel_path
+            if os.path.exists(full_path) and self._isFilepathOrphaned(rel_path, exclude_message_id=message["id"]):
+                total_size += os.path.getsize(full_path)
+                try:
+                    os.remove(full_path)
+                except Exception as e:
+                    print(f"Error deleting attachment {full_path}: {e}")
+
+        if total_size > 0:
+            channel = self.db.getSomething("textual_channel", message["place"])
+            if channel:
+                self._adjustStorage(channel["server"], -total_size)
+            else:
+                self._adjustUserStorage(message["sender"], -total_size)
+
+        self.db.deleteSomething("message", message["id"])
 
     # noinspection PyPackageRequirements
     def checkAccessRights(self, uid, server, action):
@@ -742,6 +867,7 @@ import routes.calls          # noqa: E402,F401
 import routes.workspaces     # noqa: E402,F401
 import routes.drive          # noqa: E402,F401
 import routes.search         # noqa: E402,F401
+import routes.moderation     # noqa: E402,F401
 
 server = Mycelium(path=PATH, configFile="/server.ini")
 

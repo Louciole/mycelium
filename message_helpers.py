@@ -10,6 +10,82 @@ import re
 import datetime
 
 
+def notifyConvMessage(self,uid ,conv, message):
+    members = self.db.getAll("accessconversation", conv["id"], "conversation")
+    sender = self.db.getSomething("mycelium_account", uid)
+    sender_name = sender.get("display", "User") if sender else "User"
+    sender_pfp = sender.get("pfp") if sender else None
+    avatar_url = f"https://mycelium.carbonlab.dev/static/attachments/{sender_pfp}" if sender_pfp else ""
+
+    for user in members:
+        if user["account"] != uid:
+            self.sendNotification(user["account"], {"type": "message", "content": message})
+
+            # Push Notification for DM
+            self.sendPushNotification(user["account"], {
+                "title": sender_name,
+                "body": message.get("body", "New message"),
+                "data": {"type": "message", "convId": str(conv["id"]), "avatarUrl": avatar_url}
+            })
+
+            notif  = self.db.getFilters("offline_notifs", ["account", "=", user['account'], "and", "conversation", "=", conv["id"]])
+            if notif != []:
+                self.db.edit("offline_notifs", notif[0]["id"], "number", notif[0]["number"] + 1)
+            else :
+                self.db.insertDict("offline_notifs", {"account": user['account'] , "conversation": conv["id"]})
+
+
+def _parseAttachments(message):
+    atts = message.get("attachments") or []
+    if isinstance(atts, str):
+        try: atts = json.loads(atts)
+        except: atts = []
+    return atts if isinstance(atts, list) else []
+
+
+def is_system_message(message):
+    return any(isinstance(a, dict) and a.get("type") == "system" for a in _parseAttachments(message))
+
+
+def _lookupMessagePlace(self, place_id):
+    """(channel, channel_type) of a message place, WITHOUT any permission check:
+    a textual channel, the forum of a forum post, or (None, None) for a conv."""
+    channel = self.db.getSomething("textual_channel", place_id)
+    if channel:
+        return channel, "textual"
+    post = self.db.getSomething("forum_post", place_id)
+    if post:
+        return self.db.getSomething("forum_channel", post["forum"]), "forum"
+    return None, None
+
+
+def post_system_message(self, actor, place_id, kind, params, body, icon=None, place=None, notify_actor=False):
+    """Post a system notification (dice roll, and later: call ended, member added, rename…)
+    in a conv / channel / forum post, and broadcast it like a regular message.
+
+    Stored as a plain `message` row whose attachments carry the marker
+    {"type": "system", "kind", "icon", "params"}; the client builds the translated
+    sentence from kind + params. `body` is a language-neutral fallback used by push
+    notifications, search and previews.
+
+    Access control is the caller's job. `place` is the (channel, channel_type) already
+    resolved by the caller, looked up if omitted. The actor doesn't get the WS broadcast
+    (send_message answers them over HTTP) unless `notify_actor` is set, which is what
+    server-triggered events need."""
+    attachments = json.dumps([{"type": "system", "kind": kind, "icon": icon, "params": params}])
+    message = {"sender": actor, "place": place_id, "body": body, "attachments": attachments}
+    message["id"] = self.db.insertDict("message", message, getId=True)
+
+    channel, channel_type = place if place is not None else _lookupMessagePlace(self, place_id)
+    if channel_type:
+        notifyChannelMesage(self, actor, channel, message, channel_type)
+    else:
+        notifyConvMessage(self, actor, {"id": place_id}, message)
+    if notify_actor:
+        self.sendNotification(actor, {"type": "message", "content": message})
+    return message
+
+
 def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
     if channel:
         server_id = channel["server"]

@@ -10,10 +10,11 @@
       <hr>
       <p>${Subscribe('global.state.profileInfo.description',()=>{return(global.state.profileInfo?.description ? "<h3>".concat(_t("ABOUT ME"),"</h3>",MDToHTML(global.state.profileInfo?.description)) : "")},"mdBlock")}</p>
       <div class="userRoles">
-        <div class="global-state-profileInfo global-state-currentServer-members🪟global.state.profileInfo.id🥹.roles" data-content="()=&gt;{return(global.state.isServer ? fillWith(&quot;role-display&quot;,global.state.currentServer.members[global.state.profileInfo.id].roles) : &quot;&quot;)}">
+        <div class="global-state-profileInfo global-state-currentServer-members🪟global.state.profileInfo.id🥹.roles" data-content="()=&gt;{return(global.state.isServer ? fillWith(&quot;role-display&quot;,global.state.currentServer.members[global.state.profileInfo.id]?.roles || []) : &quot;&quot;)}">
         </div>
         ${Subscribe('global.state.profileInfo', ()=>{return(global.state.isServer ?  "<div class='attributeRole' onclick='showAddRole(event)'>+</div>" : "")})}
       </div>
+      ${Subscribe('global.state.profileInfo', ()=>{return(window.renderModActions ? window.renderModActions() : "")})}
     </div>
   </div>
 

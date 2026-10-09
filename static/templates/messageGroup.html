@@ -1,11 +1,12 @@
 ${getSeparator(element)}
+${isSystemMessage(element.messages[0]) ? fillWith('system-message', [element.messages[0]]) : `
 <div class="message-group">
   <div class="first-message-wrapper">
     ${getAnswerBlock(element)}
     <div class="first-message">
       ${Subscribe('global.users['+element.messages[0].sender+'].pfp',()=>{return 'background-image:url(/static/attachments/'+global.users[element.messages[0].sender]?.pfp+');'},"pfp red",{"target":"style"})}
       <div class="message-block">
-        <div class="sender" ${global.state.isServer && global.state.currentServer.members[element.messages[0].sender].roles.length != 0 ? "style='--text:" + global.state.currentServer.roles[global.state.currentServer.members[element.messages[0].sender].roles[0]].color + "'" : ""} onclick="toggleProfileInfo(${element.messages[0].sender},event)">
+        <div class="sender" ${global.state.isServer && global.state.currentServer.members[element.messages[0].sender]?.roles?.length ?"style='--text:" + global.state.currentServer.roles[global.state.currentServer.members[element.messages[0].sender].roles[0]].color + "'" : ""} onclick="toggleProfileInfo(${element.messages[0].sender},event)">
           ${Subscribe("global.users["+element.messages[0].sender.toString()+"].display", () => {return(global.users[element.messages[0].sender].display)},"h3")}
           <p>${getTimeStr(element.messages[0].timestamp)}</p>
         </div>
@@ -14,4 +15,4 @@ ${getSeparator(element)}
     </div>
   </div>
   ${fillWith('message',element.messages.slice(1)||[])}
-</div>
+</div>`}

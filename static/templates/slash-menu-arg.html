@@ -1,0 +1,13 @@
+<div class="slash-arg">
+    <div class="slash-arg-signature">
+        <img class="mention-ac-icon icon" src="/static/icons/material/dice.svg"/>
+        <span class="mention-ac-name">${escapeHTML(element.command.label)}</span>
+        <span class="slash-arg-param">${escapeHTML(element.command.args)}</span>
+        <span class="mention-ac-sub">${escapeHTML(element.command.description)}</span>
+    </div>
+    <div class="slash-arg-chips">
+        ${element.items.map(chip => `<div class="slash-arg-chip ${chip.index === element.selectedIndex ? 'selected' : ''}"
+             onmousedown="event.preventDefault(); slashPick(${chip.index})">${escapeHTML(chip.label)}</div>`).join('')}
+    </div>
+    <div class="slash-arg-preview ${element.error ? 'error' : ''}">${escapeHTML(element.error || element.preview)}</div>
+</div>

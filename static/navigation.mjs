@@ -6,6 +6,14 @@ import {xhr} from "./framework/templating.mjs";
 import {} from "./servers/drive.mjs"
 let emptyStr = '' //DO NOT REMOVE
 
+// Mounts the conv blocks of a freshly rendered chat view. repaintConv() only covers
+// messages arriving live, so blocks coming from history need this on view entry.
+// mountAllConvSpreadsheets lives on window (conv-blocks.mjs), like in main.mjs —
+// importing it here would add an edge to the navigation/crud/main import cycle.
+function mountContentBlocks() {
+    requestAnimationFrame(() => window.mountAllConvSpreadsheets?.(document.getElementById('content')))
+}
+
 let _skipRoutePush = false
 
 function saveLastChannel(channelId, type) {
@@ -264,7 +272,7 @@ function goToConv(convId){
 
     global.state.isServer = false
     pushRoute('@me/' + convId)
-    goTo('content','conversation',undefined,false)
+    goTo('content','conversation',undefined,false,mountContentBlocks)
 
     // Attach scroll listener to mark notifications as read
     setTimeout(() => {
@@ -381,7 +389,8 @@ function goToChannel(id){
     targetElt.classList.add("selected")
 
     pushRoute(global.state.currentServer?.id + '/' + id)
-    goTo('content','server-channel',undefined,false)
+    goTo('content','server-channel',undefined,false,mountContentBlocks)
+    window.updateComposerLock?.()   // timed-out banner (moderation.mjs)
 }
 window.goToChannel = goToChannel
 
