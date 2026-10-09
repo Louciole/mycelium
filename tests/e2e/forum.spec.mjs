@@ -5,7 +5,11 @@ import {
     createServerViaUi,
     openServerFromSidebarById,
 } from './helpers/serverHelpers.mjs';
-import { sendMessageInActiveConversation } from './helpers/messagingHelpers.mjs';
+import {
+    sendMessageInActiveConversation,
+    getMessageIdByBody,
+    reloadAndWaitForApp,
+} from './helpers/messagingHelpers.mjs';
 
 const TEST_TIMEOUT = 90000;
 
@@ -78,5 +82,88 @@ test.describe('Forum channels - E2E', () => {
         await expect(page.locator('.forum-gallery')).toBeVisible({ timeout: 5000 });
         await page.locator('.forum-layout-btn').nth(0).click(); // list
         await expect(page.locator('.forum-list')).toBeVisible({ timeout: 5000 });
+    });
+
+    // Forum-post messages have place = the post id (not a textual channel): reactions,
+    // manage-messages deletes and their WS fan-out must resolve it to the forum.
+    test('Members react in a forum post; a moderator deletes a member reply live', async ({ browser }) => {
+        const suffix = Date.now();
+        const ownerCtx = await browser.newContext();
+        const memberCtx = await browser.newContext();
+        const owner = await ownerCtx.newPage();
+        const member = await memberCtx.newPage();
+        owner.on('dialog', (d) => d.accept());   // delMsg() confirm
+
+        const api = (page, path) => page.evaluate(async (path) => {
+            const r = await fetch(path, { method: 'POST', credentials: 'include' });
+            return { status: r.status, text: await r.text() };
+        }, path);
+        // Wait for each view to render: switching straight from the forum to the post
+        // lets the forum template land last and hide the post.
+        const openPost = async (page, forumId, postId) => {
+            await page.evaluate((id) => window.goToForumChannel(id), forumId);
+            await page.locator('.forum-new-post-btn').waitFor({ state: 'visible', timeout: 10000 });
+            await page.evaluate((id) => window.goToForumPost(id), postId);
+            await page.locator('.forum-open-title').waitFor({ state: 'visible', timeout: 10000 });
+            await page.waitForFunction((id) =>
+                window.global?.state?.activeConv === id && !!window.global?.convs?.[id]?.messages,
+            postId, { timeout: 10000 });
+        };
+
+        // Owner: community server + forum + post
+        await loginUser(owner, `e2e_forum_mod_${suffix}`);
+        await waitForAppReady(owner);
+        const serverId = await createServerViaUi(owner);
+        expect((await api(owner, `edit_server_property?property=is_community&server_id=${serverId}&value=true`)).status).toBe(200);
+        await openServerFromSidebarById(owner, serverId);
+        await owner.evaluate(() => window.createChan('forum'));
+        await owner.waitForFunction(
+            () => (window.global?.state?.currentServer?.dirs?.forums || []).length > 0,
+            undefined, { timeout: 10000 },
+        );
+        const forumId = await owner.evaluate(
+            () => Number(window.global.state.currentServer.dirs.forums[0].id),
+        );
+        const created = await api(owner,
+            `create_forum_post?forum_id=${forumId}&title=${encodeURIComponent(`Topic ${suffix}`)}&content=starter`);
+        expect(created.status).toBe(200);
+        const postId = JSON.parse(created.text).post.id;
+
+        // Member joins and replies in the post
+        await loginUser(member, `e2e_forum_mem_${suffix}`);
+        await waitForAppReady(member);
+        expect((await api(member, `join_community_server?server_id=${serverId}`)).status).toBe(200);
+        await reloadAndWaitForApp(member);
+        await openServerFromSidebarById(member, serverId);
+        await openPost(member, forumId, postId);
+        const reply = `Reply to moderate ${suffix}`;
+        await sendMessageInActiveConversation(member, reply);
+        const replyId = await getMessageIdByBody(member, reply);
+
+        // Owner reloads to know the new member (like moderation.spec), then opens the post
+        await reloadAndWaitForApp(owner);
+        await openServerFromSidebarById(owner, serverId);
+        await openPost(owner, forumId, postId);
+        const starterId = await getMessageIdByBody(owner, 'starter');
+
+        // Member reacts to the starter: allowed, and the owner gets the live update
+        const reacted = await api(member, `toggle_reaction?message_id=${starterId}&emoji=${encodeURIComponent('standard:👍')}`);
+        expect(reacted.status).toBe(200);
+        await owner.waitForFunction(({ postId, starterId }) =>
+            Object.keys(window.global.convs[postId].messages[starterId]?.reactions || {}).length > 0,
+        { postId, starterId }, { timeout: 10000 });
+
+        // Owner (manage-messages) gets the delete action on the member's reply and uses it
+        const del = owner.locator(`#message-${replyId} [onclick="delMsg(${replyId})"]`);
+        await expect(del).toHaveCount(1);
+        await del.dispatchEvent('click');
+
+        // The member sees it disappear via the message_deleted WS notif
+        await member.waitForFunction(({ postId, replyId }) =>
+            !window.global.convs[postId].messages[replyId], { postId, replyId }, { timeout: 10000 });
+        await expect(member.locator('.message .mdBlock').filter({ hasText: reply })).toHaveCount(0);
+
+        await ownerCtx.close();
+        await memberCtx.close();
     });
 });

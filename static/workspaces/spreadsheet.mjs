@@ -1243,8 +1243,9 @@ export class SpreadsheetView {
             if (value !== undefined && value !== null && String(value) !== '') {
                 nextCells[newRef] = value
             }
+            // Same "has any format" test as setCellFormat: align/decimals-only cells count too
             const fmt = this.cellFormats[oldRef]
-            if (fmt && (fmt.color || fmt.bg)) {
+            if (fmt && (fmt.color || fmt.bg || fmt.align || cleanSheetDecimals(fmt.decimals) !== '')) {
                 nextFormats[newRef] = fmt
             }
         }

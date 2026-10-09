@@ -8,7 +8,7 @@ import datetime
 import secrets
 
 from vesta import Server, HTTPError
-from message_helpers import notifyChannelMesage, notifyConvMessage, post_system_message, is_system_message
+from message_helpers import notifyChannelMesage, notifyConvMessage, post_system_message, is_system_message, _lookupMessagePlace
 
 DICE_MAX_COUNT = 20
 DICE_MIN_FACES, DICE_MAX_FACES = 2, 1000
@@ -228,7 +228,6 @@ def consult_notifs(self, notif_id):
 
 @Server.expose
 def edit_message(self, message_id, content):
-    print("editing message", message_id, content)
     uid = self.getUser()
 
     message = self.db.getSomething("message", message_id)
@@ -237,6 +236,10 @@ def edit_message(self, message_id, content):
         raise HTTPError(self.response, 403, "forbidden")
     if is_system_message(message):
         raise HTTPError(self.response, 403, "system messages can't be edited")
+    # A timed-out member can't rewrite their messages either
+    channel, _ = _lookupMessagePlace(self, message["place"])
+    if channel:
+        self.enforceNotTimedOut(uid, channel["server"])
 
     self.db.edit("message", message["id"], "body", content)
     self.db.edit("message", message["id"], "edited", True)
@@ -276,9 +279,9 @@ def delete_message(self, message_id):
     if not message:
         raise HTTPError(self.response, 403, "forbidden")
 
-    # Own message, or someone else's channel message with manage-messages
+    # Own message, or someone else's channel/forum message with manage-messages
     # (DMs stay sender-only: there is no DM moderation by server mods).
-    channel = self.db.getSomething("textual_channel", message["place"])
+    channel, _ = _lookupMessagePlace(self, message["place"])
     moderated = False
     if message["sender"] != uid:
         if not channel or not self.hasServerPerm(uid, channel["server"], "manage-messages"):
@@ -313,10 +316,10 @@ def toggle_reaction(self, message_id, emoji):
     if not message:
         raise HTTPError(self.response, 404, "Message not found")
         
-    channel = self.db.getSomething("textual_channel", message["place"])
+    channel, channel_type = _lookupMessagePlace(self, message["place"])
     if channel:
         # checkChannelAccess also requires membership, so kicked/banned users can't react.
-        if not self.checkChannelAccess(uid, channel["id"], "textual", "view"):
+        if not self.checkChannelAccess(uid, channel["id"], channel_type, "view"):
             raise HTTPError(self.response, 403, "no permission to view this channel")
         self.enforceNotTimedOut(uid, channel["server"])
     else:

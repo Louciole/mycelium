@@ -252,6 +252,136 @@ test.describe('Server moderation', () => {
         await reporterCtx.close();
     });
 
+    test('timeout also blocks editing an existing message', async ({ browser }) => {
+        const ownerCtx = await browser.newContext();
+        const memberCtx = await browser.newContext();
+        const owner = await ownerCtx.newPage();
+        const member = await memberCtx.newPage();
+
+        await loginUser(owner, `mod_owner_edit_${Date.now()}`);
+        await waitForAppReady(owner);
+        const serverId = await makeCommunityServer(owner);
+        await openServerReady(owner, serverId);
+        const chan = await channelId(owner);
+
+        await loginUser(member, `mod_member_edit_${Date.now()}`);
+        await waitForAppReady(member);
+        const memberId = await currentUserId(member);
+        await api(member, `join_community_server?server_id=${serverId}`);
+        const sent = await api(member,
+            `send_message?conv=${encodeURIComponent(JSON.stringify({ id: chan }))}&content=before&reply=`);
+        const msgId = JSON.parse(sent.text).message.id;
+
+        await api(owner, `timeout_member?server_id=${serverId}&account_id=${memberId}&minutes=10`);
+
+        const edit = await api(member, `edit_message?message_id=${msgId}&content=after`, { expectOk: false });
+        expect(edit.status).toBe(403);
+        expect(edit.text).toContain('timed_out');
+
+        await ownerCtx.close();
+        await memberCtx.close();
+    });
+
+    test('moderators can target neither themselves nor a server-admin above them', async ({ browser }) => {
+        const ctxs = await Promise.all([browser.newContext(), browser.newContext(), browser.newContext()]);
+        const [owner, admin, mod] = await Promise.all(ctxs.map(c => c.newPage()));
+        const stamp = Date.now();
+
+        await loginUser(owner, `mod_owner_h_${stamp}`);
+        await waitForAppReady(owner);
+        const serverId = await makeCommunityServer(owner);
+        const ids = {};
+        for (const [name, page] of [['admin', admin], ['mod', mod]]) {
+            await loginUser(page, `mod_${name}_h_${stamp}`);
+            await waitForAppReady(page);
+            ids[name] = await currentUserId(page);
+            await api(page, `join_community_server?server_id=${serverId}`);
+        }
+
+        // admin gets server-admin, mod only kick-members
+        const grant = async (account, perms) => {
+            const role = JSON.parse((await api(owner, `edit_server_role?server_id=${serverId}&action=create`)).text).id;
+            await api(owner, `edit_server_role?server_id=${serverId}&targetId=${role}&field=permissions&value=${encodeURIComponent(JSON.stringify(perms))}`);
+            await api(owner, `edit_server_role?server_id=${serverId}&targetId=${role}&action=attribute&value=${account}`);
+        };
+        await grant(ids.admin, { 'server-admin': true });
+        await grant(ids.mod, { 'kick-members': true });
+
+        const kick = (page, target) =>
+            api(page, `kick_member?server_id=${serverId}&account_id=${target}`, { expectOk: false });
+
+        const self = await kick(mod, ids.mod);
+        expect(self.status).toBe(403);
+        expect(self.text).toContain('yourself');
+
+        const up = await kick(mod, ids.admin);
+        expect(up.status).toBe(403);
+        expect(up.text).toContain('server-admin');
+
+        // The other way round is allowed
+        expect((await kick(admin, ids.mod)).status).toBe(200);
+
+        await Promise.all(ctxs.map(c => c.close()));
+    });
+
+    test('a kicked member is hung up from the server vocal call', async ({ browser }) => {
+        const ownerCtx = await browser.newContext();
+        const memberCtx = await browser.newContext();
+        const owner = await ownerCtx.newPage();
+        const member = await memberCtx.newPage();
+
+        await loginUser(owner, `mod_owner_vc_${Date.now()}`);
+        await waitForAppReady(owner);
+        const serverId = await makeCommunityServer(owner);
+        const vocal = JSON.parse((await api(owner,
+            `edit_server_channel?server_id=${serverId}&action=create&channel_type=vocal`)).text).channel.id;
+
+        await loginUser(member, `mod_member_vc_${Date.now()}`);
+        await waitForAppReady(member);
+        const memberId = await currentUserId(member);
+        await api(member, `join_community_server?server_id=${serverId}`);
+
+        // Both sit in the vocal channel (server-side call state, no media needed)
+        await api(owner, `join_vocal_channel?channel_id=${vocal}`);
+        await api(member, `join_vocal_channel?channel_id=${vocal}`);
+        const participants = async () =>
+            JSON.parse((await api(owner, `get_vocal_channel_state?channel_id=${vocal}`)).text).participants || [];
+        expect((await participants()).map(Number)).toContain(Number(memberId));
+
+        await api(owner, `kick_member?server_id=${serverId}&account_id=${memberId}`);
+        expect((await participants()).map(Number)).not.toContain(Number(memberId));
+
+        await ownerCtx.close();
+        await memberCtx.close();
+    });
+
+    test('reporting the same message twice keeps a single open report', async ({ browser }) => {
+        const ownerCtx = await browser.newContext();
+        const reporterCtx = await browser.newContext();
+        const owner = await ownerCtx.newPage();
+        const reporter = await reporterCtx.newPage();
+
+        await loginUser(owner, `mod_owner_dup_${Date.now()}`);
+        await waitForAppReady(owner);
+        const serverId = await makeCommunityServer(owner);
+        await openServerReady(owner, serverId);
+        const chan = await channelId(owner);
+        const sent = await api(owner,
+            `send_message?conv=${encodeURIComponent(JSON.stringify({ id: chan }))}&content=dup&reply=`);
+        const msgId = JSON.parse(sent.text).message.id;
+
+        await loginUser(reporter, `mod_reporter_dup_${Date.now()}`);
+        await waitForAppReady(reporter);
+        await api(reporter, `join_community_server?server_id=${serverId}`);
+
+        const first = JSON.parse((await api(reporter, `report_content?target_message=${msgId}&reason=spam`)).text);
+        const again = JSON.parse((await api(reporter, `report_content?target_message=${msgId}&reason=spam`)).text);
+        expect(again.id).toBe(first.id);
+
+        await ownerCtx.close();
+        await reporterCtx.close();
+    });
+
     test('non-op users do not see the op panel and are refused op endpoints', async ({ page }) => {
         await loginUser(page, `mod_plainuser_${Date.now()}`);
         await waitForAppReady(page);

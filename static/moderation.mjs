@@ -126,10 +126,15 @@ function renderModActions() {
 window.renderModActions = renderModActions;
 
 // Message actions (message.html): deleting someone else's message needs
-// manage-messages, and only applies to textual channels (DMs stay sender-only).
+// manage-messages, and only applies to textual channels and forum posts (DMs
+// stay sender-only). A forum post's messages have place = the post id; the
+// loaded post (global.convs[post]) knows its forum.
 function canManageMessage(message) {
     if (!canModerate("manage-messages")) return false;
-    return !!global.state.currentServer.dirs?.channels?.some(c => c.id === message.place);
+    const dirs = global.state.currentServer.dirs;
+    if (dirs?.channels?.some(c => c.id === message.place)) return true;
+    const forum = global.convs?.[message.place]?.forum;
+    return forum !== undefined && !!dirs?.forums?.some(c => c.id === forum);
 }
 window.canManageMessage = canManageMessage;
 

@@ -14,6 +14,7 @@ import websockets
 from callManager import CallManager
 from driveManager import DriveManager
 from forumManager import ForumMixin
+from message_helpers import _lookupMessagePlace
 from constants import PATH, USER_STORAGE_QUOTA, SERVER_STORAGE_QUOTA
 import ws_handlers
 
@@ -150,11 +151,9 @@ class Mycelium(ForumMixin, Server):
 
     @Server.expose
     def channels(self, uid="me"):
-        print("channels called with uid:", uid)
         info = Server.checkJwt(self)  # base check: a suspended account gets its screen, not a 403
         if self.activeSuspension(info["username"]):
             raise HTTPRedirect(self.response, "/static/suspended.html")
-        print("JWT check passed for uid:", uid)
         self.response.headers.append(('Permissions-Policy', 'microphone=(self), camera=(self), geolocation=()'))
         return self.file(PATH + "/static/main.html")
 
@@ -633,7 +632,8 @@ class Mycelium(ForumMixin, Server):
                     print(f"Error deleting attachment {full_path}: {e}")
 
         if total_size > 0:
-            channel = self.db.getSomething("textual_channel", message["place"])
+            # Refund whoever send_message charged: the server for a channel/forum post
+            channel, _ = _lookupMessagePlace(self, message["place"])
             if channel:
                 self._adjustStorage(channel["server"], -total_size)
             else:

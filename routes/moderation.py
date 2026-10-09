@@ -14,6 +14,7 @@ from vesta import Server, HTTPError
 from message_helpers import _lookupMessagePlace
 
 REPORT_REASON_MAX = 1000
+REPORT_OPEN_MAX = 20                 # open reports per reporter
 PURGE_DAYS_MAX = 7                   # Discord parity
 TIMEOUT_MINUTES_MAX = 28 * 24 * 60   # Discord parity: 28 days
 
@@ -49,13 +50,47 @@ def _remove_membership(self, server_id, account_id):
         self.db.deleteSomething("role_attribution", role["id"])
 
 
-def _guard_target(self, server_id, account_id):
-    """Reject moderation actions aimed at the server owner."""
+def _guard_target(self, uid, server_id, account_id):
+    """Reject moderation actions aimed at yourself, the server owner, or a
+    server-admin when the moderator isn't one (a kick-only mod can't kick an admin)."""
+    if account_id == uid:
+        raise HTTPError(self.response, 403, "cannot moderate yourself")
     server = self.db.getSomething("server", server_id)
     if not server:
         raise HTTPError(self.response, 404, "server not found")
     if server["owner"] == account_id:
         raise HTTPError(self.response, 403, "cannot moderate the server owner")
+    if (self.checkAccessRights(account_id, server_id, "server-admin")
+            and not self.checkAccessRights(uid, server_id, "server-admin")):
+        raise HTTPError(self.response, 403, "only a server-admin can moderate a server-admin")
+
+
+def _eject_from_vocal(self, server_id, account_id):
+    """Hang a removed member up from the server's vocal calls. Same notifications
+    as Mycelium._cleanup_user_calls (vocal branch), sent from the HTTP thread."""
+    for call_id in self.callManager.get_active_call_ids_for_user(account_id):
+        call = self.callManager.active_calls.get(call_id)
+        if not call or not call.vocal_channel_id:
+            continue
+        chan = self.db.getSomething("vocal_channel", call.vocal_channel_id)
+        if not chan or chan["server"] != server_id:
+            continue
+        result = self.callManager.leave_call(call_id, account_id)
+        if not result:
+            continue
+        call = result["call"]
+        # Their own client hangs up on call_ended (static/ws/onMessage.mjs)
+        self.sendNotification(account_id, {"type": "call_ended",
+                                           "content": {"call_id": call_id, "conversation_id": None}})
+        if not result.get("ended"):
+            for participant_id in call.participants:
+                self.sendNotification(participant_id, {"type": "call_participant_left", "content": {
+                    "call": call.to_dict(), "user_id": account_id,
+                    "mode_changed": result.get("mode_changed", False),
+                }})
+        _notify_server(self, server_id, {"type": "vocal_channel_left", "content": {
+            "channel_id": call.vocal_channel_id, "user_id": account_id, "participants": call.participants,
+        }}, exclude=account_id)
 
 
 def _account_label(self, account_id):
@@ -74,8 +109,9 @@ def kick_member(self, server_id, account_id, reason=None):
     uid = self.getUser()
     server_id, account_id = _ints(self, server_id, account_id)
     self.require_mod_perm(uid, server_id, "kick-members")
-    _guard_target(self, server_id, account_id)
+    _guard_target(self, uid, server_id, account_id)
 
+    _eject_from_vocal(self, server_id, account_id)
     _remove_membership(self, server_id, account_id)
     self.logModeration(server_id, uid, "kick", target_account=account_id, reason=reason)
 
@@ -92,7 +128,7 @@ def ban_member(self, server_id, account_id, reason=None, purge_days=0):
     server_id, account_id, purge_days = _ints(self, server_id, account_id, purge_days or 0)
     purge_days = max(0, min(purge_days, PURGE_DAYS_MAX))
     self.require_mod_perm(uid, server_id, "ban-members")
-    _guard_target(self, server_id, account_id)
+    _guard_target(self, uid, server_id, account_id)
 
     # Record the ban (idempotent on the UNIQUE(server, account) constraint).
     existing = self.db.getFilters("server_ban", ["server", "=", server_id, "and", "account", "=", account_id])
@@ -102,6 +138,7 @@ def ban_member(self, server_id, account_id, reason=None, purge_days=0):
             "reason": reason, "banned_by": uid,
         })
 
+    _eject_from_vocal(self, server_id, account_id)
     _remove_membership(self, server_id, account_id)
 
     purged = 0
@@ -183,7 +220,7 @@ def timeout_member(self, server_id, account_id, minutes, reason=None):
     uid = self.getUser()
     server_id, account_id, minutes = _ints(self, server_id, account_id, minutes)
     self.require_mod_perm(uid, server_id, "timeout-members")
-    _guard_target(self, server_id, account_id)
+    _guard_target(self, uid, server_id, account_id)
     if not 0 < minutes <= TIMEOUT_MINUTES_MAX:
         raise HTTPError(self.response, 400, f"minutes must be between 1 and {TIMEOUT_MINUTES_MAX}")
 
@@ -298,7 +335,7 @@ def report_content(self, target_message=None, target_account=None, reason=""):
     server_id = None
     tmsg = None
     if target_message:
-        tmsg = int(target_message)
+        tmsg = _ints(self, target_message)[0]
         message = self.db.getSomething("message", tmsg)
         if not message:
             raise HTTPError(self.response, 404, "message not found")
@@ -313,11 +350,21 @@ def report_content(self, target_message=None, target_account=None, reason=""):
         # Default the reported account to the message author if not given.
         if not target_account:
             target_account = message["sender"]
+    target_account = _ints(self, target_account)[0] if target_account else None
+
+    # Reporting the same thing twice while it's still open is a no-op, and the
+    # number of open reports per reporter is capped so the op queue can't be flooded.
+    open_reports = self.db.getFilters("report", ["reporter", "=", uid, "and", "status", "=", "open"]) or []
+    for r in open_reports:
+        if r["target_message"] == tmsg and r["target_account"] == target_account:
+            return json.dumps({"ok": True, "id": r["id"]})
+    if len(open_reports) >= REPORT_OPEN_MAX:
+        raise HTTPError(self.response, 403, "too many open reports")
 
     row_id = self.db.insertDict("report", {
         "reporter": uid,
         "target_message": tmsg,
-        "target_account": int(target_account) if target_account else None,
+        "target_account": target_account,
         "server": server_id,
         "reason": reason.strip()[:REPORT_REASON_MAX],
         "status": "open",

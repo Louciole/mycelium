@@ -816,9 +816,13 @@ def _checkConvAccess(self, uid, conv_id):
 
 
 def _get_sheet_info(self, uid, spreadsheet_id, channel=None, conv_id=None):
-    """Auth-check and load note_spreadsheet row by ID. Raises on bad access or ownership mismatch."""
+    """Auth-check and load note_spreadsheet row by ID. Raises on bad access or ownership mismatch.
+    Only write endpoints use it, so a conv block in a server channel also requires not being timed out."""
     if conv_id is not None:
         _checkConvAccess(self, uid, conv_id)
+        place = self.db.getSomething("textual_channel", int(conv_id))
+        if place:
+            self.enforceNotTimedOut(uid, place["server"])
         sheet_info = self.db.getSomething("note_spreadsheet", spreadsheet_id)
         if not sheet_info or str(sheet_info.get("conv_id")) != str(conv_id):
             raise HTTPError(self.response, 404)
