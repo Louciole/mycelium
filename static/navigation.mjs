@@ -57,6 +57,19 @@ export function handleHashRoute(hash) {
     if (!hash) return
     _skipRoutePush = true
     try {
+        // Back/forward into the DMs from a server or the discover page: the
+        // secondary column still shows that page, put the DM list back first.
+        if (hash.startsWith('@me') && document.getElementById('sec-selector') && !document.getElementById('friendCat')) {
+            global.state.isServer = false
+            goTo('sec-selector', 'privateMessage', undefined, false)
+            const logo = document.getElementById('logo')
+            if (logo && global.state.currentTab !== logo) {
+                global.state.currentTab?.classList.remove('selected')
+                logo.classList.add('selected')
+                global.state.currentTab = logo
+            }
+        }
+
         if (hash === '@me') {
             if (global.state.activeConv) {
                 document.getElementById('conv' + global.state.activeConv)?.classList.remove('selected')
@@ -66,6 +79,11 @@ export function handleHashRoute(hash) {
             if (global.state.isMobile) mobileDisplayContent()
             goTo('content', 'friends', undefined, false)
             goTo('friends-block', 'main-friend')
+            return
+        }
+
+        if (hash === 'discover') {
+            window.goToDiscover?.(undefined, true)
             return
         }
 

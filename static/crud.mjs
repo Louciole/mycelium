@@ -79,7 +79,8 @@ export function loadConvs(renderOnly = false){
         updateElement("global.convs")
         // Don't clobber sec-column when the user is browsing a server — the
         // server selector is already there and this async callback would race it.
-        if (global.state.isServer) return
+        // Same for the discover page, which owns sec-selector while it is open.
+        if (global.state.isServer || document.getElementById('discover-nav')) return
         goTo('sec-column',"column-perso",undefined, true,()=>{goTo('sec-selector',"privateMessage")})
     }
 

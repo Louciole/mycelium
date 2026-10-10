@@ -61,7 +61,7 @@
                 <div style="display: none" class="outlined notifIndicator">1</div>
             </div>
             <div class="indicator"></div>
-            <span class="tooltip left">Messages privés</span>
+            <span class="tooltip left" data-i18n>Messages privés</span>
         </div>
         <div class="global-state-notifs-convs-length" data-content="()=>fillWith('convNotif',global.state.notifs.convs)"></div>
         <div class="global-user-notifs" data-content="()=>fillWith('offlineNotif',global.user.notifs)"></div>
@@ -70,13 +70,14 @@
         </div>
         <div class="container">
             <div id="new-server" class="item action" data-haptic="medium" onclick="openMenu('create-server')">+</div>
-            <span class="tooltip left">Ajouter un serveur</span>
+            <span class="tooltip left" data-i18n>Ajouter un serveur</span>
         </div>
         <div class="container">
-            <div id="discover-servers" class="item action" onclick="openDiscoverServers()">
-                <img src="/static/icons/material/compass.svg" alt="Compass icon" class="icon" style="width: 24px; height: 24px; filter: invert(0.85);">
+            <div id="discover-servers" class="item action" data-haptic="selection" onclick="goToDiscover(event)">
+                <span class="rail-icon compass"></span>
             </div>
-            <span class="tooltip left">Découvrir des serveurs</span>
+            <div class="indicator"></div>
+            <span class="tooltip left" data-i18n>Découvrir des serveurs</span>
         </div>
     </section>
     <section id="sec-column">
@@ -118,38 +119,6 @@
                 </div>
             </div>
         </div>
-    </section>
-    <!-- Discover Servers Menu -->
-    <section class="fullscreen-menu" id="discover-servers-menu" style="display: none">
-        <div class="discover-header">
-            <div class="discover-title">
-                <h1>Découvrir des serveurs</h1>
-                <button class="close-btn" onclick="closeDiscoverServers()">✕</button>
-            </div>
-
-            <div class="smart-search-container" style="margin-top: 1rem;">
-                <div class="search-input-wrapper" style="position: relative;">
-                    <input
-                        type="text"
-                        id="discover-search-smart"
-                        placeholder="Rechercher... (ex: minecraft lang:fr tag:gaming)"
-                        oninput="handleSmartSearch(event)"
-                        style="width: 100%; padding: 0.75rem; background: var(--bg4); border: 2px solid var(--bg5); color: var(--text); border-radius: 8px; font-size: 1rem;"
-                    />
-                </div>
-
-                <div id="discover-active-filters" style="margin-top: 0.75rem;"></div>
-
-                <div class="search-help" style="margin-top: 0.5rem; padding: 0.5rem; background: var(--bg3); border-radius: 4px; font-size: 0.85rem; color: var(--text2);">
-                    <strong>Syntaxe:</strong>
-                    <code style="background: var(--bg4); padding: 0.2rem 0.4rem; border-radius: 3px; margin: 0 0.25rem;">lang:fr</code>
-                    <code style="background: var(--bg4); padding: 0.2rem 0.4rem; border-radius: 3px; margin: 0 0.25rem;">tag:gaming</code>
-                    ou combinez: <code style="background: var(--bg4); padding: 0.2rem 0.4rem; border-radius: 3px; margin: 0 0.25rem;">minecraft lang:fr tag:gaming</code>
-                </div>
-            </div>
-        </div>
-
-        <div class="discover-content" id="discover-content"></div>
     </section>
 </body>
 </html>

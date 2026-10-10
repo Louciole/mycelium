@@ -248,7 +248,8 @@ export async function expectServerSettingsPersisted(page, serverId, expected) {
 export async function openDiscoverServersMenu(page) {
     await page.locator('#discover-servers').click();
     await page.locator('#discover-servers-menu').waitFor({ state: 'visible', timeout: 5000 });
-    await page.locator('#discover-content').waitFor({ state: 'visible', timeout: 5000 });
+    await page.locator('#discover-nav').waitFor({ state: 'visible', timeout: 5000 });
+    await page.locator('#discover-content').waitFor({ state: 'attached', timeout: 5000 });
 }
 
 /**
@@ -283,9 +284,9 @@ export async function expectDiscoverCardForMember(page, { serverId, serverName, 
         return Array.isArray(langs) && langs.includes(lang);
     }, { id: serverId, lang: languageCode }, { timeout: 10000 });
 
-    const alreadyMemberButton = card.locator('button.btn.grey[disabled]');
-    await expect(alreadyMemberButton).toHaveCount(1);
-    await expect(alreadyMemberButton).toContainText(/membre/i);
+    // Members get an "Ouvrir" button that opens the server instead of a join button.
+    await expect(card.locator('button.discover-open')).toHaveCount(1);
+    await expect(card.locator('button.discover-join')).toHaveCount(0);
 }
 
 

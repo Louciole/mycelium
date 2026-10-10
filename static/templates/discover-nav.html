@@ -1,0 +1,24 @@
+<div id="discover-nav-header">
+    <h1>${_t("Découvrir")}</h1>
+</div>
+<div class="scrollable" id="discover-nav">
+    <div id="discover-view-home" class="item selected" onclick="setDiscoverView('home')">
+        <img class="icon" src="/static/icons/material/compass.svg" alt="">
+        <p>${_t("Accueil")}</p>
+    </div>
+    <div id="discover-view-featured" class="item" onclick="setDiscoverView('featured')">
+        <img class="icon" src="/static/icons/material/flag.svg" alt="">
+        <p>${_t("Mis en avant")}</p>
+    </div>
+    <h2 class="discover-nav-cat">${_t("LANGUE")}</h2>
+    <div class="dropdown" id="discover-lang-dropdown">
+        <div class="dropdown-button" onclick="toggleDropdown(event)">
+            <div class="dropdown-text" id="discover-lang-text">${_t("Toutes les langues")}</div>
+            <div class="icon-wrapper">
+                <img class="icon down" src="/static/icons/material/down.svg"/>
+                <img class="icon up" src="/static/icons/material/up.svg"/>
+            </div>
+        </div>
+        <ul class="dropdown-menu scrollbar" id="discover-languages"></ul>
+    </div>
+</div>

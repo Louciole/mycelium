@@ -4647,221 +4647,245 @@ input:checked + .slider:before {
     width: 100%;
 }
 
-/* ==================== Discover Servers Styles ==================== */
+/* ==================== Discover ==================== */
+/* A regular page: rail item -> #sec-selector (discover-nav) -> #content (discover-servers). */
 
-.fullscreen-menu {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: var(--bg2);
-    z-index: 1000;
-    flex-direction: column;
+#main-selector .rail-icon {
+    width: 24px;
+    height: 24px;
+    background: var(--green);
+    -webkit-mask: var(--rail-icon) center / contain no-repeat;
+    mask: var(--rail-icon) center / contain no-repeat;
+    transition: background 200ms;
 }
 
-.discover-header {
-    background: var(--bg3);
-    padding: 1.5rem 2rem;
-    border-bottom: 1px solid var(--bg4);
+#main-selector .rail-icon.compass {
+    --rail-icon: url(/static/icons/material/compass.svg);
 }
 
-.discover-title {
+#main-selector .action:hover .rail-icon,
+#main-selector .action.selected .rail-icon {
+    background: var(--text);
+}
+
+#main-selector .action.selected {
+    background: var(--green);
+    border-radius: 15px;
+}
+
+#discover-nav-header {
+    width: calc(100% - 1rem);
+    height: 2rem;
+    padding: 0.5rem;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
-}
-
-.discover-title h1 {
-    font-size: 1.5rem;
-    margin: 0;
     color: var(--text);
+    border-bottom: 1px solid var(--bg4);
+    margin-bottom: 0.4rem;
 }
 
-.close-btn {
+#discover-nav-header h1 {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+#discover-nav .item img.icon {
+    height: 1.4rem;
+    margin-right: 0.8rem;
+}
+
+/* #sec-selector h2 is width: 100%: border-box keeps the padding inside the column. */
+#discover-nav .discover-nav-cat {
+    box-sizing: border-box;
+    padding: 0 0.5rem;
+    margin: 1rem 0 0.4rem;
+    font-weight: 600;
+}
+
+#discover-lang-dropdown {
+    margin-bottom: 0;
+}
+
+#discover-lang-dropdown .dropdown-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#discover-lang-dropdown .icon-wrapper img.icon {
+    height: 1.2rem;
+}
+
+#discover-lang-dropdown .dropdown-menu {
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.discover-page {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 0;
+}
+
+.discover-page .selected-info .title img.icon {
+    height: 1.4rem;
+}
+
+.discover-scroll {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 1rem 1.5rem 2rem;
+}
+
+.discover-search-wrap {
+    position: relative;
+}
+
+/* The composer's @ popup, anchored under the search field instead of above the composer. */
+.discover-search-wrap .mention-autocomplete {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.discover-search {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.4rem;
+    padding: 0.2rem 0.6rem;
+    box-sizing: border-box;
+    background: var(--bg4);
+    border-radius: 4px;
+    cursor: text;
+}
+
+.discover-search img.icon {
+    height: 1.2rem;
+}
+
+.discover-search #discover-active-filters {
+    display: contents;
+}
+
+.discover-search input[type="text"] {
+    flex: 1;
+    min-width: 8rem;
+    width: auto;
+    height: 1.6rem;
+    padding: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+}
+
+.discover-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.3rem 0.15rem 0.6rem;
+    background: var(--text3);
+    color: var(--text);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.discover-chip button {
     background: transparent;
     border: none;
     color: var(--text2);
-    font-size: 1.5rem;
     cursor: pointer;
-    padding: 0.5rem;
-    border-radius: 4px;
-    transition: all 0.2s;
-    }
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.2rem;
+}
 
-.close-btn:hover {
-    background: var(--bg4);
+.discover-chip button:hover {
     color: var(--text);
-}
-
-.discover-filters {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-#discover-search {
-    flex: 1;
-    min-width: 250px;
-    padding: 0.75rem 1rem;
-    background: var(--bg4);
-    border: 1px solid var(--bg5);
-    border-radius: 4px;
-    color: var(--text);
-    font-size: 0.95rem;
-}
-
-#discover-search:focus {
-    outline: none;
-    border-color: var(--accent);
-}
-
-#discover-language {
-    padding: 0.75rem 1rem;
-    background: var(--bg4);
-    border: 1px solid var(--bg5);
-    border-radius: 4px;
-    color: var(--text);
-    font-size: 0.95rem;
-    cursor: pointer;
-}
-
-#discover-language:focus {
-    outline: none;
-    border-color: var(--accent);
-}
-
-#discover-tags-filter {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-}
-
-.tags-filter-label {
-    color: var(--text2);
-    font-size: 0.9rem;
-    margin-right: 0.5rem;
-}
-
-.tags-filter-options {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.tag-filter-btn {
-    padding: 0.4rem 0.8rem;
-    background: var(--bg4);
-    border: 1px solid var(--bg5);
-    border-radius: 12px;
-    color: var(--text2);
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.tag-filter-btn:hover {
-    background: var(--bg5);
-    color: var(--text);
-}
-
-.tag-filter-btn.active {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-}
-
-.discover-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 2rem;
 }
 
 .discover-section {
-    margin-bottom: 2rem;
+    margin-top: 1.5rem;
 }
 
 .discover-section h2 {
-    color: var(--text);
-    font-size: 1.2rem;
-    margin-bottom: 1.5rem;
+    font-size: 0.75rem;
     font-weight: 600;
+    color: var(--text2);
+    margin: 0 0 0.6rem;
 }
 
 .servers-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1rem;
 }
 
 .server-card {
-    background: var(--bg3);
-    border-radius: 12px;
-    padding: 0;
-    border: 1px solid var(--bg4);
+    position: relative;
     display: flex;
     flex-direction: column;
-    transition: all 0.3s ease;
+    background: var(--bg2);
+    border: 1px solid transparent;
+    border-radius: 8px;
     overflow: hidden;
-    position: relative;
+    transition: border-color 150ms;
 }
 
 .server-card:hover {
     border-color: var(--text2bis);
 }
 
-.server-card.featured{
-    border: 2px solid var(--purple);
+.server-card.featured {
+    border-color: var(--accent);
 }
 
-.server-card-header {
-    min-height: 32px;
-    padding: 0.75rem 1rem;
-    background: linear-gradient(135deg, var(--bg4) 0%, var(--bg5) 100%);
+.server-card-banner {
+    height: 64px;
+    background-size: cover;
+    background-position: center;
+}
+
+/* A pfp used as a banner is just texture: dim it so it never competes with the icon. */
+.server-card-banner[style*="background-image"] {
+    filter: blur(6px) brightness(0.6);
+    transform: scale(1.15);
+}
+
+.server-card-body {
+    position: relative;
+    flex: 1;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.featured-badge {
-    background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
-    color: white;
-    font-size: 0.75rem;
-    padding: 0.4rem 0.8rem;
-    border-radius: 20px;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-weight: 700;
-    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
-    letter-spacing: 0.5px;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0 0.9rem 0.8rem;
+    background: var(--bg2);
 }
 
 .server-card-icon {
-    width: 120px;
-    height: 120px;
-    background: var(--bg4);
+    width: 48px;
+    height: 48px;
+    margin-top: -24px;
+    border: 4px solid var(--bg2);
+    border-radius: 15px;
+    background: var(--accent);
+    color: var(--text);
+    font-size: 1.1rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 24px;
     overflow: hidden;
-}
-
-.server-card-icon::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.3) 100%);
-    z-index: 1;
-    pointer-events: none;
 }
 
 .server-card-icon img {
@@ -4870,183 +4894,150 @@ input:checked + .slider:before {
     object-fit: cover;
 }
 
-.server-placeholder {
-    font-size: 3rem;
-    font-weight: 900;
+.server-card h3 {
+    margin: 0.2rem 0 0;
     color: var(--text);
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    z-index: 2;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-.server-card-info {
-    flex: 1;
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-}
-
-.server-card-info h3 {
-    color: var(--text);
-    font-size: 1.25rem;
-    margin: 0;
+    font-size: 1rem;
     font-weight: 700;
-    line-height: 1.3;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    white-space: nowrap;
 }
 
 .server-description {
-    color: var(--text2);
-    font-size: 0.9rem;
     margin: 0;
-    line-height: 1.5;
+    color: var(--text2);
+    font-size: 0.85rem;
+    line-height: 1.4;
     overflow: hidden;
-    text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-}
-
-.server-stats {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-top: 0.5rem;
-}
-
-.server-stats .stat {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: var(--text2);
-    font-size: 0.85rem;
-    font-weight: 500;
-    background: var(--bg4);
-    padding: 0.4rem 0.8rem;
-    border-radius: 8px;
-}
-
-.server-stats .stat img.icon-small {
-    width: 14px;
-    height: 14px;
-    filter: invert(60%);
-}
-
-.language-badges {
-    font-size: 1rem;
-    display: inline-flex;
-    gap: 0.25rem;
 }
 
 .server-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: 0.3rem;
 }
 
 .server-tags .tag {
-    background: var(--accent);
-    color: white;
-    font-size: 0.75rem;
-    padding: 0.3rem 0.7rem;
-    border-radius: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.server-card-actions {
-    padding: 1rem 1.25rem;
+    padding: 0.1rem 0.5rem;
     background: var(--bg4);
-    border-top: 1px solid var(--bg5);
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
+    color: var(--text2);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
 }
 
-.server-card-actions .btn {
-    flex: 1;
-    padding: 0.75rem 1.25rem;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.95rem;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s ease;
+.server-tags .tag:hover {
+    color: var(--text);
+}
+
+.server-card-footer {
+    margin-top: auto;
+    padding-top: 0.4rem;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: 0.5rem;
 }
 
-.server-card-actions .btn.blue {
-    background: var(--accent);
-    color: white;
+.server-stats {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+    color: var(--text2);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.server-card-actions .btn.blue:hover {
+.server-stats img.icon {
+    height: 1rem;
+}
+
+.server-card-footer .btn {
+    border: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.3rem 0.8rem;
+    flex-shrink: 0;
+}
+
+.server-card-footer .btn.blue:hover {
     background: var(--accent2);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
 }
 
-.server-card-actions .btn.grey {
+.server-card-footer .discover-open {
     background: var(--text3);
-    color: var(--text2);
-    cursor: not-allowed;
 }
 
-.server-card-actions .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-#no-results {
-    text-align: center;
-    padding: 3rem 2rem;
-    color: var(--text2);
-    font-size: 1.1rem;
-}
-
-#no-results p {
-    margin: 0;
+.server-card-footer .discover-open:hover {
+    background: var(--text2bis);
 }
 
 .admin-feature-toggle {
-    width: 32px;
-    height: 32px;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 28px;
+    height: 28px;
+    border: none;
     border-radius: 50%;
-    background: var(--bg5);
-    border: 2px solid var(--bg4);
+    background: var(--bg4);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 1.2rem;
-    position: absolute;
-    top: 0.6rem;
-    right: 0.6rem;
-    cursor: pointer;
+    opacity: 0;
+    transition: opacity 150ms;
 }
 
-.admin-feature-toggle img{
+.server-card:hover .admin-feature-toggle,
+.admin-feature-toggle.featured {
+    opacity: 1;
+}
+
+.admin-feature-toggle img {
+    width: 16px;
+    height: 16px;
     filter: invert(1);
 }
 
 .admin-feature-toggle:hover {
     background: var(--accent);
-    border-color: var(--accent);
+}
+
+.discover-empty {
+    margin-top: 4rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    color: var(--text2);
+}
+
+.discover-empty img.icon {
+    height: 3rem;
+    margin-bottom: 0.5rem;
+}
+
+.discover-empty h3 {
+    color: var(--text);
+    font-size: 1rem;
+    margin: 0 0 0.3rem;
+}
+
+.discover-empty p {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.mobile .discover-scroll {
+    padding: 0.8rem;
 }
 
 .editable-block:empty::before {

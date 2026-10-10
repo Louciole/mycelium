@@ -81,7 +81,10 @@ export function markReady(){
     // URL routing: restore view from hash on initial load, handle browser back/forward
     const _initialHash = window.location.hash.slice(1)
     if (_initialHash) {
-        setTimeout(() => handleHashRoute(_initialHash), 300)
+        // Skip it if the user already navigated (the hash changed) during the delay.
+        setTimeout(() => {
+            if (window.location.hash.slice(1) === _initialHash) handleHashRoute(_initialHash)
+        }, 300)
     }
     window.addEventListener('popstate', () => handleHashRoute(window.location.hash.slice(1)))
 
@@ -1008,6 +1011,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveS
 window.addEventListener('pagehide', saveSnapshot)
 
 await initTranslations()
+// Static markup in main.html isn't a template: translate the elements marked data-i18n.
+document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = _t(el.textContent.trim()) })
 goTo('content',"friends",undefined,true,()=>{goTo('friends-block','main-friend')})
 loadTemplate("profile-info.html")
 loadTemplate("create-poll.html")

@@ -1,0 +1,26 @@
+<section id="discover-servers-menu" class="discover-page">
+    <div class="selected-info">
+        <div class="group">
+            <div class="title">
+                ${global.state.isMobile?'<img class="icon" src="/static/icons/material/back.svg" onclick="mobileHideContent()" style="margin-right: 0.6rem"/>':''}
+                <img class="icon" src="/static/icons/material/compass.svg" alt="" style="margin-right: 0.5rem;height: 1.4rem">
+                <span id="discover-view-title">${_t("Accueil")}</span>
+            </div>
+        </div>
+    </div>
+    <div class="discover-scroll scrollbar">
+        <div class="discover-search-wrap">
+            <label class="discover-search">
+                <img class="icon" src="/static/icons/material/search.svg" alt="">
+                <span id="discover-active-filters"></span>
+                <input type="text" id="discover-search-smart" autocomplete="off"
+                       placeholder="${_t('Rechercher un serveur')}"
+                       oninput="handleSmartSearch(event)" onkeydown="handleDiscoverSearchKey(event)"
+                       onfocus="updateDiscoverAutocomplete()" onclick="updateDiscoverAutocomplete()"
+                       onblur="closeDiscoverAutocompleteSoon()">
+            </label>
+            <div id="discover-autocomplete" class="mention-autocomplete"></div>
+        </div>
+        <div id="discover-content"></div>
+    </div>
+</section>

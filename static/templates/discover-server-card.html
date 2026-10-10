@@ -1,37 +1,28 @@
 <div class="server-card ${element.is_featured ? 'featured' : ''}" data-server-id="${element.id}">
-    <div class="server-card-info">
+    <div class="server-card-banner" style="${discoverBannerStyle(element)}"></div>
+    <div class="server-card-body">
         <div class="server-card-icon">
-            ${element?.pfp ? '<img src="/static/attachments/' + element.pfp + '" alt="' + element.name + '">' : '<div class="server-placeholder">' + getSlug(element.name) + '</div>'}
+            ${element.pfp ? '<img src="/static/attachments/' + encodeURIComponent(element.pfp) + '" alt="">' : escapeHTML(getSlug(element.name))}
         </div>
-        <h3>${element.name}</h3>
-        <p class="server-description">${element.description || 'Aucune description'}</p>
-        <div class="server-stats">
-            <span class="stat">
-                <img src="/static/icons/material/people.svg" alt="Members" class="icon-small" style="width: 16px; height: 16px;">
-                ${element.member_count || 0} membres
-            </span>
-            ${(() => {
-                const languages = typeof element.languages === 'string' ? JSON.parse(element.languages || '[]') : (element.languages || []);
-                if (languages.length === 0) return '';
-                const getLabel = window.getLanguageLabel || ((code) => code);
-                return '<span class="stat language-badges">' + languages.map(lang => getLabel(lang)).join(' ') + '</span>';
-            })()}
-        </div>
+        <h3>${escapeHTML(element.name)}</h3>
+        <p class="server-description">${element.description ? escapeHTML(element.description) : _t('Aucune description')}</p>
         ${(() => {
-            const tags = typeof element.tags === 'string' ? JSON.parse(element.tags || '[]') : (element.tags || []);
+            const tags = discoverParseList(element.tags);
             if (tags.length === 0) return '';
-            return '<div class="server-tags">' + tags.map(tag => '<span class="tag">' + tag + '</span>').join('') + '</div>';
+            return '<div class="server-tags">' + tags.map(tag => '<span class="tag" data-tag="' + escapeHTML(tag) + '" onclick="addDiscoverTag(this.dataset.tag)"># ' + escapeHTML(tag) + '</span>').join('') + '</div>';
         })()}
+        <div class="server-card-footer">
+            <span class="server-stats">
+                <img class="icon" src="/static/icons/material/people.svg" alt="">${discoverMemberCount(element.member_count)}${discoverParseList(element.languages).map(lang => ' · ' + escapeHTML(String(lang).toUpperCase())).join('')}
+            </span>
+            ${element.is_joined
+                ? '<button class="btn discover-open" onclick="openDiscoverServer(' + Number(element.id) + ')">' + _t('Ouvrir') + '</button>'
+                : '<button class="btn blue discover-join" onclick="joinDiscoverServer(' + Number(element.id) + ', this)">' + _t('Rejoindre') + '</button>'}
+        </div>
     </div>
-    <div class="server-card-actions">
-        ${element.is_joined
-            ? '<button class="btn grey" disabled>Déjà membre</button>'
-            : '<button class="btn blue" onclick="joinDiscoverServer(' + element.id + ')">Rejoindre</button>'}
-    </div>
-    ${global.user?.isAdmin ? `<div class="admin-feature-toggle ${element.is_featured ? 'featured' : ''}"
-                                   onclick="toggleServerFeatured(${element.id}, ${!element.is_featured})"
-                                   title="${element.is_featured ? 'Retirer de la mise en avant' : 'Mettre en avant'}">
-    <img src="/static/icons/material/${element.is_featured ? 'flag' : 'flag_outlined'}.svg" alt="Feature Icon" class="icon-small" style="width: 16px; height: 16px;">
-</div>
-    ` : ''}
+    ${global.user?.isAdmin ? `<button class="admin-feature-toggle ${element.is_featured ? 'featured' : ''}"
+            onclick="toggleServerFeatured(${Number(element.id)}, ${!element.is_featured})"
+            title="${element.is_featured ? _t('Retirer de la mise en avant') : _t('Mettre en avant')}">
+        <img src="/static/icons/material/${element.is_featured ? 'flag' : 'flag_outlined'}.svg" alt="">
+    </button>` : ''}
 </div>

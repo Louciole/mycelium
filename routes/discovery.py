@@ -66,6 +66,15 @@ def get_discoverable_servers(self, search=None, tags=None, languages=None):
     # Get all community servers first
     all_servers = self.db.getFilters("server", filters)
 
+    # Every language used by a community server, for the discover page's language
+    # picker: computed before filtering and limits so no language goes missing.
+    available_languages = set()
+    for server in all_servers:
+        server_languages = server.get('languages') or []
+        if isinstance(server_languages, str):
+            server_languages = json.loads(server_languages)
+        available_languages.update(server_languages)
+
     # Filter by search term in Python (safer than complex SQL with parentheses)
     if search:
         search_lower = search.lower()
@@ -122,7 +131,8 @@ def get_discoverable_servers(self, search=None, tags=None, languages=None):
 
     return json.dumps({
         'featured': featured[:MAX_FEATURED_SERVERS],
-        'regular': regular[:MAX_REGULAR_SERVERS]
+        'regular': regular[:MAX_REGULAR_SERVERS],
+        'languages': sorted(available_languages)
     }, default=str)
 
 
