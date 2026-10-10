@@ -523,6 +523,11 @@ function repaintConv(sub, value){
 }
 window.repaintConv = repaintConv
 
+/** Savers for the channel Overview fields other than the name, by input id. */
+const CHANNEL_FIELD_SAVERS = {
+    "forum-guidelines-input": (channelId, value) => saveForumGuidelines(channelId, value),
+}
+
 function Save(endpoint="change_profile"){
     console.log("saving",global.state["currentForm"])
     for (let key in global.state["currentForm"]){
@@ -532,6 +537,11 @@ function Save(endpoint="change_profile"){
             if (endpoint === "edit_server_property") {
                 xhr(endpoint + "?server_id=".concat(global.state.currentServer.id, "&property=", target, "&value=", encodeURIComponent(global.state["currentForm"][key].value)), undefined, "POST", false)
                 setElement("global.state.currentServer.".concat(target), global.state["currentForm"][key].value)
+            }else if (endpoint === "editChannel" && key !== "name-input") {
+                // Other Overview fields each have their own saver (never fall through to the name)
+                const saver = CHANNEL_FIELD_SAVERS[key]
+                if (saver) saver(parseInt(global.state.modaltarget.dataset.id), global.state["currentForm"][key].value)
+                else console.warn("Save: no saver for channel field", key)
             }else if (endpoint === "editChannel") {
                 const id = global.state.modaltarget.dataset.id
                 const type = global.state.modaltarget.dataset.type
@@ -550,6 +560,9 @@ function Save(endpoint="change_profile"){
                     channelArray = global.state.currentServer.dirs.notes
                 }else if (type === "drive") {
                     channelArray = global.state.currentServer.dirs.drives
+                }else if (type === "forum") {
+                    channelArray = global.state.currentServer.dirs.forums
+                    if (global.forums?.[channelId]) setElement("global.forums["+channelId+"].name", newValue)
                 }
 
                 if (channelArray) {
@@ -589,7 +602,7 @@ window.getRelevantUser = getRelevantUser
 
 function sendCurrentMessage(target){
     let body = target.value
-    const hasAttachments = global.state?.currentMessageAttachments?.length > 0
+    const hasAttachments = pendingAttachments().length > 0
     if (body.trim() === '' && !hasAttachments) return
 
     // "/shrug" is expanded here; "/d 6" is sent as typed with a `command` the server runs
@@ -599,7 +612,7 @@ function sendCurrentMessage(target){
     closeSlashMenu()
 
     // Send attachment objects with metadata for the backend.
-    const attachmentData = (global.state.currentMessageAttachments || []).map(a => ({
+    const attachmentData = pendingAttachments().map(a => ({
         dataUrl: a.dataUrl,
         filename: a.name,
         mimeType: a.type
@@ -800,7 +813,7 @@ function updateSendButton(textarea){
     }
     const btn = textarea?.closest('.chat-input')?.querySelector('.send-btn')
     if (!btn) return
-    const hasContent = textarea.value.trim() !== '' || global.state?.currentMessageAttachments?.length>0
+    const hasContent = textarea.value.trim() !== '' || pendingAttachments().length>0
     btn.classList.toggle('active', hasContent)
 }
 window.updateSendButton = updateSendButton
@@ -999,7 +1012,6 @@ goTo('content',"friends",undefined,true,()=>{goTo('friends-block','main-friend')
 loadTemplate("profile-info.html")
 loadTemplate("create-poll.html")
 loadTemplate("create-block.html")
-loadTemplate("create-forum-post.html")
 loadTemplate("poll-voters.html")
 
 // Local-first paint: rehydrate global from the last snapshot so a cold start

@@ -5,10 +5,12 @@
     <input id="name-input" type="text" placeholder="${_t('nom du salon')}" value="${global.state.modaltarget.innerText}" oninput="updatePreview('formChannel' ,event, 'global.state.modaltarget.innerText')">
 </div>
 
+${global.state.editingChannelType === 'forum' ? getTemplate('forum-channel-settings') : ''}
+
 <hr>
 
 <div id="formChannel" class="save-settings" style="display: none">
     <p>${_t("Attention, il reste des modifications non enregistrées !")}</p>
-    <div class="underlhover" onclick="reset()">${_t("Réinitialiser")}</div>
+    <div class="underlhover" onclick="reset();updateGuidelinesCounter()">${_t("Réinitialiser")}</div>
     <div class="btn green" onclick="Save('editChannel')">${_t("Enregistrer les modifications")}</div>
 </div>

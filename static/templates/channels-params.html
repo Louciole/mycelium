@@ -4,6 +4,7 @@
     if (elId.startsWith('channel-vocal-')) global.state.editingChannelType = 'vocal';
     else if (elId.startsWith('channel-drive-')) global.state.editingChannelType = 'drive';
     else if (elId.startsWith('channel-note-')) global.state.editingChannelType = 'note';
+    else if (elId.startsWith('channel-forum-')) global.state.editingChannelType = 'forum';
     else global.state.editingChannelType = 'textual';
     return '';
   })()}
@@ -13,7 +14,7 @@
       <div class="item selected" onclick="goTo('setting-server-content', 'channel-main-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Vue d'ensemble")}</div>
       <div class="item" onclick="goTo('setting-server-content', 'channel-permissions-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Permissions")}</div>
       <hr>
-      <div class="item crit" onclick="deleteChannel()">${_t("Supprimer le salon")}</div>
+      <div class="item crit settings-delete-item" onclick="deleteChannel()">${_t("Supprimer le salon")}<img class="icon red" src="/static/icons/material/trash.svg"/></div>
     </section>
   </div>
   <div id="setting-panel" class="scrollable">

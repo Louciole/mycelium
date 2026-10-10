@@ -68,7 +68,7 @@ ${Subscribe('global.state.callManager.callViewState', () => {
     })}
 </div>
 <div class="modale" id="edit-channel-modale">
-    <div class="item" style="${checkServRights('edit') ? '' : 'display:none'}" onclick="closeFM();openMenu('channels-params')">${_t("Edit channel")}</div>
+    <div class="item" style="${checkServRights('edit') ? '' : 'display:none'}" onclick="closeFM();openChannelSettings()">${_t("Edit channel")}</div>
     ${Subscribe('global.user.channel_mutes', () => {
         const chanId = parseInt(global.state.modaltarget?.dataset?.id)
         const mute = global.user?.channel_mutes?.find(m => m.channel === chanId)

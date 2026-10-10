@@ -2,20 +2,96 @@
     <div class="selected-info">
         <div class="title">
             ${global.state.isMobile?'<img class="icon" src="/static/icons/material/back.svg" onclick="mobileHideContent()" style="margin-right: 0.6rem"/>':''}
-            <img class="icon" src="/static/icons/material/inbox.svg"/>
-            ${Subscribe("global.forums["+global.state.activeChan.id+"].name", ()=>{return global.forums[global.state.activeChan.id].name})}
+            <img class="icon" src="/static/icons/material/inbox.svg" style="margin-right: 0.4rem"/>
+            ${Subscribe("global.forums["+global.state.activeChan.id+"].name", ()=>{return escapeHTML(global.forums[global.state.activeChan.id].name)})}
         </div>
-        <div>
-            <div class="btn blue forum-new-post-btn" onclick="openCreatePostModal(${global.state.activeChan.id})">${_t("New post")}</div>
-            <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg" style="margin-left: 0.8rem;">
+        <div class="forum-header-actions">
+            ${checkServRights('edit') ? '<img class="icon" src="/static/icons/material/settings.svg" title="'+_t("Forum settings")+'" onclick="openForumSettings('+global.state.activeChan.id+')">' : ''}
+            <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg">
         </div>
     </div>
 
-    ${Subscribe('global.forums['+global.state.activeChan.id+']', ()=>renderForumToolbar(global.state.activeChan.id))}
+    <div class="forum-body">
+        <div class="forum-main">
+            <div class="forum-search-bar">
+                <img class="icon" src="/static/icons/material/search.svg"/>
+                <input type="text" id="forum-search-input" maxlength="100" placeholder="${_t('Search or create a post...')}" oninput="setForumSearch(${global.state.activeChan.id}, this.value)" onkeydown="forumSearchKeyDown(event, ${global.state.activeChan.id})"/>
+                <div class="btn blue forum-new-post-btn" onclick="openCreatePostModal(${global.state.activeChan.id}, document.getElementById('forum-search-input').value)">
+                    <img class="icon" src="/static/icons/material/message.svg"/>${_t("New post")}
+                </div>
+            </div>
 
-    <div class="scrollable forum-scroll">
-        ${Subscribe('global.forums['+global.state.activeChan.id+']', ()=>renderForumPosts(global.state.activeChan.id))}
+            <!-- New post composer (replaces the search bar while open, like Discord) -->
+            <div class="forum-composer" id="forum-composer" style="display: none" onkeydown="createPostKeyDown(event)" ondragover="event.preventDefault()" ondrop="dropForumComposerFiles(event)">
+                <div class="forum-composer-top">
+                    <div class="forum-composer-close" title="${_t('Cancel')}" onclick="closeCreatePostModal()">
+                        <img class="icon" src="/static/icons/material/close.svg"/>
+                    </div>
+                    <div class="forum-composer-fields">
+                        <input type="text" data-post-title maxlength="100" placeholder="${_t('Title')}" oninput="updateCreatePostButton()" onkeydown="if(event.key==='Enter'){event.preventDefault();this.nextElementSibling.focus()}"/>
+                        <textarea class="selected" data-post-content rows="2" placeholder="${_t('Write your message...')}" oninput="resizeHeight(event)" onblur="saveCursorPosition(event)" onclick="saveCursorPosition(event)" onkeyup="saveCursorPosition(event)" onpaste="pasteFileMessage(event)"></textarea>
+                        <div id="imageBox">
+                            <div class="attachments-container"></div>
+                        </div>
+                    </div>
+                    <div class="forum-composer-add" title="${_t('Add images or files')}" onclick="document.getElementById('forum-file-upload').click()">
+                        <img class="icon" src="/static/icons/material/addImage.svg"/>
+                    </div>
+                    <input type="file" id="forum-file-upload" multiple style="display:none" onchange="handleChatFileUpload(event)"/>
+                </div>
+                <div class="forum-composer-bottom">
+                    <div class="forum-composer-emoji" title="${_t('Emoji')}" onclick="toggleFM('conv-emoji-board')">
+                        <img class="icon" src="/static/icons/material/emoji.svg"/>
+                    </div>
+                    <div class="forum-composer-tags" data-tag-section>
+                        <span class="forum-composer-tags-label" data-tag-label></span>
+                        <div class="forum-tag-picker" data-tag-options-container></div>
+                    </div>
+                    <span class="forum-composer-error" data-post-error></span>
+                    <div class="btn blue forum-composer-submit disabled" data-post-submit onclick="submitForumPost()">
+                        <img class="icon" src="/static/icons/material/message.svg"/>${_t("Post")}
+                    </div>
+                </div>
+
+                <div id="conv-emoji-board" class="emoji-board">
+                    <div class="menu">
+                        <div class="inline gap">
+                            <div class="cat selected">Émoji</div>
+                        </div>
+                        <div class="inline">
+                            <div class="search">
+                                <label style="width: 100%;">
+                                    <input type="text" placeholder="${_t('Trouve l\'émoji parfait')}" oninput="searchEmojis(event)">
+                                </label>
+                                <div class="icon-wrapper">
+                                    <img class="icon" src="/static/icons/material/search.svg"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="selector">
+                        <div class="cat-selector">
+                            ${fillWith('scroll-emoji',global.state.emojis)}
+                            ${getCustomEmojiScrollHtml()}
+                        </div>
+                        <div class="scrollable">
+                            ${fillWith('emoji-cat-input',global.state.emojis)}
+                            ${getCustomEmojiCatHtml('currentInput')}
+                        </div>
+                    </div>
+                    <div class="descriptor">
+                        <div class="inline">
+                            <div id="hovered-emoji"></div>
+                            <p></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            ${Subscribe('global.forums['+global.state.activeChan.id+']', ()=>renderForumToolbar(global.state.activeChan.id))}
+
+            ${Subscribe('global.forums['+global.state.activeChan.id+']', ()=>renderForumPosts(global.state.activeChan.id))}
+        </div>
+        <div id="member-list-wrapper"></div>
     </div>
-
-    <div id="member-list-wrapper"></div>
 </div>

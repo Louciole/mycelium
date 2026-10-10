@@ -16,7 +16,7 @@
 // Changing these bytes makes the browser/WebView re-install the worker and drop
 // older caches — that is the self-updating "patch" loop.
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `mycelium-shell-${VERSION}`;
 
 // Minimal: only what the app needs to boot. Everything else is runtime-cached.
@@ -32,7 +32,6 @@ const SHELL_ASSETS = [
     '/static/templates/profile-info.html',
     '/static/templates/create-poll.html',
     '/static/templates/create-block.html',
-    '/static/templates/create-forum-post.html',
     '/static/templates/poll-voters.html',
 ];
 

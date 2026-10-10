@@ -1,0 +1,9 @@
+<div class="forum-settings">
+    <h2>${_t("Post guidelines")}</h2>
+    <div class="forum-guidelines-editor">
+        <textarea id="forum-guidelines-input" maxlength="4096" rows="6" placeholder="${_t('Teach everyone how to use this channel!')}" oninput="updatePreview('formChannel', event, 'forumGuidelinesDefault()');updateGuidelinesCounter()">${escapeHTML(forumGuidelinesDefault())}</textarea>
+        <span class="forum-guidelines-counter">${4096 - forumGuidelinesDefault().length}</span>
+    </div>
+
+    ${Subscribe('global.forums['+global.state.modaltarget.dataset.id+']', ()=>renderForumSettings(parseInt(global.state.modaltarget.dataset.id)))}
+</div>

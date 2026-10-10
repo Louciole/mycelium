@@ -16,6 +16,7 @@ import {goTo, initNavigation, closeFM} from "./framework/navigation.mjs";
 import imageEditor, { emojiImageEditor } from "/static/imageEditor.mjs"
 import {initActivity} from "./activity.mjs";
 import {isSystemMessage} from "./system-messages.mjs";
+import {getForumViewPrefs} from "./forumPrefs.mjs";
 
 function changeUsername(){
     const input = document.getElementById("username-input")
@@ -294,6 +295,34 @@ export function loadNote(key){
     }
 }
 
+/** Fetches a forum's metadata + posts into global.forums (no navigation). */
+export function fetchForum(key){
+    const request = xhr("get_forum_content?channel_id="+JSON.stringify(key), function(){}, "GET", false)
+    if (request.status !== 200) return null
+    const elements = JSON.parse(request.responseText)
+
+    if (!global.forums) global.forums = {}
+    const prev = global.forums[key] || {}
+    const prefs = getForumViewPrefs(key)
+    global.forums[key] = {
+        id: key,
+        name: elements.name,
+        available_tags: elements.available_tags || [],
+        guidelines: elements.guidelines,
+        require_tag: !!elements.require_tag,
+        is_private: elements.is_private,
+        posts: elements.posts || [],
+        default_layout: elements.default_layout || "list",
+        default_sort: elements.default_sort || "activity",
+        layout: prefs.layout || elements.default_layout || "list",
+        sort: prefs.sort || elements.default_sort || "activity",
+        tagFilter: prev.tagFilter ?? null,
+        search: "",
+        guidelinesClosed: prev.guidelinesClosed || false,
+    }
+    return global.forums[key]
+}
+
 export function loadForum(key){
     // Offline: show the snapshotted forum (if any) without fetching.
     if (global.state.offline) {
@@ -301,23 +330,7 @@ export function loadForum(key){
         return
     }
 
-    const request = xhr("get_forum_content?channel_id="+JSON.stringify(key), function(){}, "GET", false)
-    const elements = JSON.parse(request.responseText)
-
-    if (!global.forums) global.forums = {}
-    const prev = global.forums[key] || {}
-    global.forums[key] = {
-        id: key,
-        name: elements.name,
-        available_tags: elements.available_tags || [],
-        guidelines: elements.guidelines,
-        is_private: elements.is_private,
-        posts: elements.posts || [],
-        layout: prev.layout || elements.default_layout || "list",
-        sort: prev.sort || elements.default_sort || "activity",
-        tagFilter: prev.tagFilter || null,
-    }
-
+    if (!fetchForum(key)) return
     setElement("global.forums["+key+"]", global.forums[key])
     goTo('content','server-forum-content',undefined,false)
 }
@@ -377,6 +390,8 @@ export function loadForumPost(postId){
 export function createForumPost(forumId, title, content, tags=[], attachments=[]){
     const body = {title, content, tags, attachments}
     const request = xhr("create_forum_post?forum_id="+JSON.stringify(forumId), function(){}, "POST", false, body)
+    // Errors (tag required, timeout, quota...) come back as plain text: surface them to the caller
+    if (request.status !== 200) throw new Error(request.responseText || String(request.status))
     const resp = JSON.parse(request.responseText)
     const post = resp.post
     if (global.forums && global.forums[forumId]) {
@@ -396,7 +411,8 @@ export function editForumPost(postId, action, value){
 export function editForumTags(forumId, action, tag=null, tagId=null){
     let url = "edit_forum_tags?forum_id="+JSON.stringify(forumId)+"&action="+action
     if (tag !== null) url += "&tag="+encodeURIComponent(JSON.stringify(tag))
-    if (tagId !== null) url += "&tagId="+JSON.stringify(tagId)
+    // Tag ids are uuids: send them raw (JSON.stringify quoted them, so edit/remove matched nothing)
+    if (tagId !== null) url += "&tagId="+encodeURIComponent(tagId)
     const request = xhr(url, function(){}, "POST", false)
     const resp = JSON.parse(request.responseText)
     if (global.forums && global.forums[forumId]) {
@@ -866,8 +882,10 @@ function displayMessageAttachment(file) {
         return
     }
 
+    pendingAttachments() // drop leftovers from a view that is gone
     const reader = new FileReader();
     const box = document.getElementById("imageBox")
+    global.state.attachmentsBox = box
     box.style.display = "block"
 
     const isImage = file.type.startsWith('image/')
@@ -979,6 +997,20 @@ function removeAttachment(index) {
     }
 }
 window.removeAttachment = removeAttachment
+
+/**
+ * Attachments waiting to be sent. They belong to the #imageBox they were added in: once that
+ * box has left the DOM (the user switched channel / closed the forum composer's view) they are
+ * stale and dropped, instead of riding along with the next message sent elsewhere.
+ */
+export function pendingAttachments() {
+    if (global.state.attachmentsBox && !global.state.attachmentsBox.isConnected) {
+        global.state.currentMessageAttachments = []
+        global.state.attachmentsBox = undefined
+    }
+    return global.state.currentMessageAttachments || []
+}
+window.pendingAttachments = pendingAttachments
 
 /**
  * Remove all attachments and hide the box
@@ -1439,6 +1471,16 @@ function deleteCat(catId){
     xhr("edit_server_category?server_id="+global.state.currentServer.id+"&targetId="+catId+"&action=delete", onload)
 }
 window.deleteCat = deleteCat
+
+/**
+ * Opens the settings of the channel in global.state.modaltarget. #channels-params is rendered
+ * for the channel it was opened on (name, type, Overview), so it is rebuilt every time.
+ */
+function openChannelSettings(){
+    document.getElementById('channels-params')?.remove()
+    openMenu('channels-params', false)
+}
+window.openChannelSettings = openChannelSettings
 
 function deleteChannel(){
     const id = global.state.modaltarget?.dataset?.id

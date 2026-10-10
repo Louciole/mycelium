@@ -6,6 +6,19 @@ from message_helpers import (_enrichMessagesWithPolls, _enrichMessagesWithReacti
                              notifyChannelMesage)
 
 
+def _firstImage(attachments):
+    """Filepath of the first image in a message's attachments (used as the post card thumbnail)."""
+    if isinstance(attachments, str):
+        try:
+            attachments = json.loads(attachments)
+        except ValueError:
+            return None
+    for a in attachments or []:
+        if isinstance(a, dict) and str(a.get("mime", "")).startswith("image/") and a.get("filepath"):
+            return a["filepath"]
+    return None
+
+
 class ForumMixin:
 
     @Server.expose
@@ -30,18 +43,32 @@ class ForumMixin:
             "default_layout": forum.get("default_layout", "list"),
             "default_sort": forum.get("default_sort", "activity"),
             "guidelines": forum.get("guidelines"),
+            "require_tag": bool(forum.get("require_tag")),
             "is_private": forum.get("is_private", False),
         }
 
         posts = self.db.getFilters("forum_post", ["forum", "=", channel_id, "order by pinned desc, last_activity desc"])
+        starters = self._forumPostStarters(channel_id)
         for post in posts:
             if isinstance(post.get("tags"), str):
                 post["tags"] = json.loads(post["tags"])
-            msgs = self.db.getFilters("message", ["place", "=", post["id"], "order by timestamp"])
-            post["reply_count"] = max(len(msgs) - 1, 0)
-            post["snippet"] = (msgs[0].get("body") or "")[:160] if msgs else ""
+            first = starters.get(post["id"])
+            post["reply_count"] = max(first["n"] - 1, 0) if first else 0
+            post["snippet"] = (first["body"] or "")[:160] if first else ""
+            post["thumbnail"] = _firstImage(first["attachments"]) if first else None
         content["posts"] = posts
         return json.dumps(content, default=str)
+
+    def _forumPostStarters(self, forum_id):
+        """{post id: {n, body, attachments}} — message count + first message of every post of a
+        forum, in one query (instead of loading every message of every post)."""
+        with self.db.pool.connection() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT ON (place) place, body, attachments, count(*) OVER (PARTITION BY place) AS n "
+                "FROM message WHERE place IN (SELECT id FROM forum_post WHERE forum = %s) "
+                "ORDER BY place, timestamp",
+                (int(forum_id),)).fetchall()
+        return {r["place"]: r for r in rows}
 
     @Server.expose
     def get_forum_post(self, post_id):
@@ -97,6 +124,8 @@ class ForumMixin:
             available_tags = json.loads(available_tags)
         valid_tag_ids = {str(t.get("id")) for t in available_tags}
         tags = [t for t in tags if str(t) in valid_tag_ids]
+        if forum.get("require_tag") and valid_tag_ids and not tags:
+            raise HTTPError(self.response, 400, "tag required")
 
         if isinstance(attachments, str):
             attachments = json.loads(attachments)
@@ -135,6 +164,8 @@ class ForumMixin:
         if isinstance(post.get("tags"), str):
             post["tags"] = json.loads(post["tags"])
         post["reply_count"] = 0
+        post["snippet"] = (content or "")[:160]
+        post["thumbnail"] = _firstImage(attachmentList)
         return json.dumps({"post": post}, default=str)
 
     @Server.expose
@@ -168,6 +199,13 @@ class ForumMixin:
             if not (is_author or is_admin):
                 raise HTTPError(self.response, 403, "forbidden")
             tags = json.loads(value) if isinstance(value, str) else (value or [])
+            # Keep only tags the forum defines (same rule as create_forum_post)
+            forum = self.db.getSomething("forum_channel", post["forum"])
+            available = forum.get("available_tags") or []
+            if isinstance(available, str):
+                available = json.loads(available)
+            valid_tag_ids = {str(t.get("id")) for t in available}
+            tags = [t for t in tags if str(t) in valid_tag_ids]
             self.db.edit("forum_post", post_id, "tags", json.dumps(tags))
             return json.dumps({"tags": tags})
 
@@ -201,6 +239,14 @@ class ForumMixin:
             tags.append(new_tag)
         elif action == "remove":
             tags = [t for t in tags if str(t.get("id")) != str(tagId)]
+            # Untag the posts that used it
+            for post in self.db.getFilters("forum_post", ["forum", "=", int(forum_id)]):
+                post_tags = post.get("tags") or []
+                if isinstance(post_tags, str):
+                    post_tags = json.loads(post_tags)
+                if any(str(t) == str(tagId) for t in post_tags):
+                    self.db.edit("forum_post", post["id"], "tags",
+                                 json.dumps([t for t in post_tags if str(t) != str(tagId)]))
         elif action == "edit":
             edited = json.loads(tag) if isinstance(tag, str) else tag
             for i, t in enumerate(tags):
@@ -216,15 +262,19 @@ class ForumMixin:
 
     @Server.expose
     def edit_forum_settings(self, forum_id, field, value):
-        """Edit a forum's layout/sort/guidelines (admin only)."""
+        """Edit a forum's layout/sort/guidelines/require_tag (admin only)."""
         uid = self.getUser()
         forum = self.db.getSomething("forum_channel", forum_id)
         if not forum:
             raise HTTPError(self.response, 404, "forum not found")
         if not self.checkAccessRights(uid, forum["server"], "edit"):
             raise HTTPError(self.response, 403, "forbidden")
-        if field not in ("default_layout", "default_sort", "guidelines"):
+        if field not in ("default_layout", "default_sort", "guidelines", "require_tag"):
             raise HTTPError(self.response, 400, "invalid field")
+        if field == "require_tag":
+            value = str(value).lower() == "true"
+        if field == "guidelines" and len(value or "") > 4096:
+            raise HTTPError(self.response, 400, "guidelines too long")
         if field == "default_layout" and value not in ("list", "gallery"):
             raise HTTPError(self.response, 400, "invalid layout value")
         if field == "default_sort" and value not in ("activity", "newest", "oldest"):

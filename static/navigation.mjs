@@ -48,6 +48,11 @@ function pushRoute(hash) {
     history.pushState(null, '', '/channels' + (hash ? '#' + hash : ''))
 }
 
+function replaceRoute(hash) {
+    if (_skipRoutePush) return
+    history.replaceState(null, '', '/channels' + (hash ? '#' + hash : ''))
+}
+
 export function handleHashRoute(hash) {
     if (!hash) return
     _skipRoutePush = true
@@ -478,7 +483,10 @@ window.goToForumPost = goToForumPost
 function backToForum(){
     const forumId = global.state.activeChan?.id
     if (forumId !== undefined) {
-        goTo('content','server-forum-content',undefined,false)
+        // Refetch: replies sent in the post changed its reply count / last activity.
+        // Replace the post's history entry rather than stacking forum/post/forum/post...
+        loadForum(forumId)
+        replaceRoute(global.state.currentServer?.id + '/' + forumId)
     }
 }
 window.backToForum = backToForum

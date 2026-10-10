@@ -96,8 +96,10 @@ create table if not exists forum_channel (
     default_layout varchar(10) DEFAULT 'list',
     default_sort varchar(12) DEFAULT 'activity',
     guidelines text,
+    require_tag boolean DEFAULT false,
     PRIMARY KEY (id)
 ) inherits (conversationElement);
+ALTER TABLE forum_channel ADD COLUMN IF NOT EXISTS require_tag boolean DEFAULT false;
 
 create table if not exists forum_post (
     forum integer NOT NULL REFERENCES forum_channel(id) ON DELETE CASCADE,

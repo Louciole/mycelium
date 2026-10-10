@@ -1,16 +1,16 @@
 <div class="neutral" ondragover="event.preventDefault();event.currentTarget.classList.add('dragging')">
     <div class="selected-info">
         <div class="title forum-post-titlebar">
-            <img class="icon" src="/static/icons/material/back.svg" onclick="backToForum()" style="margin-right: 0.6rem"/>
-            <span class="forum-open-title">${Subscribe("global.convs["+global.state.activeConv+"].title", ()=>{return escHtml(global.convs[global.state.activeConv].title)})}</span>
-            ${renderPostTags(global.convs[global.state.activeConv].forum, global.convs[global.state.activeConv].tags) ? '<span class="forum-open-tags">'+renderPostTags(global.convs[global.state.activeConv].forum, global.convs[global.state.activeConv].tags)+'</span>' : ''}
-            ${global.convs[global.state.activeConv].locked ? '<span class="forum-lock-badge">🔒</span>' : ''}
+            <img class="icon" src="/static/icons/material/back.svg" onclick="backToForum()" title="${_t('Go back')}" style="margin-right: 0.4rem"/>
+            <span class="forum-breadcrumb" onclick="backToForum()"><img class="icon" src="/static/icons/material/inbox.svg"/>${escapeHTML(global.forums?.[global.convs[global.state.activeConv].forum]?.name || '')}</span>
+            <span class="forum-breadcrumb-sep">›</span>
+            <span class="forum-open-title">${Subscribe("global.convs["+global.state.activeConv+"].title", ()=>{return escapeHTML(global.convs[global.state.activeConv].title)})}</span>
         </div>
-        <div>
-            ${checkServRights('edit') ? '<img class="icon" src="/static/icons/material/flag.svg" title="Pin/Unpin" onclick="togglePinPost('+global.state.activeConv+')" style="margin-right: 0.8rem;">' : ''}
-            ${checkServRights('edit') ? '<img class="icon" src="/static/icons/material/closeFilled.svg" title="Lock/Unlock" onclick="toggleLockPost('+global.state.activeConv+')" style="margin-right: 0.8rem;">' : ''}
-            ${(checkServRights('edit') || global.convs[global.state.activeConv].author === global.user.id) ? '<img class="icon" src="/static/icons/material/trash.svg" title="Delete post" onclick="deleteForumPost('+global.state.activeConv+')" style="margin-right: 0.8rem;">' : ''}
-            <img class="icon" src="/static/icons/material/help.svg">
+        <div class="forum-header-actions">
+            ${checkServRights('edit') ? '<img class="icon'+(global.convs[global.state.activeConv].pinned ? ' active' : '')+'" src="/static/icons/material/'+(global.convs[global.state.activeConv].pinned ? 'flag' : 'flag_outlined')+'.svg" title="'+_t(global.convs[global.state.activeConv].pinned ? "Unpin post" : "Pin post")+'" onclick="togglePinPost('+global.state.activeConv+')">' : ''}
+            ${checkServRights('edit') ? '<img class="icon'+(global.convs[global.state.activeConv].locked ? ' active' : '')+'" src="/static/icons/material/'+(global.convs[global.state.activeConv].locked ? 'lock' : 'lock_open')+'.svg" title="'+_t(global.convs[global.state.activeConv].locked ? "Unlock post" : "Lock post")+'" onclick="toggleLockPost('+global.state.activeConv+')">' : ''}
+            ${(checkServRights('edit') || global.convs[global.state.activeConv].author === global.user.id) ? '<img class="icon" src="/static/icons/material/trash.svg" title="'+_t("Delete post")+'" onclick="deleteForumPost('+global.state.activeConv+')">' : ''}
+            <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg">
         </div>
     </div>
 
@@ -18,6 +18,15 @@
         <div style="display: flex;flex-direction: column;align-items: center;width:100%;height: 100%">
             <div class="scrollable bottom-margin">
                 ${Subscribe('global.convs['.concat(global.state.activeConv,'].messages'),()=>fillWith('messageGroup',global.convs[global.state.activeConv].messageGroups||[]), undefined, {"repaint":()=>(repaintConv(sub, value))})}
+                <div class="forum-thread-header">
+                    ${renderPostTags(global.convs[global.state.activeConv].forum, global.convs[global.state.activeConv].tags) ? '<div class="forum-post-card-tags">'+renderPostTags(global.convs[global.state.activeConv].forum, global.convs[global.state.activeConv].tags)+'</div>' : ''}
+                    <h1 class="forum-thread-title">${Subscribe("global.convs["+global.state.activeConv+"].title", ()=>{return escapeHTML(global.convs[global.state.activeConv].title)})}</h1>
+                    <div class="forum-thread-meta">
+                        ${global.convs[global.state.activeConv].pinned ? '<span class="forum-thread-badge"><img class="icon" src="/static/icons/material/flag.svg"/>'+_t("Pinned")+'</span>' : ''}
+                        ${global.convs[global.state.activeConv].locked ? '<span class="forum-thread-badge"><img class="icon" src="/static/icons/material/lock.svg"/>'+_t("Locked")+'</span>' : ''}
+                        <span><span class="forum-post-author-name" ${forumAuthorStyle(global.convs[global.state.activeConv].author)}>${escapeHTML(global.users[global.convs[global.state.activeConv].author]?.display || 'User')}</span> · ${forumDate(global.convs[global.state.activeConv].created_at)}</span>
+                    </div>
+                </div>
             </div>
             ${global.convs[global.state.activeConv].locked ? '<div class="forum-locked-notice">'+_t("This post is locked. You can no longer reply.")+'</div>' : `
             <div class="chat-wrapper">

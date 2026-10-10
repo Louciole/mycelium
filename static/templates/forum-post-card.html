@@ -1,21 +1,22 @@
-<div class="forum-post-card" onclick="goToForumPost(${element.id})">
+<div class="forum-post-card${element.thumbnail ? ' has-thumb' : ''}" onclick="goToForumPost(${element.id})">
+    ${element.layout === 'gallery' ? (element.thumbnail
+        ? '<div class="forum-post-thumb" style="background-image:url(/static/attachments/'+encodeURI(element.thumbnail)+')"></div>'
+        : element.snippet ? '<div class="forum-post-thumb text">'+escapeHTML(element.snippet)+'</div>'
+        : '<div class="forum-post-thumb empty"><img class="icon" src="/static/icons/material/message.svg"/></div>') : ''}
     <div class="forum-post-card-main">
-        <div class="forum-post-card-header">
-            ${element.pinned ? '<img class="icon forum-pin" src="/static/icons/material/flag.svg" title="Pinned"/>' : ''}
-            <span class="forum-post-title">${escHtml(element.title)}</span>
-            ${element.locked ? '<span class="forum-lock-badge">🔒</span>' : ''}
-        </div>
-        ${element.snippet ? '<p class="forum-post-snippet">'+escHtml(element.snippet)+'</p>' : ''}
         ${renderPostTags(element.forumId, element.tags) ? '<div class="forum-post-card-tags">'+renderPostTags(element.forumId, element.tags)+'</div>' : ''}
+        <div class="forum-post-card-header">
+            ${element.pinned ? '<img class="icon forum-badge-icon" src="/static/icons/material/flag.svg" title="'+_t("Pinned")+'"/>' : ''}
+            ${element.locked ? '<img class="icon forum-badge-icon" src="/static/icons/material/lock.svg" title="'+_t("Locked")+'"/>' : ''}
+            <span class="forum-post-title">${escapeHTML(element.title)}</span>
+        </div>
+        ${element.layout !== 'gallery' && element.snippet ? '<div class="forum-post-snippet"><span class="forum-post-author-name" '+forumAuthorStyle(element.author)+'>'+escapeHTML(global.users[element.author]?.display || 'User')+'</span>: '+escapeHTML(element.snippet)+'</div>' : ''}
         <div class="forum-post-card-meta">
-            <div class="forum-post-author" style="${'background-image:url(/static/attachments/'+(global.users[element.author]?.pfp||'')+');'}"></div>
-            <span class="forum-post-author-name">${global.users[element.author]?.display || 'User'}</span>
+            ${element.layout === 'gallery' ? '<span class="forum-post-author-name" '+forumAuthorStyle(element.author)+'>'+escapeHTML(global.users[element.author]?.display || 'User')+'</span><span class="forum-post-sep">•</span>' : ''}
+            <span class="forum-post-replies" title="${_t('Replies')}"><img class="icon" src="/static/icons/material/message.svg"/>${element.reply_count || 0}</span>
             <span class="forum-post-sep">•</span>
-            <span>${getTimeStr(element.last_activity)}</span>
+            <span>${forumDate(element.last_activity || element.created_at)}</span>
         </div>
     </div>
-    <div class="forum-post-card-replies">
-        <img class="icon" src="/static/icons/material/message.svg"/>
-        <span>${element.reply_count}</span>
-    </div>
+    ${element.layout !== 'gallery' && element.thumbnail ? '<div class="forum-post-thumb" style="background-image:url(/static/attachments/'+encodeURI(element.thumbnail)+')"></div>' : ''}
 </div>
