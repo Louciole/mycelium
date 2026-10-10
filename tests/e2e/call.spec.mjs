@@ -181,6 +181,7 @@ test.describe('Section appel — conversation', () => {
                     const el = document.querySelector('.call-fullscreen-btn');
                     return el && parseFloat(getComputedStyle(el).opacity) >= 0.99;
                 },
+                undefined,
                 { timeout: 2000 },
             );
             const opacityAfter = await btn.evaluate(el => getComputedStyle(el).opacity);

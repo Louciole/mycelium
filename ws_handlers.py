@@ -20,14 +20,14 @@ async def register(self, websocket, data):
 
 async def unregister(self, websocket, data):
     print("unregister received")
-    if self.checkWSAuth(websocket, data["clientID"]):
+    # A socket still in its handshake has no clientID (and waiting_clients is keyed by
+    # connectionId, not clientID): its pending entry is dropped by _cleanup_connection.
+    if self.checkWSAuth(websocket, data.get("clientID")):
         client = self.db.getSomething("active_client", data["clientID"])
         self.db.deleteSomething("active_client", data["clientID"])
         self.db.deleteSomething("subscription", data["clientID"], selector="client")
         self.pool.pop(data["clientID"])
         await self.sendStatusUpdatesAsync(client["userid"])
-    else:
-        self.waiting_clients.pop(data["clientID"])
 
 
 async def typing(self, websocket, data):

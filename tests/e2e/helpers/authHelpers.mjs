@@ -95,10 +95,10 @@ export async function loginMultipleUsers(users) {
 export async function waitForAuthComplete(page, timeout = 10000) {
     // Wait for WebSocket connection AND CallManager initialization
     await page.waitForFunction(() => {
-        return window.global?.state?.socket?.readyState === WebSocket.OPEN
+        return window.global?.state?.websocket?.readyState === WebSocket.OPEN
             && window.global?.state?.callManager !== undefined
             && window.global?.state?.clientID !== undefined;
-    }, { timeout });
+    }, undefined, { timeout });
 
     console.log('   ✅ Auth complete: WebSocket connected and app ready');
 }

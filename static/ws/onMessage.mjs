@@ -5,6 +5,26 @@ import {setElement, pushElement, deleteElement, addElement} from "../framework/v
 import {handleMessageGroup, bumpConvActivity} from "../crud.mjs";
 import { notifyMessage, setBadge, callStarted, callEnded, isNative } from "../capacitor-bridge.mjs";
 
+// Second half of the WS handshake: trade the connectionId of a "register_request"
+// for a clientID. A socket the server could not authenticate (closed server-side,
+// request handled by another process...) is useless, so close it: the framework's
+// onclose reconnects and registers again instead of leaving the app loading forever.
+function authenticateWebSocket(connectionId, onAuthenticated) {
+    const socket = global.state.websocket
+    const retry = (reason) => {
+        console.error("[WS] authWS failed (" + reason + "), reconnecting")
+        if (socket.readyState === WebSocket.OPEN) socket.close(4000, "authWS failed")
+    }
+
+    const request = xhr("authWS?connectionId=".concat(connectionId), function () {
+        if (socket !== global.state.websocket || socket.readyState !== WebSocket.OPEN) return
+        if (this.status !== 200) return retry(this.status)
+        global.state.clientID = JSON.parse(this.responseText)
+        onAuthenticated()
+    })
+    request.onerror = () => retry("network error")
+}
+
 function isChannelMuted(channelId) {
     const now = Date.now()
     return (global.user?.channel_mutes || []).some(
@@ -18,13 +38,7 @@ export async function onMessage(event) {
     switch (message.type){
         case "register_request":
             //TODO handle multiserver xhr with the received servID
-
-            const effect = function (){
-                global.state.clientID = JSON.parse(this.responseText)
-                postWS()
-            }
-
-            xhr("authWS?connectionId=".concat(message.connectionId),effect)
+            authenticateWebSocket(message.connectionId, postWS)
             break
         case "notif":
             switch (message.content.type){

@@ -156,7 +156,7 @@ export async function waitForAppReady(page, timeout = 10000) {
         return window.global?.state?.websocket?.readyState === WebSocket.OPEN
             && window.global?.state?.callManager !== undefined
             && window.global?.state?.clientID !== undefined;
-    }, { timeout });
+    }, undefined, { timeout });
 
     console.log('   ✅ App ready: WebSocket connected and CallManager initialized');
 }

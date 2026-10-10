@@ -279,7 +279,7 @@ export async function openAddUsersPanel(page) {
     await page.waitForFunction(() => {
         const el = document.getElementById('add-users');
         return el && el.style.visibility !== 'hidden' && el.offsetParent !== null;
-    }, { timeout: 5000 });
+    }, undefined, { timeout: 5000 });
 }
 
 /**
@@ -328,7 +328,7 @@ export async function getGroupConvId(page, memberUsernames) {
 export async function waitForGroupConvLive(page, timeout = 10000) {
     await page.waitForFunction(() => {
         return Object.values(window.global?.privateConvs || {}).some((c) => c?.private === false);
-    }, { timeout });
+    }, undefined, { timeout });
 }
 
 
