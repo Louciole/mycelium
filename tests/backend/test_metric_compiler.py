@@ -140,15 +140,24 @@ def test_provider_dataset_runs():
     assert len(out["rows"]) >= 1
 
 
-if __name__ == "__main__":
-    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    failed = 0
-    for t in tests:
+def run():
+    """Entry point for `vesta test`: [(label, ok)]."""
+    results = []
+    for name, t in sorted(globals().items()):
+        if not name.startswith("test_"):
+            continue
         try:
             t()
-            print(f"  ok   {t.__name__}")
+            results.append((name, True))
         except Exception as e:
-            failed += 1
-            print(f"  FAIL {t.__name__}: {e}")
-    print(f"\n{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+            results.append((f"{name} — {e}", False))
+    return results
+
+
+if __name__ == "__main__":
+    results = run()
+    for label, ok in results:
+        print(f"  {'ok  ' if ok else 'FAIL'} {label}")
+    passed = sum(ok for _, ok in results)
+    print(f"\n{passed}/{len(results)} passed")
+    sys.exit(0 if passed == len(results) else 1)

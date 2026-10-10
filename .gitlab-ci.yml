@@ -37,7 +37,6 @@ test:
     - apt install -y libpq-dev
     - sed -i 's/DB_HOST = localhost/DB_HOST = postgres/g' server.ini
     - sed -i 's/DB_HOST = localhost/DB_HOST = postgres/g' tests/backend/server.ini
-    - sed -i 's/DB_HOST = localhost/DB_HOST = postgres/g' tests/calls/server.ini
 
     # Install Playwright dependencies and browsers
     - npm ci
@@ -55,8 +54,10 @@ test:
     - ls /etc/nginx/sites-available/
     - nginx -t
     - service nginx restart
-    - vesta test
+    # Backend tests talk to the real app, so it must be up before `vesta test`
     - python server.py &
+    - timeout 60 sh -c 'until python -c "import urllib.request; urllib.request.urlopen(\"http://localhost:9876/\")" 2>/dev/null; do sleep 1; done'
+    - vesta test
     - npx playwright test --config tests/playwright.config.mjs
 
 

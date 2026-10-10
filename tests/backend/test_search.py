@@ -14,11 +14,10 @@ import time
 
 import requests
 
-# Overridable so the module can run against the real dev server
-# (TEST_SERVER_URL=http://localhost:9876) while the vesta test harness's bare
-# TestServer can't authenticate users (see the harness-repair task).
-from tests.backend import backend as _backend
-TEST_SERVER_URL = os.environ.get('TEST_SERVER_URL', _backend.TEST_SERVER_URL)
+# These tests run against a real, already-started Mycelium server (DEBUG mode,
+# for /get_debug_otp): `python server.py` locally, or the CI job's background
+# server. Override with TEST_SERVER_URL.
+TEST_SERVER_URL = os.environ.get('TEST_SERVER_URL', 'http://localhost:9876')
 
 
 def _ts():
@@ -52,6 +51,10 @@ def create_test_user(username):
     except requests.RequestException as e:
         print(f"Network error creating user {username}: {e}")
     return None
+
+
+def get_user_id(session):
+    return session.post(f'{TEST_SERVER_URL}/get_user_info').json().get('id')
 
 
 def _make_community_server(owner):

@@ -13,7 +13,7 @@ import datetime
 import psycopg
 from psycopg.rows import dict_row
 
-from tests.backend.backend import (
+from tests.backend.test_search import (
     TEST_SERVER_URL,
     create_test_user,
     get_user_id,
@@ -436,4 +436,6 @@ def run():
     results.append(("Suspend Cuts Off Access", test_suspend_cuts_off_access()))
     results.append(("Op Actions Logged", test_op_actions_logged()))
     results.append(("Report Resolve And Platform Delete", test_report_resolve_and_platform_delete()))
-    return results
+    # Flatten (name, (msg, ok)) → (label, ok): vesta's runner only checks
+    # res[1] == False, so a nested tuple would always count as PASSED.
+    return [(f"{name} — {msg}", ok) for name, (msg, ok) in results]
