@@ -1,10 +1,10 @@
 <div class="inline" style="width: 100%">
-    <div class="pfp red" onclick="toggleProfileInfo(${element.id},event)" data-target="style" data-content="()=>{return 'background-image:url(/static/attachments/'+global.users[element.id].pfp+');'}" style="background-image:url(/static/attachments/${global.users[element.id].pfp}">
+    <div class="pfp red" onclick="toggleProfileInfo(${element.id},event)" data-target="style" data-content="()=>{return 'background-image:url(/static/attachments/'+global.users[element.id].pfp+');'}" style="background-image:url(/static/attachments/${escapeHTML(global.users[element.id].pfp)}">
         <div class="activity-wrapper">
             ${Subscribe("global.users["+element.id+"].status.icon",()=>{return("<div class='activity "+global.users[element.id].status.icon)+"'></div>"},"grow")}
         </div>
     </div>
-    <div class="name" onclick="toggleProfileInfo(${element.id},event)" ${global.state.currentServer.members[element.id].roles.length != 0 ? "style='--text2:" + global.state.currentServer.roles[global.state.currentServer.members[element.id].roles[0]].color + "'" : ""}>
-        ${global.users[element.id].display}
+    <div class="name" onclick="toggleProfileInfo(${element.id},event)" ${global.state.currentServer.members[element.id].roles.length != 0 ? "style='--text2:" + escapeHTML(global.state.currentServer.roles[global.state.currentServer.members[element.id].roles[0]].color) + "'" : ""}>
+        ${escapeHTML(global.users[element.id].display)}
     </div>
 </div>

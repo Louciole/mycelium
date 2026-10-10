@@ -3,11 +3,11 @@
     <div class="inline">
         ${Subscribe('global.state.serverPfp', () => {
             const inner = global.state.serverPfp
-                ? '<img src="/static/attachments/' + global.state.serverPfp + '" alt="">'
-                : (global.state.serverName ? global.state.serverName.charAt(0).toUpperCase() : '')
+                ? '<img src="/static/attachments/' + escapeHTML(global.state.serverPfp) + '" alt="">'
+                : (global.state.serverName ? escapeHTML(global.state.serverName.charAt(0).toUpperCase()) : '')
             return '<div class="circle">' + inner + '</div>'
         }, 'invite-circle')}
-        <h2>${global.state.serverName}</h2>
+        <h2>${escapeHTML(global.state.serverName)}</h2>
     </div>
-    ${global.state.jwt ? `<a href="/join_server?invite_code=${global.state.link}"><div class="btn">${_t("Rejoindre")}</div></a>` : `<a href="/auth?ref=${global.state.link}"><div class="btn">${_t("Se connecter ou S'inscrire")}</div></a>`}
+    ${global.state.jwt ? `<a href="/join_server?invite_code=${escapeHTML(global.state.link)}"><div class="btn">${_t("Rejoindre")}</div></a>` : `<a href="/auth?ref=${escapeHTML(global.state.link)}"><div class="btn">${_t("Se connecter ou S'inscrire")}</div></a>`}
 </div>

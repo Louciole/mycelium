@@ -1,14 +1,14 @@
 <div class="item">
     <div class="container">
         <div class="inline">
-            <div class="pfp green" data-content="()=>{return 'background-image:url(/static/attachments/'+global.users[getRelevantUser(element)]?.pfp+');'}" style="background-image:url(/static/attachments/${global.users[getRelevantUser(element)].pfp}">
+            <div class="pfp green" data-content="()=>{return 'background-image:url(/static/attachments/'+global.users[getRelevantUser(element)]?.pfp+');'}" style="background-image:url(/static/attachments/${escapeHTML(global.users[getRelevantUser(element)].pfp)}">
                 <div class="activity-wrapper">
                     <div class="activity ${global.users[getRelevantUser(element)].status.icon}"></div>
                 </div>
             </div>
             <div class="vertical">
-                <h5>${global.users[getRelevantUser(element)].display}</h5>
-                <p>${global.users[getRelevantUser(element)].status.text}</p>
+                <h5>${escapeHTML(global.users[getRelevantUser(element)].display)}</h5>
+                <p>${escapeHTML(global.users[getRelevantUser(element)].status.text)}</p>
             </div>
         </div>
         <div class="inline reverse">

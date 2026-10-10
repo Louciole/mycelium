@@ -2,8 +2,8 @@
     <div class="global-convs item serveur" data-target="style"
          onclick="goTo('sec-selector','privateMessage',{'category':'currentTab' ,'event': event},false); goToConv(${element.conversation})"
          data-target="style" data-element="${element.conversation}" data-content="(element)=>{return 'background-size: cover;background-position: center;background-image:url(/static/attachments/'+global.users[notMe(global.convs[element]?.members)]?.pfp+');'}"
-         style="background-size: cover;background-position: center; background-image:url(/static/attachments/${global.users[notMe(global.convs[element.conversation]?.members)]?.pfp})"></div>
+         style="background-size: cover;background-position: center; background-image:url(/static/attachments/${escapeHTML(global.users[notMe(global.convs[element.conversation]?.members)]?.pfp)})"></div>
     <div class="indicator smol"></div>
-    <span class="global-convs tooltip left" data-content="()=>{return  global.users[notMe(global.convs[${element.conversation}]?.members)]?.display}">${global.users[notMe(global.convs[element.conversation]?.members)]?.display}</span>
+    <span class="global-convs tooltip left" data-content="()=>{return escapeHTML(global.users[notMe(global.convs[${element.conversation}]?.members)]?.display)}">${escapeHTML(global.users[notMe(global.convs[element.conversation]?.members)]?.display)}</span>
     <div class="outlined notifIndicator">${element.number}</div>
 </div>

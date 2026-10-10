@@ -1,6 +1,6 @@
 <div class="container">
     <div class="item serveur" onclick="goTo('sec-selector','privateMessage',{'category':'currentTab' ,'event': event},false); goToConv(${element.conv.id})"></div>
     <div class="indicator smol"></div>
-    <span class="tooltip left">${element.conv.name}</span>
+    <span class="tooltip left">${escapeHTML(element.conv.name)}</span>
     <div class="outlined notifIndicator">${element.n}</div>
 </div>

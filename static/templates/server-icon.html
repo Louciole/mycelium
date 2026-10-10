@@ -1,6 +1,6 @@
 <div class="container">
     <div class="item serveur" id="server-item-${element.id}" onclick="goToServer(event,${element.id})">
-        ${element?.pfp ? '<img src="/static/attachments/' + element.pfp + '">': getSlug(element.name)}
+        ${element?.pfp ? '<img src="/static/attachments/' + element.pfp + '">': escapeHTML(getSlug(element.name))}
     </div>
     ${Subscribe('global.user.server_unread', (id) => {
         return (global.user?.server_unread?.[String(id)] || 0) > 0 ? 'smol' : ''
@@ -9,5 +9,5 @@
         const count = global.user?.server_mention_counts?.[String(id)] || 0
         return count > 0 ? `<div class="outlined notifIndicator">${count}</div>` : ''
     }, undefined, {element: element.id})}
-    <span class="tooltip left">${element.name}</span>
+    <span class="tooltip left">${escapeHTML(element.name)}</span>
 </div>
