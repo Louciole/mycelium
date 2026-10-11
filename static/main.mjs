@@ -198,7 +198,8 @@ function statusText(){
 window.statusText = statusText
 
 function getSlug(name){
-    const words = name.split(' ')
+    // Skip empty words (double spaces) so they don't yield "undefined"
+    const words = name.split(' ').filter(Boolean)
     let i = 0
     let slug= ''
     while (i < words.length && i<2){
@@ -538,8 +539,9 @@ function Save(endpoint="change_profile"){
             const target = key.split("-")[0]
             console.log("target is ",target)
             if (endpoint === "edit_server_property") {
-                xhr(endpoint + "?server_id=".concat(global.state.currentServer.id, "&property=", target, "&value=", encodeURIComponent(global.state["currentForm"][key].value)), undefined, "POST", false)
-                setElement("global.state.currentServer.".concat(target), global.state["currentForm"][key].value)
+                const req = xhr(endpoint + "?server_id=".concat(global.state.currentServer.id, "&property=", target, "&value=", encodeURIComponent(global.state["currentForm"][key].value)), undefined, "POST", false)
+                if (req.status === 200) setElement("global.state.currentServer.".concat(target), global.state["currentForm"][key].value)
+                else alert(_t("Impossible d'enregistrer ce changement."))
             }else if (endpoint === "editChannel" && key !== "name-input") {
                 // Other Overview fields each have their own saver (never fall through to the name)
                 const saver = CHANNEL_FIELD_SAVERS[key]

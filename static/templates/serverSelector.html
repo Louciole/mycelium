@@ -1,5 +1,5 @@
 <div id="server-infos" onclick="toggleFM('server-settings')">
-    <h1>${global.state.currentServer?.name}</h1><div class="icon">></div>
+    <h1>${escapeHTML(global.state.currentServer?.name)}</h1><div class="icon">></div>
 </div>
 <div id="drag-wrapper"></div>
 <div class="scrollable" id="server-selector" ondrop="dropSnippet(event)" ondragover="allowSnippetDrop(event)">

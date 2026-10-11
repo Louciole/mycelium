@@ -2,7 +2,16 @@
  * Authentication helpers for E2E tests.
  */
 
-const SERVER_URL = 'http://localhost:808';
+export const SERVER_URL = 'http://localhost:808';
+export const TEST_PASSWORD = 'Test123!';
+
+// Email of the test account each page is logged in as (see accountOf).
+const accounts = new WeakMap();
+
+/** Email of the test account `page` was last logged in with by loginUser. */
+export function accountOf(page) {
+    return accounts.get(page);
+}
 
 /**
  * Creates and logs in a user (follows the real flow: /auth -> /verif -> /channels).
@@ -12,7 +21,7 @@ const SERVER_URL = 'http://localhost:808';
  */
 export async function loginUser(page, username) {
     const email = `${username}@test.com`;
-    const password = 'Test123!';
+    const password = TEST_PASSWORD;
 
     // 1. Go to /auth
     await page.goto(`${SERVER_URL}/auth`);
@@ -61,6 +70,7 @@ export async function loginUser(page, username) {
     }
 
     console.log(`   ✅ User ${email} logged in and on /channels`);
+    accounts.set(page, email);
 
     return { email, username };
 }

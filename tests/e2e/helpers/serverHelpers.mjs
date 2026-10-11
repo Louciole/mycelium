@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test';
+import { recordCreatedServer } from './cleanupHelpers.mjs';
 
 /**
  * Opens the server creation modal from the left sidebar.
@@ -18,12 +19,18 @@ export async function goToCreateServerFinalStep(page) {
 
 /**
  * Creates a server through the UI and returns its new ID.
+ * When `name` is given it is typed in the modal's name field; otherwise the
+ * field is left empty and the server gets the default name ("New Server").
  */
-export async function createServerViaUi(page) {
+export async function createServerViaUi(page, name) {
     const beforeServerIds = await getServerIds(page);
 
     await openCreateServerModal(page);
     await goToCreateServerFinalStep(page);
+
+    if (name !== undefined) {
+        await page.locator('#create-server-name').fill(name);
+    }
 
     await page.locator('#createServerSteps .step').nth(1).locator('.btn.blue').click();
 
@@ -40,6 +47,7 @@ export async function createServerViaUi(page) {
     const createdServerId = afterServerIds.find((id) => !beforeServerIds.includes(id));
 
     expect(createdServerId).toBeTruthy();
+    recordCreatedServer(page, createdServerId);
     return createdServerId;
 }
 
@@ -194,7 +202,8 @@ export async function setCommunityMetadata(page, { description, languageCode, ta
     }
 
     if (languageCode) {
-        await page.selectOption('#language-add-select', languageCode);
+        await page.locator('#language-add-dropdown .dropdown-button').click();
+        await page.locator(`#language-add-dropdown li[data-lang="${languageCode}"]`).click();
         await page.waitForFunction((lang) => {
             const langs = window.global?.state?.currentServer?.languages;
             if (!langs) return false;
@@ -205,7 +214,7 @@ export async function setCommunityMetadata(page, { description, languageCode, ta
 
     if (tag) {
         await page.fill('#new-tag-input', tag);
-        await page.locator('#new-tag-input + button.btn.blue').click();
+        await page.locator('#add-tag-button').click();
         await page.waitForFunction((expectedTag) => {
             const tags = window.global?.state?.currentServer?.tags;
             if (!tags) return false;

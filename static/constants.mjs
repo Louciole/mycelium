@@ -35,7 +35,15 @@ function getLanguageLabel(langCode) {
     return `${flag} ${langCode}`;
 }
 
+/** Languages a community server can declare, by code, with their native name. */
+export const SERVER_LANGUAGES = {
+    fr: 'Français', en: 'English', es: 'Español', de: 'Deutsch', it: 'Italiano',
+    pt: 'Português', nl: 'Nederlands', pl: 'Polski', ru: 'Русский', ja: '日本語',
+    zh: '中文', ar: 'العربية'
+};
+
 // Expose globally for templates
+window.SERVER_LANGUAGES = SERVER_LANGUAGES;
 window.getFlagEmoji = getFlagEmoji;
 window.getLanguageLabel = getLanguageLabel;
 

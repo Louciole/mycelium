@@ -38,9 +38,21 @@ function changeUsername(){
 }
 window.changeUsername = changeUsername
 
+function openCreateServer(){
+    // The modal lives in main.html (static, no templating): reset the name
+    // field and translate its placeholder on every opening.
+    const input = document.getElementById('create-server-name')
+    input.value = ''
+    input.placeholder = _t('nom du serveur')
+    openMenu('create-server')
+}
+window.openCreateServer = openCreateServer
+
 function newServer(){
+    // Empty name → the backend falls back to "New Server".
+    const name = document.getElementById('create-server-name').value.trim()
     let request = new XMLHttpRequest();
-    request.open('POST', "create_server", true);
+    request.open('POST', "create_server?name=" + encodeURIComponent(name), true);
     request.onload = function() {
         // Refresh the whole list from get_user_servers so the new server
         // arrives fully populated (name, owner, customEmojis, …). Building a
@@ -1752,125 +1764,135 @@ window.removeEmail = removeEmail
 
 // ==================== Community Server Functions ====================
 
-function toggleCommunityServer() {
-    const checkbox = document.getElementById('is-community-checkbox');
-    const communitySettings = document.getElementById('community-settings');
-    const isCommunity = checkbox.checked;
+const MAX_SERVER_TAGS = 10
 
-    if (communitySettings) {
-        communitySettings.style.display = isCommunity ? '' : 'none';
-    }
+/** Shows (or clears, with no message) the inline error under a community setting. */
+function showCommunityError(id, message) {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.textContent = message || ''
+    el.hidden = !message
+}
 
-    // Save to server
-    xhr(`edit_server_property?server_id=${global.state.currentServer.id}&property=is_community&value=${isCommunity}`,
-        () => {
-            global.state.currentServer.is_community = isCommunity;
-            if (isCommunity) {
-                // Initialize tags if needed
-                if (!global.state.currentServer.tags) {
-                    setElement('global.state.currentServer.tags', []);
-                }
+/**
+ * Saves a JSON-list server property (tags, languages) and only then updates the
+ * local state, so a refused change never shows up as saved.
+ */
+function saveServerList(property, list, errorId, onSaved) {
+    xhr(`edit_server_property?server_id=${global.state.currentServer.id}&property=${property}&value=${encodeURIComponent(JSON.stringify(list))}`,
+        function () {
+            if (this.status !== 200) {
+                showCommunityError(errorId, _t("Impossible d'enregistrer ce changement."))
+                return
             }
+            showCommunityError(errorId)
+            setElement('global.state.currentServer.' + property, list)
+            onSaved?.()
         },
-        "POST", false);
+        "POST", false)
 }
-window.toggleCommunityServer = toggleCommunityServer;
 
-function addLanguage() {
-    const select = document.getElementById('language-add-select');
-    const language = select.value;
+function toggleCommunityServer() {
+    const checkbox = document.getElementById('is-community-checkbox')
+    const isCommunity = checkbox.checked
 
-    if (!language) return;
-
-    const languages = global.state.currentServer?.languages || [];
-    const languagesList = typeof languages === 'string' ? JSON.parse(languages) : languages;
-
-    if (languagesList.includes(language)) {
-        alert('Cette langue est déjà ajoutée.');
-        select.value = '';
-        return;
-    }
-
-    languagesList.push(language);
-
-    xhr(`edit_server_property?server_id=${global.state.currentServer.id}&property=languages&value=${encodeURIComponent(JSON.stringify(languagesList))}`,
-        () => {
-            // Utiliser setElement pour déclencher la réactivité Vesta
-            setElement('global.state.currentServer.languages', languagesList);
-            select.value = '';
+    xhr(`edit_server_property?server_id=${global.state.currentServer.id}&property=is_community&value=${isCommunity}`,
+        function () {
+            if (this.status !== 200) {
+                checkbox.checked = !isCommunity
+                showCommunityError('community-error', this.status === 403
+                    ? _t("Seul le propriétaire du serveur peut changer ce réglage.")
+                    : _t("Impossible d'enregistrer ce changement."))
+                return
+            }
+            showCommunityError('community-error')
+            global.state.currentServer.is_community = isCommunity
+            const communitySettings = document.getElementById('community-settings')
+            if (communitySettings) communitySettings.style.display = isCommunity ? '' : 'none'
         },
-        "POST", false);
+        "POST", false)
 }
-window.addLanguage = addLanguage;
+window.toggleCommunityServer = toggleCommunityServer
 
-function removeLanguage(language) {
-    const languages = global.state.currentServer?.languages || [];
-    const languagesList = typeof languages === 'string' ? JSON.parse(languages) : languages;
-
-    const index = languagesList.indexOf(language);
-    if (index > -1) {
-        languagesList.splice(index, 1);
-    }
-
-    xhr(`edit_server_property?server_id=${global.state.currentServer.id}&property=languages&value=${encodeURIComponent(JSON.stringify(languagesList))}`,
-        () => {
-            // Utiliser setElement pour déclencher la réactivité Vesta
-            setElement('global.state.currentServer.languages', languagesList);
-        },
-        "POST", false);
+/**
+ * Language chips plus the app's .dropdown component (as in Settings > Language)
+ * offering the languages not chosen yet.
+ */
+function renderServerLanguages() {
+    const languages = parseJsonArray(global.state.currentServer?.languages)
+    const label = (code) => `${getFlagEmoji(code)} ${escapeHTML(SERVER_LANGUAGES[code] || code.toUpperCase())}`
+    const chips = languages.length
+        ? '<div class="community-chips">' + languages.map((code, index) =>
+            `<span class="server-language-item community-chip">${label(code)}<button onclick="removeLanguage(${index})" aria-label="${_t('Retirer')}">×</button></span>`
+          ).join('') + '</div>'
+        : `<p class="community-empty">${_t("Aucune langue sélectionnée")}</p>`
+    const available = Object.keys(SERVER_LANGUAGES).filter(code => !languages.includes(code))
+    if (available.length === 0) return chips
+    return chips + `<div class="dropdown" id="language-add-dropdown">
+        <div class="dropdown-button" onclick="toggleDropdown(event)">
+            <div class="dropdown-text">${_t("Ajouter une langue...")}</div>
+            <div class="icon-wrapper">
+                <img class="icon down" src="/static/icons/material/down.svg" alt=""/>
+                <img class="icon up" src="/static/icons/material/up.svg" alt=""/>
+            </div>
+        </div>
+        <ul class="dropdown-menu scrollbar">${available.map(code =>
+            `<li data-lang="${code}" onclick="addLanguage(this.dataset.lang)">${label(code)}</li>`).join('')}</ul>
+    </div>`
 }
-window.removeLanguage = removeLanguage;
+window.renderServerLanguages = renderServerLanguages
+
+function addLanguage(language) {
+    const dropdown = document.getElementById('language-add-dropdown')
+    dropdown?.classList.remove('show')
+    if (global.state.activeDropdown === dropdown) global.state.activeDropdown = undefined
+    const languages = parseJsonArray(global.state.currentServer?.languages)
+    if (!language || languages.includes(language)) return
+    saveServerList('languages', [...languages, language], 'server-language-error')
+}
+window.addLanguage = addLanguage
+
+function removeLanguage(index) {
+    const languages = parseJsonArray(global.state.currentServer?.languages)
+    saveServerList('languages', languages.filter((_, i) => i !== index), 'server-language-error')
+}
+window.removeLanguage = removeLanguage
+
+function renderServerTags() {
+    const tags = parseJsonArray(global.state.currentServer?.tags)
+    if (tags.length === 0) return `<p class="community-empty">${_t("Aucun tag ajouté")}</p>`
+    return '<div class="community-chips">' + tags.map((tag, index) =>
+        `<span class="server-tag-item community-chip"># ${escapeHTML(tag)}<button onclick="removeServerTag(${index})" aria-label="${_t('Retirer')}">×</button></span>`
+    ).join('') + '</div>'
+}
+window.renderServerTags = renderServerTags
 
 function addServerTag() {
-    const input = document.getElementById('new-tag-input');
-    const tag = input.value.trim();
+    const input = document.getElementById('new-tag-input')
+    const tag = input.value.trim()
+    if (!tag) return
 
-    if (!tag) return;
-
-    if (tag.length > 20) {
-        alert('Les tags ne peuvent pas dépasser 20 caractères.');
-        return;
+    const tags = parseJsonArray(global.state.currentServer?.tags)
+    if (tags.some(t => t.toLowerCase() === tag.toLowerCase())) {
+        showCommunityError('server-tag-error', _t("Ce tag existe déjà."))
+        return
     }
-
-    const tags = global.state.currentServer?.tags || [];
-    const tagsList = typeof tags === 'string' ? JSON.parse(tags) : tags;
-
-    if (tagsList.includes(tag)) {
-        alert('Ce tag existe déjà.');
-        return;
+    if (tags.length >= MAX_SERVER_TAGS) {
+        showCommunityError('server-tag-error', _t("Vous ne pouvez pas ajouter plus de 10 tags."))
+        return
     }
-
-    if (tagsList.length >= 10) {
-        alert('Vous ne pouvez pas ajouter plus de 10 tags.');
-        return;
-    }
-
-    tagsList.push(tag);
-
-    xhr(`edit_server_property?server_id=${global.state.currentServer.id}&property=tags&value=${encodeURIComponent(JSON.stringify(tagsList))}`,
-        () => {
-            // Utiliser setElement pour déclencher la réactivité Vesta
-            setElement('global.state.currentServer.tags', tagsList);
-            input.value = '';
-        },
-        "POST", false);
+    saveServerList('tags', [...tags, tag], 'server-tag-error', () => {
+        input.value = ''
+        document.getElementById('new-tag-counter').textContent = input.maxLength
+    })
 }
-window.addServerTag = addServerTag;
+window.addServerTag = addServerTag
 
 function removeServerTag(index) {
-    const tags = global.state.currentServer?.tags || [];
-    const tagsList = typeof tags === 'string' ? JSON.parse(tags) : tags;
-
-    tagsList.splice(index, 1);
-
-    xhr(`edit_server_property?server_id=${global.state.currentServer.id}&property=tags&value=${encodeURIComponent(JSON.stringify(tagsList))}`,
-        () => {
-            // Utiliser setElement pour déclencher la réactivité Vesta
-            setElement('global.state.currentServer.tags', tagsList);
-        },
-        "POST", false);
+    const tags = parseJsonArray(global.state.currentServer?.tags)
+    saveServerList('tags', tags.filter((_, i) => i !== index), 'server-tag-error')
 }
-window.removeServerTag = removeServerTag;
+window.removeServerTag = removeServerTag
 
 function leaveServer(){
     const serverId = global.state.currentServer?.id

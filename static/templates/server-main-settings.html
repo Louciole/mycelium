@@ -1,11 +1,11 @@
 <h1>${_t("Vue d'ensemble du serveur")}</h1>
 <div class="inline" style="gap:0.6rem">
-    <div class="circle blue big" style="overflow: hidden;height: 90px">
-        ${global.state.currentServer?.pfp ? '<img src="/static/attachments/' + global.state.currentServer.pfp + '">': getSlug(global.state.currentServer.name)}
+    <div class="circle blue big server-settings-icon">
+        ${global.state.currentServer?.pfp ? '<img src="/static/attachments/' + escapeHTML(global.state.currentServer.pfp) + '" alt="">' : '<span>' + escapeHTML(getSlug(global.state.currentServer.name)) + '</span>'}
     </div>
     <div class="server-name">
         <h2>${_t("NOM DU SERVEUR")}</h2>
-        <input id="name-input" type="text" placeholder="${_t('nom du serveur')}" value="${global.state.currentServer.name}" oninput="updatePreview('formServer', event, 'global.state.currentServer.name')">
+        <input id="name-input" type="text" maxlength="44" placeholder="${_t('nom du serveur')}" value="${escapeHTML(global.state.currentServer.name)}" oninput="updatePreview('formServer', event, 'global.state.currentServer.name')">
     </div>
 </div>
 <hr>
@@ -32,12 +32,7 @@
         const pct = Math.min(100, (100 * usage / quota)).toFixed(1);
         const isPersonal = global.state.currentServer?.type === 'personal';
         return `<div style="color: var(--text2); margin-bottom: 0.3rem; font-size: 0.9rem;">${formatFileSize(usage)} / ${formatFileSize(quota)} (${pct}%) ${isPersonal ? '(' + _t('personal quota') + ')' : ''}</div>
-            <span class="block-progress-line">
-                <span class="progress-bar">
-                    <span style="background:${pct > 90 ? 'var(--red)' : 'var(--accent)'}; height:100%;width:${pct}%"></span>
-                    <span style="background:var(--bg); height:100%; width:${100 - pct}%"></span>
-                </span>
-            </span>`;
+            <div class="storage-bar"><span class="${pct > 90 ? 'full' : ''}" style="width:${pct}%"></span></div>`;
     })}
 </div>
 <hr>
@@ -46,86 +41,45 @@
 <div class="btn red ${global.state.currentServer.type=='personal'?'hidden':''}" style="margin-top:0.6rem" onclick="makePersonalServer()">${_t('convertir en serveur perso ')} (OWNER ONLY)
 </div>
 
-<div style="margin-top: 1.5rem; padding: 1rem; background: var(--bg4); border-radius: 8px;">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-        <div>
-            <strong style="color: var(--text); font-size: 1rem;">${_t("Serveur Communautaire")}</strong>
-            <p style="margin: 0.3rem 0 0 0; color: var(--text2); font-size: 0.9rem;">${_t("Les serveurs communautaires sont découvrables par tous les utilisateurs et sont ouverts à tous.")}</p>
-        </div>
-        <label class="switch">
-            <input type="checkbox" id="is-community-checkbox" ${global.state.currentServer?.is_community ? 'checked' : ''} onchange="toggleCommunityServer()">
-            <span class="slider"></span>
-        </label>
+<div class="community-toggle">
+    <div>
+        <strong>${_t("Serveur Communautaire")}</strong>
+        <p class="community-hint">${_t("Les serveurs communautaires sont découvrables par tous les utilisateurs et sont ouverts à tous.")}</p>
     </div>
+    <label class="switch">
+        <input type="checkbox" id="is-community-checkbox" ${global.state.currentServer?.is_community ? 'checked' : ''} onchange="toggleCommunityServer()">
+        <span class="slider"></span>
+    </label>
 </div>
+<p id="community-error" class="community-error" hidden></p>
 
-<div id="community-settings" style="${global.state.currentServer?.is_community ? '' : 'display: none;'}">
+<div id="community-settings" class="community-settings" style="${global.state.currentServer?.is_community ? '' : 'display: none;'}">
     <hr>
     <h2>${_t("DESCRIPTION DU SERVEUR")}</h2>
-    <p>${_t("Une courte description pour attirer de nouveaux membres.")}</p>
-    <textarea id="description-input" placeholder="${_t('Décrivez votre serveur...')}" maxlength="500" oninput="updatePreview('formServer', event, 'global.state.currentServer.description')" style="width: 100%; min-height: 100px; padding: 0.5rem; background: var(--bg4); border: 1px solid var(--bg5); color: var(--text); border-radius: 4px; resize: vertical;">${global.state.currentServer?.description || ''}</textarea>
+    <p class="community-hint">${_t("Une courte description pour attirer de nouveaux membres.")}</p>
+    <div class="community-field">
+        <textarea id="description-input" maxlength="500" rows="4" placeholder="${_t('Décrivez votre serveur...')}" oninput="updatePreview('formServer', event, 'global.state.currentServer.description || &quot;&quot;');this.nextElementSibling.textContent = 500 - this.value.length">${escapeHTML(global.state.currentServer?.description || '')}</textarea>
+        <span class="community-counter">${500 - (global.state.currentServer?.description || '').length}</span>
+    </div>
 
     <hr>
     <h2>${_t("LANGUES DU SERVEUR")}</h2>
-    <p>${_t("Sélectionnez les langues parlées sur ce serveur (plusieurs possibles).")}</p>
-    <div id="languages-selector" style="margin-top: 0.5rem;">
-        ${Subscribe('global.state.currentServer.languages', () => {
-            const languages = global.state.currentServer?.languages || [];
-            const languagesList = parseJsonArray(languages);
-
-            if (languagesList.length === 0) {
-                return '<p style="color: var(--text2); font-size: 0.9rem; margin-bottom: 0.5rem;">Aucune langue sélectionnée</p>';
-            }
-
-            return `<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
-                ${languagesList.map(lang => `
-                    <div class="server-language-item" style="display: flex; align-items: center; gap: 0.5rem; background: var(--bg4); padding: 0.4rem 0.8rem; border-radius: 8px;">
-                        <span style="color: var(--text);">${lang}</span>
-                        <button onclick="removeLanguage('${lang}')" style="background: transparent; border: none; color: var(--text2); cursor: pointer; padding: 0; font-size: 1.2rem; line-height: 1;">×</button>
-                    </div>
-                `).join('')}
-            </div>`;
-        })}
-        <select id="language-add-select" onchange="addLanguage()" style="padding: 0.5rem; background: var(--bg4); border: 1px solid var(--bg5); color: var(--text); border-radius: 4px; width: 100%;">
-            <option value="">${_t("Ajouter une langue...")}</option>
-            <option value="fr">🇫🇷 Français</option>
-            <option value="en">🇬🇧 English</option>
-            <option value="es">🇪🇸 Español</option>
-            <option value="de">🇩🇪 Deutsch</option>
-            <option value="it">🇮🇹 Italiano</option>
-            <option value="pt">🇵🇹 Português</option>
-            <option value="nl">🇳🇱 Nederlands</option>
-            <option value="pl">🇵🇱 Polski</option>
-            <option value="ru">🇷🇺 Русский</option>
-            <option value="ja">🇯🇵 日本语</option>
-            <option value="zh">🇨🇳 中文</option>
-            <option value="ar">🇸🇦 العربية</option>
-        </select>
+    <p class="community-hint">${_t("Sélectionnez les langues parlées sur ce serveur (plusieurs possibles).")}</p>
+    <div id="languages-selector">
+        ${Subscribe('global.state.currentServer.languages', () => renderServerLanguages())}
     </div>
+    <p id="server-language-error" class="community-error" hidden></p>
 
     <hr>
     <h2>${_t("TAGS DU SERVEUR")}</h2>
-    <p>${_t("Ajoutez des tags pour aider les utilisateurs à trouver votre serveur.")}</p>
-    ${Subscribe('global.state.currentServer.tags', () => {
-        const tags = global.state.currentServer?.tags || [];
-        const tagsList = parseJsonArray(tags);
-
-        if (tagsList.length === 0) {
-            return '<p style="color: var(--text2); font-size: 0.9rem; margin-top: 0.5rem; margin-bottom: 0.5rem;">Aucun tag ajouté</p>';
-        }
-
-        return `<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem;">
-            ${tagsList.map((tag, index) => `
-                <div class="server-tag-item" style="display: flex; align-items: center; gap: 0.5rem; background: var(--bg4); padding: 0.4rem 0.8rem; border-radius: 8px;">
-                    <span style="color: var(--text);">${tag}</span>
-                    <button onclick="removeServerTag(${index})" style="background: transparent; border: none; color: var(--text2); cursor: pointer; padding: 0; font-size: 1.2rem; line-height: 1;">×</button>
-                </div>
-            `).join('')}
-        </div>`;
-    })}
-    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
-        <input type="text" id="new-tag-input" placeholder="${_t('Ajouter un tag...')}" style="flex: 1; padding: 0.5rem; background: var(--bg4); border: 1px solid var(--bg5); color: var(--text); border-radius: 4px;">
-        <button class="btn blue" onclick="addServerTag()">${_t("Ajouter")}</button>
+    <p class="community-hint">${_t("Ajoutez des tags pour aider les utilisateurs à trouver votre serveur.")}</p>
+    ${Subscribe('global.state.currentServer.tags', () => renderServerTags())}
+    <div class="community-tag-row">
+        <div class="community-field">
+            <input type="text" id="new-tag-input" maxlength="20" placeholder="${_t('Ajouter un tag...')}" oninput="this.nextElementSibling.textContent = 20 - this.value.length" onkeydown="if (event.key === 'Enter') { event.preventDefault(); addServerTag() }">
+            <span class="community-counter" id="new-tag-counter">20</span>
+        </div>
+        <div class="btn blue" id="add-tag-button" onclick="addServerTag()">${_t("Ajouter")}</div>
     </div>
+    <p id="server-tag-error" class="community-error" hidden></p>
 </div>
-

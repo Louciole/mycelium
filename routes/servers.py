@@ -4,6 +4,7 @@ Endpoints take the live Mycelium instance as ``self``; shared helpers remain on
 the class (see server.py).
 """
 import json
+import re
 
 from vesta import Server, HTTPError, HTTPRedirect
 from message_helpers import (_enrichMessagesWithPolls, _enrichMessagesWithReactions,
@@ -12,9 +13,13 @@ from constants import USER_STORAGE_QUOTA, SERVER_STORAGE_QUOTA
 
 
 @Server.expose
-def create_server(self):
+def create_server(self, name=None):
     account_id = self.getUser()
-    server_id = self.db.insertDict('server', {'name': "New Server", "owner": account_id}, getId=True)
+    # Name typed in the creation modal; left empty → default name.
+    name = (name or "").strip() or "New Server"
+    if len(name) > MAX_SERVER_NAME:
+        raise HTTPError(self.response, 400, f"Server name must be 1 to {MAX_SERVER_NAME} characters")
+    server_id = self.db.insertDict('server', {'name': name, "owner": account_id}, getId=True)
     self.db.insertDict('accessserver', {'account': account_id, 'server': server_id})
     textCatID = self.db.insertDict('server_cat', {'name': "salons textuels", 'server': server_id},getId=True)
     self.db.insertDict('server_cat', {'name': "salons vocaux", 'server': server_id})
@@ -316,6 +321,48 @@ def get_custom_emoji(self, emoji_id):
     return json.dumps({"id": emoji["id"], "name": emoji["name"], "file": emoji["file"]}, default=str)
 
 
+# Limits for the community (Discover) metadata; the settings UI enforces the same.
+MAX_SERVER_NAME = 44          # server.name is varchar(44)
+MAX_SERVER_DESCRIPTION = 500
+MAX_SERVER_TAGS = 10
+MAX_SERVER_TAG_LENGTH = 20
+MAX_SERVER_LANGUAGES = 20
+LANGUAGE_CODE = re.compile(r"^[a-z]{2,3}$")  # ISO 639-1 (or 639-2) code
+
+
+def _parse_string_list(self, value, what):
+    """Parse a JSON array of strings sent as ``value``; 400 on anything else."""
+    try:
+        items = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        raise HTTPError(self.response, 400, f"{what} must be a JSON array")
+    if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
+        raise HTTPError(self.response, 400, f"{what} must be an array of strings")
+    return [i.strip() for i in items]
+
+
+def _validate_tags(self, value):
+    tags = _parse_string_list(self, value, "tags")
+    if len(tags) > MAX_SERVER_TAGS:
+        raise HTTPError(self.response, 400, f"Too many tags (max {MAX_SERVER_TAGS})")
+    if any(not t or len(t) > MAX_SERVER_TAG_LENGTH for t in tags):
+        raise HTTPError(self.response, 400, f"Tags must be 1 to {MAX_SERVER_TAG_LENGTH} characters")
+    if len({t.lower() for t in tags}) != len(tags):
+        raise HTTPError(self.response, 400, "Duplicate tag")
+    return tags
+
+
+def _validate_languages(self, value):
+    languages = [lang.lower() for lang in _parse_string_list(self, value, "languages")]
+    if len(languages) > MAX_SERVER_LANGUAGES:
+        raise HTTPError(self.response, 400, f"Too many languages (max {MAX_SERVER_LANGUAGES})")
+    if any(not LANGUAGE_CODE.match(lang) for lang in languages):
+        raise HTTPError(self.response, 400, "Invalid language code")
+    if len(set(languages)) != len(languages):
+        raise HTTPError(self.response, 400, "Duplicate language")
+    return languages
+
+
 @Server.expose
 def edit_server_property(self, server_id, property, value=None):
     uid = self.getUser()
@@ -325,24 +372,32 @@ def edit_server_property(self, server_id, property, value=None):
     self.require_server_perm(uid, server_id, "edit")
 
     if property == "name":
-        self.db.edit("server", server_id, property, value)
+        name = (value or "").strip()
+        if not name or len(name) > MAX_SERVER_NAME:
+            raise HTTPError(self.response, 400, f"Server name must be 1 to {MAX_SERVER_NAME} characters")
+        self.db.edit("server", server_id, "name", name)
     elif property == "pfp":
         filename = self.saveFile(value)
         self.db.edit("server", server_id, "pfp", filename)
         return json.dumps({"pfp": filename}, default=str)
     elif property == "is_community":
+        if value not in ("true", "false"):
+            raise HTTPError(self.response, 400, "is_community must be true or false")
         server = self.db.getSomething("server", server_id)
         if server["owner"] != uid:
             raise HTTPError(self.response, 403, "Only server owner can change community status")
         self.db.edit("server", server_id, "is_community", value == "true")
     elif property == "tags":
-        tags = json.loads(value) if isinstance(value, str) else value
-        self.db.edit("server", server_id, "tags", json.dumps(tags))
+        self.db.edit("server", server_id, "tags", json.dumps(_validate_tags(self, value)))
     elif property == "languages":
-        languages = json.loads(value) if isinstance(value, str) else value
-        self.db.edit("server", server_id, "languages", json.dumps(languages))
+        self.db.edit("server", server_id, "languages", json.dumps(_validate_languages(self, value)))
     elif property == "description":
-        self.db.edit("server", server_id, "description", value)
+        description = value or ""
+        if len(description) > MAX_SERVER_DESCRIPTION:
+            raise HTTPError(self.response, 400, f"Description too long (max {MAX_SERVER_DESCRIPTION})")
+        self.db.edit("server", server_id, "description", description)
+    else:
+        raise HTTPError(self.response, 400, "Unknown server property")
     return json.dumps({"status": "ok"})
 
 

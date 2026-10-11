@@ -104,7 +104,8 @@ def get_discoverable_servers(self, search=None, tags=None, languages=None):
             server_tags = server.get('tags', [])
             if isinstance(server_tags, str):
                 server_tags = json.loads(server_tags)
-            # Check if any requested tag is in server tags
+            # Tags keep the owner's casing ("Gaming") but filters are lowercased
+            server_tags = {t.lower() for t in server_tags if isinstance(t, str)}
             if any(tag in server_tags for tag in tags_list):
                 filtered_servers.append(server)
         all_servers = filtered_servers

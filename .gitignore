@@ -14,5 +14,6 @@ yarn.lock
 /static/markdown/
 /static/framework/
 /test-results/
+/tests/.e2e-created-servers.jsonl
 /playwright-report/
 serviceAccountKey.json

@@ -69,7 +69,7 @@
         <div id="servers" class="global-servers" data-default-class="global-servers" data-content="()=&gt;fillWith('server-icon', global.servers)">
         </div>
         <div class="container">
-            <div id="new-server" class="item action" data-haptic="medium" onclick="openMenu('create-server')">+</div>
+            <div id="new-server" class="item action" data-haptic="medium" onclick="openCreateServer()">+</div>
             <span class="tooltip left" data-i18n>Ajouter un serveur</span>
         </div>
         <div class="container">
@@ -112,6 +112,7 @@
                 <div class="step">
                     <h2>Personalise ton serveur</h2>
                     <p>Donne une personnalité à ton nouveau serveur en choisissant un nom et une icône. Tu pourras toujours les modifier plus tard.</p>
+                    <input type="text" id="create-server-name" maxlength="44" placeholder="nom du serveur" onkeydown="checkEnter(event, newServer)">
                     <div class="inline space-between">
                         <div class="btn grey2" onclick="gotoStep(0,'createServerSteps')">Retour</div>
                         <div class="btn blue" onclick="newServer()">Créer</div>
