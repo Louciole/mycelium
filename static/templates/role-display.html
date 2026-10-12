@@ -1,5 +1,5 @@
 <div class="roleTag">
-    <div class="circle" style="background-color: ${global.state.currentServer.roles[element].color}"></div>
-    <div>${global.state.currentServer.roles[element].name}</div>
-    <div class="roleTag-remove" onclick="removeRoleFromUser(event, ${element})" title="${_t('Remove role')}">×</div>
+    <div class="circle" style="background-color: ${escapeHTML(global.state.currentServer.roles[element].color)}"></div>
+    <div>${escapeHTML(global.state.currentServer.roles[element].name)}</div>
+    ${canManageRole(global.state.currentServer.roles[element]) ? `<div class="roleTag-remove" onclick="removeRoleFromUser(event, ${element})" title="${_t('Remove role')}">×</div>` : ''}
 </div>

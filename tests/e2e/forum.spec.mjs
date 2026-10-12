@@ -380,13 +380,14 @@ test.describe('Forum channels - E2E', () => {
         await reloadAndWaitForApp(member);
         await openServerFromSidebarById(member, serverId);
 
-        // A plain member gets no admin controls (forum settings, pin/lock/delete of others' posts)
+        // A plain member gets no admin controls (forum settings, pin/lock/delete of others' posts).
+        // They stay in the DOM, hidden, so a permission change can show them live (access.mjs applyGates).
         await openForum(member, forumId);
-        await expect(member.locator('.forum-header-actions img[src*="settings"]')).toHaveCount(0);
+        await expect(member.locator('.forum-header-actions img[src*="settings"]')).toBeHidden();
         await openPost(member, forumId, postId);
-        await expect(member.locator('.forum-header-actions img[src*="flag"]')).toHaveCount(0);
-        await expect(member.locator('.forum-header-actions img[src*="lock"]')).toHaveCount(0);
-        await expect(member.locator('.forum-header-actions img[src*="trash"]')).toHaveCount(0);
+        await expect(member.locator('.forum-header-actions img[src*="flag"]')).toBeHidden();
+        await expect(member.locator('.forum-header-actions img[src*="lock"]')).toBeHidden();
+        await expect(member.locator('.forum-header-actions img[src*="trash"]')).toBeHidden();
 
         const reply = `Reply to moderate ${suffix}`;
         await sendMessageInActiveConversation(member, reply);

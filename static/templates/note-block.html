@@ -12,7 +12,7 @@
             <img src="/static/icons/material/trash.svg"/>
         </div>
     </div>
-    <span class="content editable-block ${element.type!=='text'?'note-'+element.type:''}" contenteditable="true"
+    <span class="content editable-block ${element.type!=='text'?'note-'+element.type:''}" contenteditable="${checkChannelRight(global.state.activeChan.id, 'note', 'edit-notes') ? 'true' : 'false'}"
           spellcheck="false"
           data-placeholder="Press '/' for commands"
           oninput="global.state.noteEditor.onInput('${element.uuid}', event)"

@@ -1,0 +1,6 @@
+<div class="role-member-row" data-id="${element}">
+    <div class="pfp" style="background-image:url(/static/attachments/${escapeHTML(global.users[element]?.pfp)})"></div>
+    <span class="name">${escapeHTML(global.users[element]?.display || global.users[element]?.username || '#' + element)}</span>
+    <span class="username">${escapeHTML(global.users[element]?.username || '')}</span>
+    <img class="icon remove" src="/static/icons/material/closeFilled.svg" title="${_t('Retirer')}" onclick="removeRoleMember(${element})" style="${canManageRole(global.state.currentRole) ? '' : 'display:none'}">
+</div>

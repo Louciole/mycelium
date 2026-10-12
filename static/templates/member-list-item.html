@@ -4,7 +4,7 @@
             ${Subscribe("global.users["+element.id+"].status.icon",()=>{return("<div class='activity "+global.users[element.id].status.icon)+"'></div>"},"grow")}
         </div>
     </div>
-    <div class="name" onclick="toggleProfileInfo(${element.id},event)" ${global.state.currentServer.members[element.id].roles.length != 0 ? "style='--text2:" + escapeHTML(global.state.currentServer.roles[global.state.currentServer.members[element.id].roles[0]].color) + "'" : ""}>
+    <div class="name" data-uid="${element.id}" onclick="toggleProfileInfo(${element.id},event)" ${memberColor(element.id) ? "style='--text2:" + escapeHTML(memberColor(element.id)) + "'" : ""}>
         ${escapeHTML(global.users[element.id].display)}
     </div>
 </div>

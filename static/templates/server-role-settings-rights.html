@@ -1,7 +1,10 @@
-<h2>${_t('Permissions')}</h2>
-<div class="scrollable">
-    ${global.state.currentServer.op ?
-    fillWith('server-right', Object.assign({}, window.rights, window.opr)) :
-    fillWith('server-right', window.rights)
-    }
+<div class="roles-toolbar">
+    <div class="search-field">
+        <img class="icon" src="/static/icons/material/search.svg">
+        <input type="text" id="perm-search" placeholder="${_t('Rechercher des permissions')}" oninput="renderRolePermissions()" autocomplete="off">
+    </div>
 </div>
+<div class="perm-clear" style="${canManageRole(global.state.currentRole) ? '' : 'display:none'}">
+    <span class="link" onclick="clearRolePerms()">${_t("Effacer les permissions")}</span>
+</div>
+<div id="role-perm-list"></div>

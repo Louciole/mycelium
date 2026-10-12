@@ -39,9 +39,9 @@ ${Subscribe('global.state.callManager.callViewState', () => {
     <div class="item blue" onclick="createInvitation()"><p>${_t("Inviter des gens")}</p><img class="light-blue icon" src="/static/icons/material/groupadd.svg"></div>
     <hr>
     <div class="cat">
-        <div class="item"  style="${checkServRights('server-admin') ? '' : 'display:none'}" onclick="openMenu('server-params')"><p>${_t("Paramètres du serveur")}</p><img class="icon" src="/static/icons/material/settings.svg"></div>
-        <div class="item" style="${checkServRights('server-admin') ? '' : 'display:none'}" onclick="openMenu('create-channel')"><p>${_t("Créer un salon")}</p><img class="icon" src="/static/icons/material/add.svg"></div>
-        <div class="item" style="${checkServRights('server-admin') ? '' : 'display:none'}" onclick="createCat()"><p>${_t("Créer une catégorie")}</p><img class="icon" src="/static/icons/material/add.svg"></div>
+        <div class="item" id="server-settings-item" ${servGate('manage-server', 'manage-roles', 'manage-expressions', 'kick-members', 'ban-members')} onclick="openServerParams()"><p>${_t("Paramètres du serveur")}</p><img class="icon" src="/static/icons/material/settings.svg"></div>
+        <div class="item" id="create-channel-item" ${servGate('manage-channels')} onclick="openMenu('create-channel')"><p>${_t("Créer un salon")}</p><img class="icon" src="/static/icons/material/add.svg"></div>
+        <div class="item" ${servGate('manage-channels')} onclick="createCat()"><p>${_t("Créer une catégorie")}</p><img class="icon" src="/static/icons/material/add.svg"></div>
     </div>
     <hr>
     <div class="item" onclick="toggleModale('server-notif-modale',event)">${Subscribe('global.user.notif_prefs', () => {
@@ -68,7 +68,7 @@ ${Subscribe('global.state.callManager.callViewState', () => {
     })}
 </div>
 <div class="modale" id="edit-channel-modale">
-    <div class="item" style="${checkServRights('edit') ? '' : 'display:none'}" onclick="closeFM();openChannelSettings()">${_t("Edit channel")}</div>
+    <div class="item" id="edit-channel-item" onclick="closeFM();openChannelSettings()">${_t("Edit channel")}</div>
     ${Subscribe('global.user.channel_mutes', () => {
         const chanId = parseInt(global.state.modaltarget?.dataset?.id)
         const mute = global.user?.channel_mutes?.find(m => m.channel === chanId)
@@ -83,7 +83,7 @@ ${Subscribe('global.state.callManager.callViewState', () => {
     })}
 </div>
 <div class="modale" id="edit-cat-modale">
-    <div class="item" onclick="closeFM();openMenu('cat-params')">${_t("Edit category")}</div>
+    <div class="item" id="edit-cat-item" onclick="closeFM();openCategorySettings()">${_t("Edit category")}</div>
 </div>
 <section class="menu-wrapper" id="create-channel" style="display:none" onclick="event.target === event.currentTarget && (event.currentTarget.style.display='none')">
     <div class="menu" onclick="event.stopPropagation()">

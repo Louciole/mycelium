@@ -36,12 +36,9 @@ class DriveManager:
         self.srv.response.headers.append(('Vary', 'Origin'))
 
     def _get_drive_access(self, drive_id, uid):
-        """Return the drive row, or raise 404/403."""
-        drive = self.srv.db.getSomething("drive_channel", drive_id)
-        if not drive:
-            raise HTTPError(self.srv.response, 404, "Drive channel not found")
-        self.srv.require_member(uid, drive["server"])
-        return drive
+        """Return the drive row, or raise 404/403 (view-channels in this drive:
+        private drives and view overwrites — membership alone isn't enough)."""
+        return self.srv.require_channel_access(uid, drive_id, "drive", "view")
 
     def upload(self, user_id, drive_id, file, parent_folder=None):
         """Save a file to disk and create a drive_file record. Returns the new file id."""
@@ -117,7 +114,7 @@ class DriveManager:
 
     def _require_drive_write(self, drive, drive_id, uid):
         """Raise 403 unless ``uid`` may add/replace files in this drive."""
-        if drive.get("is_private") and not self.srv.checkChannelAccess(uid, drive_id, "drive", "send-messages"):
+        if not self.srv.checkChannelAccess(uid, drive_id, "drive", "send-messages"):
             raise HTTPError(self.srv.response, 403, "No permission for this drive channel")
 
     def upload_file(self, drive_id, filename, file, parent_folder=None):
@@ -291,7 +288,7 @@ class DriveManager:
         # ── Overwrite in place — uploader or admin only ───────────────────────
         server_info = self.srv.db.getSomething("server", drive["server"])
         if file_info["uploader"] != uid and (not server_info or server_info["owner"] != uid):
-            if not self.srv.checkAccessRights(uid, drive["server"], "edit"):
+            if not self.srv.checkChannelAccess(uid, drive["id"], "drive", "manage-files"):
                 raise HTTPError(self.srv.response, 403,
                                 "Only the uploader or a server admin can overwrite this file")
 
@@ -331,7 +328,7 @@ class DriveManager:
 
         server_info = self.srv.db.getSomething("server", drive["server"])
         if file_info["uploader"] != uid and server_info["owner"] != uid:
-            if not self.srv.checkAccessRights(uid, drive["server"], "edit"):
+            if not self.srv.checkChannelAccess(uid, drive["id"], "drive", "manage-files"):
                 raise HTTPError(self.srv.response, 403, "Only uploader or server admins can delete files")
 
         filepath = self.srv.path + "/static/attachments/" + file_info["filepath"]
@@ -397,7 +394,7 @@ class DriveManager:
 
         server_info = self.srv.db.getSomething("server", drive["server"])
         if folder_info["creator"] != uid and server_info["owner"] != uid:
-            if not self.srv.checkAccessRights(uid, drive["server"], "edit"):
+            if not self.srv.checkChannelAccess(uid, drive["id"], "drive", "manage-files"):
                 raise HTTPError(self.srv.response, 403, "Only creator or server admins can delete folders")
 
         total_size = 0

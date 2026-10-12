@@ -10,6 +10,10 @@ from vesta import Server, HTTPError, HTTPRedirect
 from message_helpers import (_enrichMessagesWithPolls, _enrichMessagesWithReactions,
                              _enrichMessagesWithConvBlocks)
 from constants import USER_STORAGE_QUOTA, SERVER_STORAGE_QUOTA
+import permissions
+from routes.roles import notify_permissions_changed
+
+CHANNEL_TYPES = ("textual", "vocal", "drive", "note", "forum")
 
 
 @Server.expose
@@ -78,7 +82,8 @@ def get_serv_content(self, server_id, channel_id=None):
         if op:
             content["op"] = True
         content["cat"] = self.db.getAll("server_cat", server_id,"server")
-        content["roles"] = self.db.getAll("role", server_id,"server")
+        content["roles"] = sorted(self.db.getAll("role", server_id, "server") or [], key=lambda r: (r["position"], r["id"]))
+        content["default_permissions"] = (self.db.getSomething("server", server_id) or {}).get("default_permissions") or {}
 
         personal = self.db.getFilters("personal_server", ["server", "=", server_id])
         if personal:
@@ -99,20 +104,32 @@ def get_serv_content(self, server_id, channel_id=None):
                 userRoles[j] = userRoles[j]["role"]
             content["members"][i] = {"id": content["members"][i]["account"], "roles": userRoles}
 
-        # Filter private channels: only show if user has view access
-        content["channels"] = [ch for ch in content["channels"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "textual", "view")]
-        content["vocals"] = [ch for ch in content["vocals"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "vocal", "view")]
+        # Only the channels the user can view (private channels, view overwrites)
+        ctx = self.channelContext(uid, server_id)
+        visible = lambda chans, ctype: [ch for ch in chans if "view-channels" in self.channelRights(ctx, ch, ctype)]
+        content["channels"] = visible(content["channels"], "textual")
+        content["vocals"] = visible(content["vocals"], "vocal")
 
         # Attach live occupant lists to each vocal channel
         for chan in content["vocals"]:
             call = self.callManager.get_call_by_vocal_channel(chan["id"])
             chan["occupants"] = call.participants if call else []
-        content["drives"] = [ch for ch in content["drives"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "drive", "view")]
-        content["notes"] = [ch for ch in content["notes"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "note", "view")]
-        content["forums"] = [ch for ch in content["forums"] if not ch.get("is_private") or self.checkChannelAccess(uid, ch["id"], "forum", "view")]
+        content["drives"] = visible(content["drives"], "drive")
+        content["notes"] = visible(content["notes"], "note")
+        content["forums"] = visible(content["forums"], "forum")
 
-        # Include channel_permissions for this server
-        content["channel_permissions"] = self.db.getAll("channel_permission", server_id, "server") or []
+        # Overwrites of the visible channels only: the client mirrors the rights
+        # computation (access.mjs channelRightsFor) to lock what you can't do.
+        shown = {(ch["id"], t) for key, t in (("channels", "textual"), ("vocals", "vocal"), ("drives", "drive"),
+                                                ("notes", "note"), ("forums", "forum")) for ch in content[key]}
+        # A category shows if you can view it or one of its channels (a channel can
+        # re-allow what its category hides); its overwrites come along for the mirror.
+        used = {ch.get("category") for key in ("channels", "vocals", "drives", "notes", "forums") for ch in content[key]}
+        content["cat"] = [c for c in content["cat"]
+                          if c["id"] in used or "view-channels" in self.channelRights(ctx, c, "category")]
+        shown |= {(c["id"], "category") for c in content["cat"]}
+        content["channel_permissions"] = [row for rows in ctx["overwrites"].values() for row in rows
+                                          if (row["channel"], row["channel_type"]) in shown]
     else:
         content["messages"] = self.db.getFilters("message", ["place", "=", channel_id, "order by timestamp"])
     return json.dumps(content, default=str)
@@ -174,119 +191,9 @@ def set_server_featured(self, server_id, featured):
 
 
 @Server.expose
-def edit_channel_permissions(self, channelId, channelType, action, roleId=None, permission=None, value=None):
-    """Manage channel privacy and per-role channel permissions.
-    Actions:
-        togglePrivacy - toggle is_private on the channel
-        addRole - add a role to the channel's allowed roles
-        removeRole - remove a role from the channel's allowed roles
-        editPermission - toggle a specific permission for a role on this channel
-    """
-    uid = self.getUser()
-
-    table = self._getChannelTable(channelType)
-    if not table:
-        raise HTTPError(self.response, 400, "invalid channel type")
-
-    chan = self.db.getSomething(table, channelId)
-    if not chan:
-        raise HTTPError(self.response, 404, "channel not found")
-
-    serverId = chan["server"]
-    self.require_server_perm(uid, serverId, "server-admin")
-
-    if action == "togglePrivacy":
-        newValue = not chan.get("is_private", False)
-        self.db.edit(table, channelId, "is_private", newValue)
-        return json.dumps({"is_private": newValue})
-
-    elif action == "addRole":
-        if not roleId:
-            raise HTTPError(self.response, 400, "roleId required")
-        # Check role belongs to this server
-        role = self.db.getSomething("role", roleId)
-        if not role or role["server"] != int(serverId):
-            raise HTTPError(self.response, 403, "role not in server")
-        # Check if already exists
-        existing = self.db.getFilters("channel_permission", [
-            "channel", "=", channelId, "and",
-            "channel_type", "=", channelType, "and",
-            "role", "=", roleId
-        ])
-        if existing:
-            return json.dumps(existing[0], default=str)
-        permId = self.db.insertDict("channel_permission", {
-            "channel": channelId,
-            "channel_type": channelType,
-            "role": roleId,
-            "server": serverId,
-            "permissions": json.dumps({"view": "", "send-messages": ""})
-        }, getId=True)
-        perm = self.db.getSomething("channel_permission", permId)
-        return json.dumps(perm, default=str)
-
-    elif action == "removeRole":
-        if not roleId:
-            raise HTTPError(self.response, 400, "roleId required")
-        existing = self.db.getFilters("channel_permission", [
-            "channel", "=", channelId, "and",
-            "channel_type", "=", channelType, "and",
-            "role", "=", roleId
-        ])
-        if existing:
-            self.db.deleteSomething("channel_permission", existing[0]["id"])
-        return json.dumps({"success": True})
-
-    elif action == "editPermission":
-        if not roleId or not permission:
-            raise HTTPError(self.response, 400, "roleId and permission required")
-        existing = self.db.getFilters("channel_permission", [
-            "channel", "=", channelId, "and",
-            "channel_type", "=", channelType, "and",
-            "role", "=", roleId
-        ])
-        if not existing:
-            raise HTTPError(self.response, 404, "role not added to channel")
-        perms = existing[0].get("permissions", {})
-        if isinstance(perms, str):
-            perms = json.loads(perms)
-        if value == "true":
-            perms[permission] = ""
-        else:
-            perms.pop(permission, None)
-        self.db.edit("channel_permission", existing[0]["id"], "permissions", json.dumps(perms))
-        return json.dumps({"permissions": perms})
-
-    raise HTTPError(self.response, 400, "invalid action")
-
-
-@Server.expose
-def get_channel_permissions(self, channelId, channelType):
-    """Get all channel_permission rows for a specific channel."""
-    uid = self.getUser()
-
-    table = self._getChannelTable(channelType)
-    if not table:
-        raise HTTPError(self.response, 400, "invalid channel type")
-
-    chan = self.db.getSomething(table, channelId)
-    if not chan:
-        raise HTTPError(self.response, 404, "channel not found")
-
-    serverId = chan["server"]
-    self.require_member(uid, serverId)
-
-    perms = self.db.getFilters("channel_permission", [
-        "channel", "=", channelId, "and",
-        "channel_type", "=", channelType
-    ])
-    return json.dumps(perms or [], default=str)
-
-
-@Server.expose
 def create_server_emoji(self, server_id, name, value):
     uid = self.getUser()
-    self.require_server_perm(uid, server_id, "edit")
+    self.require_server_perm(uid, server_id, "manage-expressions")
     existing = self.db.getAll("server_emoji", server_id, "server")
     if len(existing) >= 20:
         return json.dumps({"error": "max_emojis"})
@@ -306,7 +213,7 @@ def delete_server_emoji(self, emoji_id):
     emoji = self.db.getSomething("server_emoji", emoji_id)
     if not emoji:
         raise HTTPError(self.response, 404)
-    self.require_server_perm(uid, emoji["server"], "edit")
+    self.require_server_perm(uid, emoji["server"], "manage-expressions")
     self.db.deleteSomething("server_emoji", emoji_id)
     return json.dumps({"status": "ok"})
 
@@ -369,7 +276,7 @@ def edit_server_property(self, server_id, property, value=None):
     forbidden_fields = ["id", "owner", "is_featured", "member_count"]
     if property in forbidden_fields:
         raise HTTPError(self.response, 403)
-    self.require_server_perm(uid, server_id, "edit")
+    self.require_server_perm(uid, server_id, "manage-server")
 
     if property == "name":
         name = (value or "").strip()
@@ -404,11 +311,14 @@ def edit_server_property(self, server_id, property, value=None):
 @Server.expose
 def edit_server_channel(self, server_id, action="edit", field=None, value=None, targetId=None, channel_type=None):
     uid = self.getUser()
-    self.require_server_perm(uid, server_id, "edit")
+
+    channel_type = channel_type or "textual"
+    if channel_type not in CHANNEL_TYPES:
+        raise HTTPError(self.response, 400, "invalid channel type")
 
     if action == "create":
-        channel_type = channel_type if channel_type else "textual"
-        table = self._getChannelTable(channel_type) or "textual_channel"
+        self.require_server_perm(uid, server_id, "manage-channels")
+        table = self._getChannelTable(channel_type)
 
         defaults = {"server": server_id}
         if channel_type == "vocal":
@@ -426,10 +336,15 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
         channel = self.db.getSomething(table, channel_id)
         return json.dumps({"channel": channel, "type": channel_type}, default=str)
 
-    table_name = self._getChannelTable(channel_type) or "textual_channel"
+    table_name = self._getChannelTable(channel_type)
     chan = self.db.getSomething(table_name, targetId)
-    if chan and chan["server"] == int(server_id):
+    # Editing/deleting one channel: "manage-channels" in that channel (server right
+    # or a channel overwrite).
+    if chan and chan["server"] == int(server_id) and self.checkChannelAccess(uid, chan["id"], channel_type, "manage-channels"):
         if action == "delete":
+            # channel_permission is polymorphic (no FK on channel): drop its overwrites
+            for row in self.db.getFilters("channel_permission", ["channel", "=", chan["id"], "and", "channel_type", "=", channel_type]) or []:
+                self.db.deleteSomething("channel_permission", row["id"])
             if channel_type == "forum":
                 for post in self.db.getFilters("forum_post", ["forum", "=", int(targetId)]):
                     for msg in self.db.getFilters("message", ["place", "=", post["id"]]):
@@ -440,36 +355,91 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
         allowed_channel_fields = ("name", "place", "category")
         if field not in allowed_channel_fields:
             raise HTTPError(self.response, 400, "invalid field for channel")
+        moved = False
         if field == "category":
             value = int(value) if value else None
+            moved = value != chan.get("category")
+            if moved:
+                _require_category_move(self, uid, chan, channel_type, value)
         elif field == "place":
             value = float(value)
         self.db.edit(table_name, targetId, field, value)
+        if moved:
+            # The channel now inherits another category's permissions
+            notify_permissions_changed(self, chan["server"], exclude=uid)
         return json.dumps({"status": "ok"})
 
     raise HTTPError(self.response, 403, "forbidden")
 
 
+def _require_category_move(self, uid, chan, channel_type, new_category):
+    """Moving a channel to another category changes what it inherits (its category's
+    permissions): it needs manage-roles in the channel, and manage-channels in the
+    destination category."""
+    if not self.checkChannelAccess(uid, chan["id"], channel_type, "manage-roles"):
+        raise HTTPError(self.response, 403, "moving a channel changes its permissions: manage-roles needed")
+    if new_category is not None:
+        cat = self.db.getSomething("server_cat", new_category)
+        if not cat or cat["server"] != chan["server"]:
+            raise HTTPError(self.response, 400, "unknown category")
+        if not self.checkChannelAccess(uid, cat["id"], "category", "manage-channels"):
+            raise HTTPError(self.response, 403, "you can't manage channels of that category")
+
+
+def _detach_from_category(self, cat):
+    """Before a category disappears, copy what its channels inherited onto them so
+    deleting e.g. a private category doesn't expose its channels: privacy is kept
+    and, per target, the channel's own setting of a right wins over the category's."""
+    cat_rows = self.db.getFilters("channel_permission", ["channel", "=", cat["id"], "and", "channel_type", "=", "category"]) or []
+    for channel_type in CHANNEL_TYPES:
+        table = self._getChannelTable(channel_type)
+        scope = permissions.CHANNEL_PERMISSIONS[channel_type]
+        for ch in self.db.getFilters(table, ["category", "=", cat["id"]]) or []:
+            if cat.get("is_private") and not ch.get("is_private"):
+                self.db.edit(table, ch["id"], "is_private", True)
+            own = {(r.get("role"), r.get("account")): r for r in self.db.getFilters("channel_permission", [
+                "channel", "=", ch["id"], "and", "channel_type", "=", channel_type]) or []}
+            for row in cat_rows:
+                target = (row.get("role"), row.get("account"))
+                mine = own.get(target)
+                set_here = set((mine or {}).get("permissions") or {}) | set((mine or {}).get("deny") or {})
+                allow = (set((mine or {}).get("permissions") or {}) | (set(row.get("permissions") or {}) - set_here)) & scope
+                deny = (set((mine or {}).get("deny") or {}) | (set(row.get("deny") or {}) - set_here)) & scope
+                values = {"permissions": json.dumps({r: "" for r in allow}), "deny": json.dumps({r: "" for r in deny})}
+                if mine:
+                    for field, value in values.items():
+                        self.db.edit("channel_permission", mine["id"], field, value)
+                else:
+                    self.db.insertDict("channel_permission", {"channel": ch["id"], "channel_type": channel_type,
+                                                              "server": ch["server"], "role": target[0],
+                                                              "account": target[1], **values})
+            self.db.edit(table, ch["id"], "category", None)
+    for row in cat_rows:
+        self.db.deleteSomething("channel_permission", row["id"])
+
+
 @Server.expose
 def edit_server_category(self, server_id, action=None, field=None, value=None, targetId=None):
     uid = self.getUser()
-    self.require_server_perm(uid, server_id, "edit")
 
     if action == "create":
+        self.require_server_perm(uid, server_id, "manage-channels")
         cat_id = self.db.insertDict("server_cat", {"name": "New Category", "server": server_id}, getId=True)
         cat = self.db.getSomething("server_cat", cat_id)
         return json.dumps(cat, default=str)
 
     cat = self.db.getSomething("server_cat", targetId)
-    if not cat or cat["server"] != int(server_id):
+    # One category: "manage-channels" in it (server right or a category overwrite)
+    if not cat or cat["server"] != int(server_id) \
+            or not self.checkChannelAccess(uid, cat["id"], "category", "manage-channels"):
         raise HTTPError(self.response, 403, "forbidden")
 
     if action == "delete":
-        for table in ["textual_channel", "vocal_channel", "drive_channel", "notes_channel", "forum_channel"]:
-            channels = self.db.getFilters(table, ["category", "=", targetId])
-            for ch in channels:
-                self.db.edit(table, ch["id"], "category", None)
+        _detach_from_category(self, cat)
         self.db.deleteSomething("server_cat", targetId)
+        # Its channels got the overwrites they inherited: the author's client only
+        # moved them out locally, so it reloads too (no exclude).
+        notify_permissions_changed(self, cat["server"])
         return json.dumps({"status": "ok"})
 
     if field in ("name", "place"):
@@ -478,50 +448,6 @@ def edit_server_category(self, server_id, action=None, field=None, value=None, t
         return json.dumps({"status": "ok"})
 
     raise HTTPError(self.response, 400, "invalid field for category")
-
-
-@Server.expose
-def edit_server_role(self, server_id, action=None, field=None, value=None, targetId=None):
-    uid = self.getUser()
-    # Role/permission management requires admin — otherwise an "edit" holder
-    # could grant themselves a role carrying "server-admin".
-    self.require_server_perm(uid, server_id, "server-admin")
-
-    if action == "create":
-        role_id = self.db.insertDict("role", {"name": "new role", "server": server_id}, getId=True)
-        return json.dumps({"id": role_id})
-
-    role = self.db.getSomething("role", targetId)
-    if not role or role["server"] != int(server_id) or field == "server":
-        raise HTTPError(self.response, 403)
-
-    if action == "delete":
-        self.db.deleteSomething("role", targetId)
-        return json.dumps({"status": "ok"})
-
-    if action == "attribute":
-        if self.db.getFilters("role_attribution", ["account", "=", value, "and", "role", "=", targetId, "and", "server", "=", server_id]):
-            raise HTTPError(self.response, 403, "already attributed")
-        self.db.insertDict("role_attribution", {"account": value, "role": targetId, "server": server_id}, getId=True)
-        self.invalidateAdminCache()
-        return json.dumps({"status": "ok"})
-
-    if action == "unattribute":
-        rows = self.db.getFilters("role_attribution", ["account", "=", value, "and", "role", "=", targetId, "and", "server", "=", server_id]) or []
-        for row in rows:
-            self.db.deleteSomething("role_attribution", row["id"])
-        self.invalidateAdminCache()
-        return json.dumps({"status": "ok"})
-
-    if field == "permissions":
-        permissions = json.loads(value)
-        serv_op = self.db.getSomething("op_servs", server_id, "server")
-        if permissions.get("mycelium-admin") is not None and serv_op == []:
-            raise HTTPError(self.response, 403)
-
-    self.db.edit("role", targetId, field, value)
-    self.invalidateAdminCache()
-    return json.dumps({"status": "ok"})
 
 
 @Server.expose

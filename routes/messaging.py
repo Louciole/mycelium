@@ -281,10 +281,10 @@ def delete_message(self, message_id):
 
     # Own message, or someone else's channel/forum message with manage-messages
     # (DMs stay sender-only: there is no DM moderation by server mods).
-    channel, _ = _lookupMessagePlace(self, message["place"])
+    channel, channel_type = _lookupMessagePlace(self, message["place"])
     moderated = False
     if message["sender"] != uid:
-        if not channel or not self.hasServerPerm(uid, channel["server"], "manage-messages"):
+        if not channel or not self.checkChannelAccess(uid, channel["id"], channel_type, "manage-messages"):
             raise HTTPError(self.response, 403, "forbidden")
         moderated = True
 

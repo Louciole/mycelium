@@ -143,8 +143,9 @@ window.canManageMessage = canManageMessage;
 // ---------------------------------------------------------------------------
 
 function openModerationSettings(event) {
-    window.goTo('setting-server-content', 'server-moderation-settings',
-                { 'category': 'currentSettingTab', 'event': event }, true, renderModerationSettings);
+    // No event when opened programmatically (openServerParams): no tab highlight to move
+    const selected = event ? { 'category': 'currentSettingTab', 'event': event } : undefined;
+    window.goTo('setting-server-content', 'server-moderation-settings', selected, true, renderModerationSettings);
 }
 window.openModerationSettings = openModerationSettings;
 
@@ -343,11 +344,23 @@ function isTimedOut(serverId) {
 }
 window.isTimedOut = isTimedOut;
 
+/** [id, type] of the server channel the composer writes to (a text channel, or the forum of the open post). */
+function composerChannel() {
+    const chan = global.state.isServer ? global.state.activeChan : null;
+    if (chan?.type === "conv") return [chan.id, "textual"];
+    if (chan?.type === "forum") return [chan.id, "forum"];
+    return null;
+}
+
 function updateComposerLock() {
     const sid = global.state.isServer ? global.state.currentServer?.id : null;
     const chatInput = document.querySelector(".chat-input");
     if (!chatInput) return;
-    const locked = !!(sid && isTimedOut(sid));
+    const timedOut = !!(sid && isTimedOut(sid));
+    // Read-only channel: send-messages denied by the channel permissions (access.mjs)
+    const place = composerChannel();
+    const readOnly = !timedOut && !!place && !window.checkChannelRight?.(place[0], place[1], "send-messages");
+    const locked = timedOut || readOnly;
     const ta = chatInput.querySelector("textarea");
     if (ta) ta.disabled = locked;
     chatInput.classList.toggle("locked", locked);
@@ -360,9 +373,10 @@ function updateComposerLock() {
             banner.className = "timeout-banner";
             chatInput.parentElement?.insertBefore(banner, chatInput);
         }
-        const exp = global.user.server_timeouts[String(sid)];
         banner.style.display = "flex";
-        banner.textContent = _t("Vous êtes temporairement réduit·e au silence jusqu'au ") + String(exp).slice(0, 16);
+        banner.textContent = readOnly
+            ? _t("Tu n'as pas la permission d'envoyer des messages dans ce salon.")
+            : _t("Vous êtes temporairement réduit·e au silence jusqu'au ") + String(global.user.server_timeouts[String(sid)]).slice(0, 16);
     } else if (banner) {
         banner.style.display = "none";
     }

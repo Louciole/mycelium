@@ -7873,3 +7873,205 @@ body.offline [data-needs-network] {
     opacity: 0.5;
     pointer-events: none;
 }
+
+/* ── Server settings › Roles (static/roles.mjs) ───────────────────────────── */
+.setting-content:has(.role-editor) { width: min(62vw, 60rem); }
+.roles-settings .roles-hint { color: var(--text2); line-height: 1.4; margin: 0.3rem 0 0.8rem; }
+.roles-settings .muted, .role-editor .muted { color: var(--text2); padding: 0.8rem 0; }
+
+.everyone-card {
+    display: flex; align-items: center; gap: 1rem;
+    background: var(--bg2); border: 1px solid var(--text3); border-radius: 8px;
+    padding: 0.9rem 1rem; margin: 0.6rem 0 1.4rem; cursor: pointer;
+}
+.everyone-card:hover { background: var(--bg3); }
+.everyone-card h3 { margin: 0 0 0.2rem; font-size: 0.95rem; color: var(--text); }
+.everyone-card p { margin: 0; color: var(--text2); font-size: 0.75rem; }
+.everyone-card .icon { height: 1.3rem; }
+.everyone-card .grow { flex: 1; height: auto; }
+.everyone-card .chevron { transform: rotate(180deg); height: 1.1rem; }
+
+.roles-toolbar { display: flex; align-items: center; gap: 0.8rem; margin: 0.6rem 0; }
+.roles-toolbar .btn, .picker-actions .btn { padding: 0.55rem 0.9rem; white-space: nowrap; font-weight: 600; }
+.search-field { position: relative; flex: 1; display: flex; align-items: center; }
+.search-field > .icon { position: absolute; left: 0.7rem; height: 1.1rem; pointer-events: none; }
+.setting-content .search-field input {
+    width: 100%; box-sizing: border-box; height: auto;
+    padding: 0.6rem 0.8rem 0.6rem 2.4rem; font-size: 0.9rem;
+}
+
+.roleList { margin-top: 0.6rem; }
+.roleList .head, .roleList .item { grid-template-columns: minmax(0, 1fr) 7rem 6rem; }
+.roleList .item { padding: 0.45rem 0; align-items: center; }
+.roleList .role-name { gap: 0.6rem; cursor: pointer; font-size: 0.95rem; font-weight: 600; min-width: 0; }
+.roleList .role-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roleList .role-shield { height: 1.3rem; width: 1.3rem; flex-shrink: 0; }
+.roleList .role-members { gap: 0.3rem; cursor: pointer; color: var(--text2); }
+.roleList .role-members:hover { color: var(--text); }
+.roleList .item .actionList { gap: 0.5rem; }
+.roleList .item .action, .role-editor-head .action {
+    height: 2.1rem; width: 2.1rem; display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; background: var(--bg2); cursor: pointer;
+}
+.roleList .item .action:hover, .role-editor-head .action:hover { background: var(--bg3); }
+.roleList .role-row[draggable="true"] { cursor: grab; }
+.role-row.drop-before, .role-sidebar-item.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.role-row.drop-after, .role-sidebar-item.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+
+.role-editor { display: flex; gap: 1.5rem; align-items: flex-start; }
+.role-editor-sidebar {
+    width: 11rem; flex-shrink: 0; position: sticky; top: 0;
+    border-right: 1px solid var(--text3); padding-right: 0.8rem;
+}
+.role-editor-sidebar-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
+.role-editor-sidebar-head .back { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-weight: 700; color: var(--text); }
+.role-editor-sidebar-head .icon { height: 1.1rem; cursor: pointer; }
+#role-editor-sidebar { max-height: 70vh; overflow-y: auto; }
+.role-sidebar-item {
+    display: flex; align-items: center; gap: 0.55rem; padding: 0.35rem 0.5rem;
+    border-radius: 4px; cursor: pointer; color: var(--text2); font-weight: 600;
+}
+.role-sidebar-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-sidebar-item:hover { background: var(--bg2); color: var(--text); }
+.role-sidebar-item.selected { background: var(--bg3); color: var(--text); }
+.role-sidebar-item .circle { height: 0.7rem; width: 0.7rem; flex-shrink: 0; }
+.role-sidebar-item[draggable="true"] { cursor: grab; }
+
+.role-editor-main { flex: 1; min-width: 0; }
+.role-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.role-editor-head h1 { font-size: 1rem; text-transform: uppercase; margin: 0; overflow-wrap: anywhere; }
+#role-tabs { margin: 0.8rem 0 1rem; gap: 1.6rem; border-bottom: 1px solid var(--text3); }
+#role-tabs h2 { font-size: 0.85rem; margin: 0; padding-bottom: 0.6rem; border-bottom: 2px solid transparent; }
+#role-tabs h2.selected { color: var(--text); border-bottom-color: var(--accent); }
+.role-locked-hint { color: var(--text2); background: var(--bg2); border-radius: 6px; padding: 0.6rem 0.8rem; }
+.role-editor .required { color: var(--red); }
+.role-editor h2 { font-size: 0.9rem; color: var(--text); }
+.role-editor input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.roleColor .big .item { height: auto; min-height: 3.4rem; position: relative; }
+.roleColor .item.selected::after {
+    content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 800; text-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+}
+.roleColor .grid .item { position: relative; }
+.roleColor .item.custom { display: flex; align-items: flex-start; justify-content: flex-end; overflow: hidden; }
+.roleColor .item.custom .icon { height: 0.9rem; margin: 0.2rem; filter: invert(1); }
+.setting-content #role-custom-color {
+    position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; opacity: 0; cursor: pointer;
+}
+.roleColor.disabled { pointer-events: none; opacity: 0.5; }
+
+.role-preview { display: flex; gap: 0.8rem; align-items: center; background: var(--bg4); border-radius: 8px; padding: 1rem; }
+.role-preview .pfp { height: 2.5rem; width: 2.5rem; margin: 0; background-size: cover; flex-shrink: 0; background-color: var(--bg3); }
+.role-preview-name { font-weight: 700; font-size: 0.95rem; }
+.role-preview p { margin: 0.2rem 0 0; color: var(--text); }
+
+.perm-clear { display: flex; justify-content: flex-end; }
+.perm-clear .link { color: var(--accent); cursor: pointer; font-weight: 600; }
+.perm-clear .link:hover { text-decoration: underline; }
+.role-editor .perm-category { font-size: 1rem; margin: 1.4rem 0 0; }
+.role-editor .permission { padding: 1rem 0; border-bottom: 1px solid var(--text3); }
+.role-editor .permission h3 { color: var(--text); font-size: 0.95rem; }
+.role-editor .permission p { color: var(--text2); margin: 0.35rem 3.5rem 0 0; line-height: 1.4; }
+.role-editor .permission.disabled { opacity: 0.55; }
+.role-editor .permission .switch input:disabled + .slider { cursor: not-allowed; }
+
+.picker-anchor { position: relative; }
+.role-member-picker {
+    position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 5;
+    width: 19rem; flex-direction: column; gap: 0.6rem; padding: 0.8rem;
+    background: var(--bg2); border: 1px solid var(--text2bis); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+#role-picker-list { width: 100%; height: auto; max-height: 15rem; overflow-y: auto; }
+.picker-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.8rem; }
+.role-member-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.4rem; border-radius: 4px; }
+.role-member-row:hover { background: var(--bg2); }
+.role-member-row .pfp { height: 1.7rem; width: 1.7rem; margin: 0; background-size: cover; flex-shrink: 0; background-color: var(--bg3); }
+.role-member-row .name { font-weight: 600; color: var(--text); }
+.role-member-row .username { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-member-row .remove { margin-left: auto; height: 1.1rem; cursor: pointer; opacity: 0.6; }
+.role-member-row .remove:hover { opacity: 1; }
+.role-member-row.pick { cursor: pointer; }
+.role-member-row.pick .checkbox { width: 18px; height: 18px; flex-shrink: 0; }
+
+#addRole:empty { display: none !important; }
+
+/* … menu of a role: same look as the server dropdown (#server-settings) */
+.modale.role-menu {
+    position: fixed; z-index: 20; min-width: 13rem; padding: 0.4rem; gap: 0.1rem;
+    background: var(--bg5); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    font-size: 0.85rem; font-weight: 500; color: var(--text2);
+}
+.modale.role-menu .item { width: auto !important; padding: 0.5rem 0.6rem; cursor: pointer; transition: background 50ms; }
+.modale.role-menu .item:hover { background: var(--accent); color: var(--text); }
+.modale.role-menu .item.crit { color: var(--red); }
+.modale.role-menu .item.crit:hover { background: var(--red); color: var(--text); }
+
+/* ── Channel settings › Permissions (static/channel-permissions.mjs) ─────── */
+.setting-content:has(.chan-perms) { width: min(62vw, 60rem); }
+.chan-private-card { background: var(--bg2); border: 1px solid var(--text3); border-radius: 8px; margin-top: 0.6rem; }
+.chan-private-head { display: flex; align-items: center; gap: 0.7rem; padding: 1rem 1rem 0.3rem; }
+.chan-private-head h3 { flex: 1; margin: 0; font-size: 0.95rem; color: var(--text); }
+.chan-private-head .icon { height: 1.2rem; }
+.chan-private-card > p { margin: 0; padding: 0 1rem 1rem; color: var(--text2); }
+.chan-access { border-top: 1px solid var(--text3); padding: 0.8rem 1rem 1rem; }
+.chan-access-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.chan-access h4 { margin: 0.9rem 0 0.3rem; font-size: 0.85rem; color: var(--text); }
+.chan-access-head h4 { margin: 0; }
+.chan-access-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0; }
+.chan-access-row .name { font-weight: 600; color: var(--text); }
+.chan-access-row .sub { margin-left: auto; color: var(--text2); font-size: 0.75rem; }
+.chan-access-row .remove, .chan-target .remove { height: 1rem; cursor: pointer; opacity: 0.6; }
+.chan-access-row .remove:hover, .chan-target .remove:hover { opacity: 1; }
+.chan-access-row .remove-placeholder { width: 1rem; }
+.chan-access-row .circle, .chan-target .circle, .role-member-row .circle { width: 0.8rem; height: 0.8rem; flex-shrink: 0; }
+.chan-access-row .pfp, .chan-target .pfp {
+    height: 1.4rem; width: 1.4rem; margin: 0; flex-shrink: 0; background-size: cover; background-color: var(--bg3);
+}
+
+.chan-advanced-head { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
+.chan-advanced-head h2 { margin: 0; font-size: 1rem; color: var(--text); }
+.chan-advanced-head .chevron { height: 1rem; transform: rotate(-90deg); transition: transform 120ms; }
+.chan-advanced-head.collapsed .chevron { transform: rotate(180deg); }
+.chan-advanced { display: flex; gap: 1.2rem; margin-top: 1rem; align-items: flex-start; }
+.chan-advanced.collapsed { display: none; }
+.chan-targets { width: 11rem; flex-shrink: 0; border-right: 1px solid var(--text3); padding-right: 0.8rem; }
+.chan-targets-head { display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: var(--text2); margin-bottom: 0.5rem; }
+.chan-targets-head .icon { height: 1.1rem; cursor: pointer; }
+.chan-target {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.5rem;
+    border-radius: 4px; cursor: pointer; color: var(--text2); font-weight: 600;
+}
+.chan-target span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chan-target:hover { background: var(--bg2); color: var(--text); }
+.chan-target.selected { background: var(--bg3); color: var(--text); }
+.chan-target .remove { margin-left: auto; opacity: 0; }
+.chan-target:hover .remove { opacity: 0.6; }
+.chan-target-perms { flex: 1; min-width: 0; }
+.chan-target-perms > h3 { margin: 0 0 0.4rem; font-size: 1rem; color: var(--text); overflow-wrap: anywhere; }
+.chan-perms .permission { padding: 0.9rem 0; border-bottom: 1px solid var(--text3); }
+.chan-perms .permission h3 { color: var(--text); font-size: 0.95rem; }
+.chan-perms .permission p { color: var(--text2); margin: 0.35rem 7rem 0 0; line-height: 1.4; }
+.chan-perms .permission.disabled { opacity: 0.55; }
+.role-member-picker.left { right: auto; left: 0; }
+
+/* allow / inherit / deny switch */
+.tristate { display: flex; flex-shrink: 0; border: 1px solid var(--text3); border-radius: 6px; overflow: hidden; }
+.tristate button {
+    width: 2rem; height: 1.8rem; border: none; background: var(--bg2); color: var(--text2);
+    font-family: inherit; font-weight: 700; cursor: pointer;
+}
+.tristate button + button { border-left: 1px solid var(--text3); }
+.tristate button:not(:disabled):hover { color: var(--text); }
+.tristate button:disabled { cursor: not-allowed; }
+.tristate button.deny.on { background: var(--red); color: white; }
+.tristate button.inherit.on { background: var(--text2bis); color: var(--text); }
+.tristate button.allow.on { background: var(--green); color: white; }
+.chan-picker-list { width: 100%; height: auto; max-height: 15rem; overflow-y: auto; }
+.chan-inherit { display: flex; align-items: center; gap: 0.6rem; margin: 0.4rem 0 0.2rem; padding: 0.7rem 0.9rem; border: 1px solid var(--text3); border-radius: 8px; background: var(--bg2); color: var(--text2); }
+.chan-inherit .icon { height: 1.1rem; }
+
+/* Actions gated by a right (access.mjs channelGate / servGate): [hidden] must win over .item/.btn display */
+[data-gate-right][hidden], [data-gate-serv][hidden] { display: none !important; }
+#note-editor.read-only .block > .controls { display: none !important; }

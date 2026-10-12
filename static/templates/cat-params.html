@@ -1,20 +1,22 @@
 <section class="settings-menu" id="cat-params" style="display:none">
   ${(() => {
     global.state.editingCatId = global.state.modaltarget?.dataset?.id;
-    global.state.editingCatName = global.state.modaltarget?.querySelector('h2')?.innerText?.toLowerCase() || '';
+    global.state.editingCatName = findChannel(global.state.editingCatId, 'category')?.name
+        || global.state.modaltarget?.querySelector('h2')?.innerText?.toLowerCase() || '';
     return '';
   })()}
   <div id="settings-list-params" class="scrollable settings-list">
     <section id="">
-      <h3>${global.state.editingCatName}</h3>
-      <div class="item selected" onclick="goTo('setting-server-content', 'cat-main-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Vue d'ensemble")}</div>
+      <h3>${escapeHTML(global.state.editingCatName)}</h3>
+      <div class="item ${canManageCategory() ? 'selected' : ''}" id="category-overview-tab" ${channelGate(global.state.editingCatId, 'category', 'manage-channels')} onclick="goTo('setting-server-content', 'cat-main-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Vue d'ensemble")}</div>
+      <div class="item ${canManageCategory() ? '' : 'selected'}" id="category-permissions-tab" ${channelGate(global.state.editingCatId, 'category', 'manage-roles')} onclick="openChannelPermissions(event)">${_t("Permissions")}</div>
       <hr>
-      <div class="item crit" onclick="deleteCatFromMenu()">${_t("Supprimer la catégorie")}</div>
+      <div class="item crit" ${channelGate(global.state.editingCatId, 'category', 'manage-channels')} onclick="deleteCatFromMenu()">${_t("Supprimer la catégorie")}</div>
     </section>
   </div>
   <div id="setting-panel" class="scrollable">
       <div id="setting-server-content" class="setting-content">
-        ${getTemplate('cat-main-settings')}
+        ${canManageCategory() ? getTemplate('cat-main-settings') : ''}
       </div>
       <div class="close" onclick="closeMenu('#cat-params')">+</div>
   </div>

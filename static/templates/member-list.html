@@ -1,6 +1,6 @@
 <div id="member-list">
     <div class="member-list-header">
-    <h3> TOTAL - ${Object.keys(global.state.currentServer.members).length}</h3>
+    <h3> TOTAL - ${channelMemberList().length}</h3>
     </div>
-    ${fillWith('member-list-item', global.state.currentServer['members'])}
+    ${fillWith('member-list-item', channelMemberList())}
 </div>

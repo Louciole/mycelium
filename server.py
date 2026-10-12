@@ -16,6 +16,7 @@ from driveManager import DriveManager
 from forumManager import ForumMixin
 from message_helpers import _lookupMessagePlace
 from constants import PATH, USER_STORAGE_QUOTA, SERVER_STORAGE_QUOTA
+import permissions
 import ws_handlers
 
 fastpysgi.server.max_content_length = 100 * 1024 * 1024  # 100 MB
@@ -527,10 +528,9 @@ class Mycelium(ForumMixin, Server):
     # endpoints moderation touches (joins, send_message, reactions, vocal, delete).
 
     def hasServerPerm(self, uid, server_id, perm):
-        """True if uid holds `perm` on server_id. server-admin (and the owner,
-        via checkAccessRights) imply every moderation right."""
-        return (self.checkAccessRights(uid, server_id, perm)
-                or self.checkAccessRights(uid, server_id, "server-admin"))
+        """True if uid holds `perm` on server_id. server-admin (and the owner)
+        imply every moderation right — see checkAccessRights."""
+        return self.checkAccessRights(uid, server_id, perm)
 
     def require_mod_perm(self, uid, server_id, perm):
         """403 unless uid holds the moderation right `perm` (or server-admin) on server_id."""
@@ -650,26 +650,41 @@ class Mycelium(ForumMixin, Server):
         if serverInfos["owner"] == uid:
             return True
 
-        userRights = self.getRights(server, uid)
+        # server-admin implies every server permission (never the op ones)
+        return permissions.implies(self.getRights(server, uid), action)
 
-        if action not in userRights:
-            return False
-
-        return True
+    def getMemberRoles(self, serverId, uid):
+        """Role rows held by uid on serverId, highest first (lowest position)."""
+        serverRoles = {role["id"]: role for role in self.db.getAll("role", serverId, "server")}
+        attributions = self.db.getFilters("role_attribution", ["account", "=", uid, "and", "server", "=", serverId])
+        # .get: an attribution can outlive its role on a DB without the FK (db/migrate_roles.sql)
+        roles = [serverRoles[a["role"]] for a in attributions if a["role"] in serverRoles]
+        return sorted(roles, key=lambda r: (r["position"], r["id"]))
 
     def getRights(self, serverId, uid):
-        serverRoles = self.db.getAll("role", serverId, "server")
-        # make a set of roles based on their ids
-        serverRoles = {role["id"]: role for role in serverRoles}
-        userRoles = self.db.getFilters("role_attribution", ["account", "=", uid, "and", "server", "=", serverId])
-        userRights = {}
-
-        for role in userRoles:
-            if serverRoles[role["role"]]:
-                for right in serverRoles[role["role"]]["permissions"]:
-                    userRights[right] = right
-
+        """Rights granted to uid on serverId: its roles' + the @everyone defaults."""
+        server = self.db.getSomething("server", serverId)
+        userRights = {right: right for right in (server or {}).get("default_permissions") or {}}
+        for role in self.getMemberRoles(serverId, uid):
+            for right in role["permissions"] or {}:
+                userRights[right] = right
         return userRights
+
+    def memberTopPosition(self, serverId, uid):
+        """Position of uid's highest role (0 = top), or None if they hold none."""
+        roles = self.getMemberRoles(serverId, uid)
+        return roles[0]["position"] if roles else None
+
+    def outranks(self, serverId, uid, position):
+        """True if uid sits strictly above a role at `position` (None = @everyone,
+        the very bottom). The owner outranks everything."""
+        server = self.db.getSomething("server", serverId)
+        if server and server["owner"] == uid:
+            return True
+        mine = self.memberTopPosition(serverId, uid)
+        if mine is None:
+            return False
+        return position is None or mine < position
 
     def _getChannelTable(self, channelType):
         """Map channel type string to table name."""
@@ -679,59 +694,90 @@ class Mycelium(ForumMixin, Server):
             "vocal": "vocal_channel",
             "drive": "drive_channel",
             "note": "notes_channel",
-            "forum": "forum_channel"
+            "forum": "forum_channel",
+            "category": "server_cat",
         }
         return tables.get(channelType)
 
-    def checkChannelAccess(self, uid, channelId, channelType, action="view"):
-        """Check if a user can perform an action on a channel.
-        For non-private channels, all server members have access.
-        For private channels, only users whose roles have the permission (or server owner/admin) can access.
-        """
+    def channelContext(self, uid, serverId):
+        """What it takes to evaluate uid's rights in any channel of serverId, loaded
+        once (a listing reuses it for every channel). None if uid isn't a member."""
+        server = self.db.getSomething("server", serverId)
+        if not server or not self.db.getFilters("accessserver", ["account", "=", uid, "and", "server", "=", serverId]):
+            return None
+        roles = self.getMemberRoles(serverId, uid)
+        rights = set(server.get("default_permissions") or {})
+        for role in roles:
+            rights |= set(role["permissions"] or {})
+        overwrites = {}
+        for row in self.db.getAll("channel_permission", serverId, "server") or []:
+            overwrites.setdefault((row["channel"], row["channel_type"]), []).append(row)
+        categories = {c["id"]: c for c in self.db.getAll("server_cat", serverId, "server") or []}
+        return {"uid": uid, "is_owner": server["owner"] == uid, "rights": rights,
+                "role_ids": {r["id"] for r in roles}, "overwrites": overwrites, "categories": categories}
+
+    @staticmethod
+    def permissionLayers(chan, channelType, overwrites, categories):
+        """[(is_private, overwrites)] of a channel: its category's, then its own.
+        `overwrites` maps (id, type) -> rows, `categories` id -> server_cat row."""
+        layers = []
+        cat = categories.get(chan.get("category")) if channelType != "category" else None
+        if cat:
+            layers.append((cat.get("is_private"), overwrites.get((cat["id"], "category"), [])))
+        layers.append((chan.get("is_private"), overwrites.get((chan["id"], channelType), [])))
+        return layers
+
+    def channelRights(self, ctx, chan, channelType):
+        """Effective rights (set) of ctx's member in a channel (or category) row —
+        permissions.channel_rights over the category layer then the channel's."""
+        channelType = "textual" if channelType == "conv" else channelType
+        layers = self.permissionLayers(chan, channelType, ctx["overwrites"], ctx["categories"])
+        return permissions.channel_rights(
+            channelType, ctx["rights"], ctx["is_owner"], layers, ctx["role_ids"], ctx["uid"])
+
+    def channelMembersRights(self, chan, channelType):
+        """{account: effective rights} for every member of chan's server, batched
+        (one query per table) — for fan-out (message/typing broadcasts, mentions)."""
+        serverId = chan["server"]
+        server = self.db.getSomething("server", serverId)
+        roles = {r["id"]: r for r in self.db.getAll("role", serverId, "server") or []}
+        held = {}
+        for a in self.db.getAll("role_attribution", serverId, "server") or []:
+            if a["role"] in roles:
+                held.setdefault(a["account"], set()).add(a["role"])
+        channelType = "textual" if channelType == "conv" else channelType
+        overwrites = {}
+        for row in self.db.getAll("channel_permission", serverId, "server") or []:
+            overwrites.setdefault((row["channel"], row["channel_type"]), []).append(row)
+        categories = {c["id"]: c for c in self.db.getAll("server_cat", serverId, "server") or []}
+        layers = self.permissionLayers(chan, channelType, overwrites, categories)
+        base = set(server.get("default_permissions") or {})
+        result = {}
+        for member in self.db.getAll("accessserver", serverId, "server") or []:
+            account = member["account"]
+            role_ids = held.get(account, set())
+            rights = set(base)
+            for rid in role_ids:
+                rights |= set(roles[rid]["permissions"] or {})
+            result[account] = permissions.channel_rights(
+                channelType, rights, server["owner"] == account, layers, role_ids, account)
+        return result
+
+    def checkChannelAccess(self, uid, channelId, channelType, action="view", ctx=None):
+        """True if uid holds `action` in the channel: server rights (roles + @everyone)
+        adjusted by the channel's overwrites, private channels denying view to @everyone.
+        Owner and server-admin pass. Pass `ctx` (channelContext) when checking many channels."""
         table = self._getChannelTable(channelType)
         if not table:
             return False
-
         chan = self.db.getSomething(table, channelId)
         if not chan:
             return False
-
-        serverId = chan["server"]
-
-        # Check server membership
-        if not self.db.getFilters("accessserver", ["account", "=", uid, "and", "server", "=", serverId]):
+        ctx = ctx or self.channelContext(uid, chan["server"])
+        if not ctx:
             return False
-
-        # Non-private channels: all server members have access
-        if not chan.get("is_private"):
-            return True
-
-        # Server owner always has access
-        serverInfos = self.db.getSomething("server", serverId)
-        if serverInfos["owner"] == uid:
-            return True
-
-        # Server-admin role holders have access
-        userRights = self.getRights(serverId, uid)
-        if "server-admin" in userRights:
-            return True
-
-        # Check channel_permission for user's roles
-        userRoles = self.db.getFilters("role_attribution", ["account", "=", uid, "and", "server", "=", serverId])
-        for userRole in userRoles:
-            perms = self.db.getFilters("channel_permission", [
-                "channel", "=", channelId, "and",
-                "channel_type", "=", channelType, "and",
-                "role", "=", userRole["role"]
-            ])
-            if perms:
-                rolePerms = perms[0].get("permissions", {})
-                if isinstance(rolePerms, str):
-                    rolePerms = json.loads(rolePerms)
-                if action in rolePerms:
-                    return True
-
-        return False
+        action = permissions.CHANNEL_ALIASES.get(action, action)
+        return action in self.channelRights(ctx, chan, channelType)
 
     def _getChannelType(self, channelId):
         """Detect channel type from its ID by checking all channel tables."""
@@ -868,6 +914,7 @@ import routes.workspaces     # noqa: E402,F401
 import routes.drive          # noqa: E402,F401
 import routes.search         # noqa: E402,F401
 import routes.moderation     # noqa: E402,F401
+import routes.roles          # noqa: E402,F401
 
 server = Mycelium(path=PATH, configFile="/server.ini")
 

@@ -1,33 +1,28 @@
-<h2>${_t('Role Name')}</h2>
-<input type="text" id="roleName" placeholder="${_t('Role Name')}" value="${global.state.currentRole.name}" oninput="updatePreview('formRole', event, 'global.state.currentRole.name')">
-<h2>${_t('Role Color')}</h2>
-<p>${_t('Members use the color of their highest role in the role list.')}</p>
-<div class="roleColor">
+<h2>${_t('Nom du rôle')} <span class="required">*</span></h2>
+<input type="text" id="roleName" maxlength="24" placeholder="${_t('Nom du rôle')}" value="${escapeHTML(global.state.currentRole.name)}" oninput="updatePreview('formRole', event, 'global.state.currentRole.name')" ${canManageRole(global.state.currentRole) ? '' : 'disabled'}>
+<hr>
+<h2>${_t('Couleur du rôle')} <span class="required">*</span></h2>
+<p>${_t("Les membres utilisent la couleur du rôle le plus élevé qu'ils ont dans la liste des rôles.")}</p>
+<div class="roleColor ${canManageRole(global.state.currentRole) ? '' : 'disabled'}" id="role-color-picker">
     <div class="big">
-        <div class="item" onclick="setRoleColor(event)" style="--color:#A8A8A8"></div>
-        <div class="item" onclick="" style="--color:#A8A8A8"></div>
+        <div class="item" data-color="#a8a8a8" onclick="setRoleColor('#a8a8a8')" style="--color:#a8a8a8" title="${_t('Par défaut')}"></div>
+        <label class="item custom" style="--color:${escapeHTML(global.state.currentRole.color)}" title="${_t('Couleur personnalisée')}">
+            <img class="icon" src="/static/icons/material/edit.svg">
+            <input type="color" id="role-custom-color" value="${escapeHTML(global.state.currentRole.color)}" onchange="setRoleColor(event.currentTarget.value)" ${canManageRole(global.state.currentRole) ? '' : 'disabled'}>
+        </label>
     </div>
     <div class="grid">
-        <div class="item" onclick="setRoleColor(event)" style="--color:#1abc9c"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#2ecc71"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#3498db"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#9b59b6"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#e91e63"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#f1c40f"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#e67e22"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#e74c3c"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#95a5a6"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#607d8b"></div>
-
-        <div class="item" onclick="setRoleColor(event)" style="--color:#11806a"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#1f8b4c"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#206694"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#71368a"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#ad1457"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#c27c0e"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#a84300"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#992d22"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#979c9f"></div>
-        <div class="item" onclick="setRoleColor(event)" style="--color:#546e7a"></div>
+        ${['#1abc9c','#2ecc71','#3498db','#9b59b6','#e91e63','#f1c40f','#e67e22','#e74c3c','#95a5a6','#607d8b',
+           '#11806a','#1f8b4c','#206694','#71368a','#ad1457','#c27c0e','#a84300','#992d22','#979c9f','#546e7a']
+          .map(c => `<div class="item" data-color="${c}" onclick="setRoleColor('${c}')" style="--color:${c}"></div>`).join('')}
+    </div>
+</div>
+<hr>
+<h2>${_t('Aperçu')}</h2>
+<div class="role-preview" id="role-preview">
+    <div class="pfp" style="background-image:url(/static/attachments/${escapeHTML(global.user.pfp)})"></div>
+    <div>
+        <div class="role-preview-name" style="color:${escapeHTML(global.state.currentRole.color)}">${escapeHTML(global.user.display || global.user.username)}</div>
+        <p>${_t("Le mycélium relie tous les arbres de la forêt.")}</p>
     </div>
 </div>

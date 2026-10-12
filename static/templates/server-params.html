@@ -1,29 +1,29 @@
 <section class="settings-menu" id="server-params" style="display:none">
   <div id="settings-list-params" class="scrollable settings-list">
     <section id="">
-      <h3>${global.state.currentServer.name}</h3>
-      <div class="item selected" onclick="goTo('setting-server-content', 'server-main-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Vue d'ensemble")}</div>
-      <div class="item" id="profil-settings" onclick="goTo( 'setting-server-content', 'server-roles-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Rôles")}</div>
-      <div class="item" onclick="goTo('setting-server-content', 'server-emoji-settings',{'category':'currentSettingTab','event': event})">${_t("Émojis")}</div>
+      <h3>${escapeHTML(global.state.currentServer.name)}</h3>
+      <div class="item ${checkServRights('manage-server') ? 'selected' : ''}" id="server-overview-tab" ${servGate('manage-server')} onclick="goTo('setting-server-content', 'server-main-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Vue d'ensemble")}</div>
+      <div class="item ${checkServRights('manage-server') ? '' : 'selected'}" id="server-roles-tab" ${servGate('manage-roles')} onclick="openRolesSettings(event)">${_t("Rôles")}</div>
+      <div class="item" id="server-emoji-tab" ${servGate('manage-expressions')} onclick="goTo('setting-server-content', 'server-emoji-settings',{'category':'currentSettingTab','event': event})">${_t("Émojis")}</div>
       <div class="item">${_t("Lien d'invitation personalisé")}</div>
       <hr>
       <h3>${_t("MODÉRATION")}</h3>
       <div class="item">${_t("Configuration de Sécurité")}</div>
       <div class="item">${_t("AutoMod")}</div>
-      <div class="item" onclick="openModerationSettings(event)">${_t("Bannissements")}</div>
+      <div class="item" id="server-moderation-tab" ${servGate('kick-members', 'ban-members')} onclick="openModerationSettings(event)">${_t("Bannissements")}</div>
       <hr>
       <h3>${_t("GESTION DES UTILISATEURS")}</h3>
       <div class="item">${_t("Membres")}</div>
       <div class="item">${_t("Invitations")}</div>
       <hr>
-      <div class="item" onclick="deleteServer()">${_t("Supprimer le serveur")}
+      <div class="item" ${servGate('server-admin')} onclick="deleteServer()">${_t("Supprimer le serveur")}
         <div class="grey circle"></div>
       </div>
     </section>
   </div>
   <div id="setting-panel" class="scrollable">
       <div id="setting-server-content" class="setting-content">
-        ${getTemplate('server-main-settings')}
+        ${checkServRights('manage-server') ? getTemplate('server-main-settings') : ''}
       </div>
       <div class="close" onclick="closeMenu('#server-params')">+</div>
   </div>

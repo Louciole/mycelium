@@ -14,7 +14,7 @@ import {mountTransportBlock} from "./transport.mjs";
 class Editor {
     constructor() {
         this.blocks = global.notes[global.state.activeChan.id].blocks
-        if (Object.keys(this.blocks).length === 0) {
+        if (Object.keys(this.blocks).length === 0 && !this.readOnly) {
             this.createBlock({},false)
         }
         this.draggedBlockId = null
@@ -34,6 +34,39 @@ class Editor {
                     this.convertBlock(blockEl, blockId)
                 }
             }
+        }
+        this.applyPermissions(false)
+    }
+
+    /** edit-notes denied in this notes channel (access.mjs): the server refuses every write. */
+    get readOnly() {
+        return !window.checkChannelRight(global.state.activeChan.id, 'note', 'edit-notes')
+    }
+
+    /**
+     * Show the note read-only (no block controls, nothing editable) or editable again.
+     * Run after each render and when the user's rights change live (access.mjs);
+     * `rerenderViews` repaints mounted databases/spreadsheets for their own read-only mode.
+     */
+    applyPermissions(rerenderViews = true) {
+        const editor = document.getElementById('note-editor')
+        if (!editor) return
+        const readOnly = this.readOnly
+        editor.classList.toggle('read-only', readOnly)
+        for (const el of editor.querySelectorAll('.block > .content')) {
+            const block = this.blocks[el.parentElement.dataset.blockId]
+            if (!block) continue
+            if (!blockTypes[block.type]?.template) el.contentEditable = readOnly ? 'false' : 'true'
+            // Checklists, transport, synapse… have no read-only mode of their own
+            else if (!['database', 'spreadsheet'].includes(block.type)) el.inert = readOnly
+        }
+        if (!rerenderViews) return
+        const channelId = Number(global.state.activeChan.id)
+        for (const view of Object.values(global.state.databaseViews || {})) {
+            if (Number(view.channelId) === channelId) view.render()
+        }
+        for (const view of Object.values(global.state.spreadsheetViews || {})) {
+            if (Number(view.channelId) === channelId && !view.convId && view._viewEl) view._viewEl.innerHTML = view.render()
         }
     }
 
@@ -90,6 +123,7 @@ class Editor {
     }
 
     createBlock({type = "text", content = "", position = null, afterBlockId = null, rowGroup = null, colIndex = 0}, addDom = true) {
+        if (this.readOnly) return
         // generate uuid for block id
         const newBlockId = crypto.randomUUID()
         
@@ -175,6 +209,7 @@ class Editor {
     }
 
     deleteBlock(blockId) {
+        if (this.readOnly) return
         const block = this.blocks[blockId]
         if (block?.type === "spreadsheet" && global.state.spreadsheetViews) {
             delete global.state.spreadsheetViews[blockId]
@@ -731,6 +766,7 @@ class Editor {
     }
 
     saveBlock(blockId){
+        if (this.readOnly) return
         const block = this.blocks[blockId];
 
         const onSaved = function () {

@@ -176,7 +176,7 @@ class ForumMixin:
         if not post:
             raise HTTPError(self.response, 404, "post not found")
 
-        is_admin = self.checkAccessRights(uid, post["server"], "server-admin")
+        is_admin = self.checkChannelAccess(uid, post["forum"], "forum", "manage-messages")
         is_author = post["author"] == uid
 
         if action in ("pin", "unpin", "lock", "unlock"):
@@ -226,7 +226,7 @@ class ForumMixin:
         forum = self.db.getSomething("forum_channel", forum_id)
         if not forum:
             raise HTTPError(self.response, 404, "forum not found")
-        if not self.checkAccessRights(uid, forum["server"], "edit"):
+        if not self.checkChannelAccess(uid, forum["id"], "forum", "manage-channels"):
             raise HTTPError(self.response, 403, "forbidden")
 
         tags = forum.get("available_tags", [])
@@ -267,7 +267,7 @@ class ForumMixin:
         forum = self.db.getSomething("forum_channel", forum_id)
         if not forum:
             raise HTTPError(self.response, 404, "forum not found")
-        if not self.checkAccessRights(uid, forum["server"], "edit"):
+        if not self.checkChannelAccess(uid, forum["id"], "forum", "manage-channels"):
             raise HTTPError(self.response, 403, "forbidden")
         if field not in ("default_layout", "default_sort", "guidelines", "require_tag"):
             raise HTTPError(self.response, 400, "invalid field")

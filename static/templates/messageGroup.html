@@ -6,7 +6,7 @@ ${isSystemMessage(element.messages[0]) ? fillWith('system-message', [element.mes
     <div class="first-message">
       ${Subscribe('global.users['+element.messages[0].sender+'].pfp',()=>{return 'background-image:url(/static/attachments/'+global.users[element.messages[0].sender]?.pfp+');'},"pfp red",{"target":"style"})}
       <div class="message-block">
-        <div class="sender" ${global.state.isServer && global.state.currentServer.members[element.messages[0].sender]?.roles?.length ?"style='--text:" + global.state.currentServer.roles[global.state.currentServer.members[element.messages[0].sender].roles[0]].color + "'" : ""} onclick="toggleProfileInfo(${element.messages[0].sender},event)">
+        <div class="sender" ${global.state.isServer && memberColor(element.messages[0].sender) ? "style='--text:" + escapeHTML(memberColor(element.messages[0].sender)) + "'" : ""} onclick="toggleProfileInfo(${element.messages[0].sender},event)">
           ${Subscribe("global.users["+element.messages[0].sender.toString()+"].display", () => {return(global.users[element.messages[0].sender].display)},"h3")}
           <p>${getTimeStr(element.messages[0].timestamp)}</p>
         </div>

@@ -707,7 +707,13 @@ export class SpreadsheetView {
         col.style.minWidth = px
     }
 
+    /** Sheet of a notes channel where edit-notes is denied (access.mjs): look, don't touch. */
+    _readOnly() {
+        return !this.convId && !window.checkChannelRight(this.channelId, 'note', 'edit-notes')
+    }
+
     startColResize(event, colIdx) {
+        if (this._readOnly()) return
         event.preventDefault()
         event.stopPropagation()
         this.closeContextMenu()
@@ -1095,6 +1101,7 @@ export class SpreadsheetView {
     }
 
     openCellContextMenu(ref, x, y) {
+        if (this._readOnly()) return
         this.closeContextMenu()
 
         const menu = document.createElement('div')
@@ -1373,6 +1380,7 @@ export class SpreadsheetView {
     }
 
     startEdit(ref) {
+        if (this._readOnly()) return
         this.closeContextMenu()
         if (this.editingCell === ref) return
         this.editingCell = ref

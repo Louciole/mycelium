@@ -4,6 +4,7 @@ Endpoints take the live Mycelium instance as ``self``; shared helpers remain on
 the class (see server.py).
 """
 import json
+import math
 import re
 
 from vesta import Server, HTTPError
@@ -19,12 +20,19 @@ def save_block(self, channel, block, op="edit"):
     if not chan_info:
         raise HTTPError(self.response, 404)
 
-    self.require_server_perm(uid, chan_info["server"], "edit")
+    self.require_channel_access(uid, chan_info["id"], "note", "edit-notes")
 
-    block = json.loads(block)
+    block = _load_json_dict(self, block)
     if op == "create":
-        block["channel"] = channel
-        block_id = self.db.insertDict("note_block", block, getId=True)
+        fields = _clean_block_fields(self, block)
+        if not isinstance(block.get("uuid"), str) or not _UUID_RE.match(block["uuid"]) or "type" not in fields:
+            raise HTTPError(self.response, 400)
+        if self.db.getSomething("note_block", block["uuid"], "uuid"):
+            raise HTTPError(self.response, 400)
+        _check_parent_block(self, fields.get("parent_block"), channel)
+        fields["uuid"] = block["uuid"]
+        fields["channel"] = chan_info["id"]
+        block_id = self.db.insertDict("note_block", fields, getId=True)
 
         # Auto-create note_database for database-type blocks
         if block.get("type") == "database" and block.get("uuid"):
@@ -58,21 +66,27 @@ def save_block(self, channel, block, op="edit"):
 
         return str(block_id)
     elif op == "delete":
-        block_info = self.db.getSomething("note_block", str(block["uuid"]), "uuid")
+        block_info = self.db.getSomething("note_block", str(block.get("uuid")), "uuid")
         if not block_info or int(block_info["channel"]) != int(channel):
             raise HTTPError(self.response, 404)
         self.db.deleteSomething("note_block", block_info["id"])
     elif op == "edit":
-        block_info = self.db.getSomething("note_block", str(block["uuid"]), "uuid")
+        block_info = self.db.getSomething("note_block", str(block.get("uuid")), "uuid")
 
         if not block_info or int(block_info["channel"]) != int(channel):
             raise HTTPError(self.response, 404)
 
-        forbidden_fields = ["id", "channel", "uuid"]
+        # The client sends the whole stored row back (id, channel, uuid included):
+        # only the editable columns are considered, unchanged ones are skipped.
+        changes = {key: value for key, value in _clean_block_fields(self, block).items()
+                   if value != block_info.get(key)}
+        if changes.get("parent_block") is not None:
+            if int(changes["parent_block"]) == int(block_info["id"]):
+                raise HTTPError(self.response, 400)
+            _check_parent_block(self, changes["parent_block"], channel)
 
-        for key in block:
-            if key not in forbidden_fields and block[key] != block_info.get(key):
-                self.db.edit("note_block", block["uuid"], key, block[key], "uuid")
+        for key, value in changes.items():
+            self.db.edit("note_block", block_info["uuid"], key, value, "uuid")
 
         # Auto-create note_database when block type changes to "database"
         if block.get("type") == "database" and block_info.get("type") != "database":
@@ -112,7 +126,7 @@ def get_database_content(self, channel, block_uuid):
     self.require_channel_access(uid, channel, "note", "view")
 
     db_info = self.db.getSomething("note_database", block_uuid, "block_uuid")
-    if not db_info:
+    if not db_info or int(db_info["channel"]) != int(channel):
         raise HTTPError(self.response, 404)
 
     db_id = db_info["id"]
@@ -205,6 +219,8 @@ def get_spreadsheet_content(self, block_uuid, channel=None, conv_id=None):
     if not sheet_info:
         raise HTTPError(self.response, 404)
     if conv_id is not None and str(sheet_info.get("conv_id")) != str(conv_id):
+        raise HTTPError(self.response, 404)
+    if conv_id is None and str(sheet_info.get("channel")) != str(channel):
         raise HTTPError(self.response, 404)
 
     sheet_id = sheet_info["id"]
@@ -567,21 +583,26 @@ def save_spreadsheet_structure(self, spreadsheet_id, op, ref, channel=None, conv
 def save_database(self, channel, database, op="create"):
     uid = self.getUser()
     _checkDatabaseAccess(self, uid, channel)
-    database = json.loads(database)
+    database = _load_json_dict(self, database)
 
     if op == "create":
         block_uuid = database.get("block_uuid")
-        if not block_uuid:
+        if not isinstance(block_uuid, str) or not block_uuid:
             raise HTTPError(self.response, 400)
+        # The database belongs to a block of this very channel
+        block_info = self.db.getSomething("note_block", block_uuid, "uuid")
+        if not block_info or int(block_info["channel"]) != int(channel):
+            raise HTTPError(self.response, 404)
         # Idempotent: if database already exists for this block, return existing
         existing = self.db.getSomething("note_database", block_uuid, "block_uuid")
         if existing:
             return str(existing["id"])
+        fields = _clean_database_fields(self, database, None)
         db_id = self.db.insertDict("note_database", {
             "block_uuid": block_uuid,
             "channel": channel,
-            "name": database.get("name", "Untitled Database"),
-            "view_type": database.get("view_type", "table")
+            "name": fields.get("name", "Untitled Database"),
+            "view_type": fields.get("view_type", "table")
         }, getId=True)
         # Create a default first column
         self.db.insertDict("note_database_column", {
@@ -619,6 +640,7 @@ def save_database(self, channel, database, op="create"):
                 metrics.validate_spec(spec)
             except metrics.SpecError:
                 raise HTTPError(self.response, 400)
+        _clean_database_fields(self, database, db_info["id"])   # 400 on an invalid value
         allowed = ["name", "view_type", "gallery_cover_column", "source", "metric_key", "metric_spec"]
         for key in allowed:
             if key in database and database[key] != db_info.get(key):
@@ -637,7 +659,11 @@ def save_database(self, channel, database, op="create"):
 def save_database_column(self, channel, database_id, column, op="create"):
     uid = self.getUser()
     _checkDatabaseAccess(self, uid, channel)
-    column = json.loads(column)
+    column = _load_json_dict(self, column)
+    if (("name" in column and not _is_short_str(column["name"], 255))
+            or ("position" in column and not _is_number(column["position"]))
+            or ("options" in column and not isinstance(column["options"], dict))):
+        raise HTTPError(self.response, 400)
 
     db_info = self.db.getSomething("note_database", database_id)
     if not db_info or int(db_info["channel"]) != int(channel):
@@ -684,7 +710,9 @@ def save_database_column(self, channel, database_id, column, op="create"):
 def save_database_row(self, channel, database_id, row, op="create"):
     uid = self.getUser()
     _checkDatabaseAccess(self, uid, channel)
-    row = json.loads(row)
+    row = _load_json_dict(self, row)
+    if "position" in row and not _is_number(row["position"]):
+        raise HTTPError(self.response, 400)
 
     db_info = self.db.getSomething("note_database", database_id)
     if not db_info or int(db_info["channel"]) != int(channel):
@@ -715,7 +743,7 @@ def save_database_row(self, channel, database_id, row, op="create"):
 def save_database_cell(self, channel, database_id, cell):
     uid = self.getUser()
     _checkDatabaseAccess(self, uid, channel)
-    cell = json.loads(cell)
+    cell = _load_json_dict(self, cell)
 
     db_info = self.db.getSomething("note_database", database_id)
     if not db_info or int(db_info["channel"]) != int(channel):
@@ -787,16 +815,100 @@ def get_relation_display(self, database_id, row_id):
     return json.dumps({"display": display or "Untitled"}, default=str)
 
 
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+# type, uuid and row_group end up unescaped in the note-block / note-row templates
+# (class and on* attributes): keep them to plain identifiers.
+_BLOCK_TYPE_RE = re.compile(r"^[a-z][a-z0-9_-]{0,49}$")
+_DATABASE_VIEWS = ("table", "gallery")
+
+
+def _load_json_dict(self, raw):
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError):
+        raise HTTPError(self.response, 400)
+    if not isinstance(value, dict):
+        raise HTTPError(self.response, 400)
+    return value
+
+
+def _is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _is_int(value, low, high):
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def _is_short_str(value, max_len):
+    return isinstance(value, str) and len(value) <= max_len
+
+
+# note_block columns a client may set, with their validators. id and channel are
+# server-owned; uuid is only taken on create (it is the block's key afterwards).
+_BLOCK_FIELDS = {
+    "type": lambda v: isinstance(v, str) and bool(_BLOCK_TYPE_RE.match(v)),
+    "position": _is_number,
+    "content": lambda v: v is None or isinstance(v, str),
+    "row_group": lambda v: v is None or (isinstance(v, str) and bool(_UUID_RE.match(v))),
+    "column_index": lambda v: v is None or _is_int(v, 0, 1000),
+    "sub_position": lambda v: v is None or _is_number(v),
+    "parent_block": lambda v: v is None or _is_int(v, 1, 2**63 - 1),
+}
+
+
+def _clean_block_fields(self, block):
+    """Return the editable note_block fields of a client block. Other keys are dropped,
+    an invalid value is a 400."""
+    fields = {}
+    for key, valid in _BLOCK_FIELDS.items():
+        if key in block:
+            if not valid(block[key]):
+                raise HTTPError(self.response, 400)
+            fields[key] = block[key]
+    return fields
+
+
+def _check_parent_block(self, parent_id, channel):
+    """A parent block must live in the same notes channel."""
+    if parent_id is None:
+        return
+    parent = self.db.getSomething("note_block", parent_id)
+    if not parent or int(parent["channel"]) != int(channel):
+        raise HTTPError(self.response, 400)
+
+
+def _clean_database_fields(self, database, db_id):
+    """Validate the plain note_database fields a client may set (name, view_type,
+    gallery_cover_column). The metric fields are validated by save_database."""
+    fields = {}
+    if "name" in database:
+        if not _is_short_str(database["name"], 255):
+            raise HTTPError(self.response, 400)
+        fields["name"] = database["name"]
+    if "view_type" in database:
+        if database["view_type"] not in _DATABASE_VIEWS:
+            raise HTTPError(self.response, 400)
+        fields["view_type"] = database["view_type"]
+    if "gallery_cover_column" in database:
+        col = database["gallery_cover_column"]
+        if col is not None:
+            col_info = self.db.getSomething("note_database_column", col) if _is_int(col, 1, 2**63 - 1) else None
+            if not col_info or db_id is None or int(col_info["database_id"]) != int(db_id):
+                raise HTTPError(self.response, 400)
+        fields["gallery_cover_column"] = col
+    return fields
+
+
 def _checkDatabaseAccess(self, uid, channel):
     """Check that user has edit access to a notes channel. Returns server_id or raises."""
     chan_info = self.db.getSomething("notes_channel", channel)
     if not chan_info:
         raise HTTPError(self.response, 404)
-    server_id = chan_info["server"]
-    self.require_server_perm(uid, server_id, "edit")
-    if chan_info.get("is_private") and not self.checkChannelAccess(uid, channel, "note", "view"):
+    # "edit-notes" in this channel (implies view-channels)
+    if not self.checkChannelAccess(uid, chan_info["id"], "note", "edit-notes"):
         raise HTTPError(self.response, 403)
-    return server_id
+    return chan_info["server"]
 
 
 def _checkConvAccess(self, uid, conv_id):

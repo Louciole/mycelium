@@ -41,7 +41,8 @@ async def typing(self, websocket, data):
         # Sender must be able to view the channel.
         if not self.checkChannelAccess(sender_uid, data["conv"], "textual", "view"):
             return
-        members = self.db.getFilters("accessserver", ["server", "=", channel["server"]])
+        rights = self.channelMembersRights(channel, "textual")
+        members = [{"account": a} for a, r in rights.items() if "view-channels" in r]
     else:
         # Sender must be a member of the conversation.
         if not self.db.getFilters("accessconversation", ["conversation", "=", data["conv"], "and", "account", "=", sender_uid]):
@@ -51,8 +52,6 @@ async def typing(self, websocket, data):
     payload = {"type": "typing", "conv": data["conv"], "uid": sender_uid}
     for user in members:
         if user["account"] != sender_uid:
-            if channel and channel.get("is_private") and not self.checkChannelAccess(user["account"], data["conv"], "textual", "view"):
-                continue
             await self.sendNotificationAsync(user["account"], payload)
 
 

@@ -2,7 +2,7 @@
 
 <div class="channel-name">
     <h2>${_t("Nom Du Salon")}</h2>
-    <input id="name-input" type="text" placeholder="${_t('nom du salon')}" value="${global.state.modaltarget.innerText}" oninput="updatePreview('formChannel' ,event, 'global.state.modaltarget.innerText')">
+    <input id="name-input" type="text" placeholder="${_t('nom du salon')}" value="${escapeHTML(global.state.modaltarget.innerText)}" oninput="updatePreview('formChannel' ,event, 'global.state.modaltarget.innerText')">
 </div>
 
 ${global.state.editingChannelType === 'forum' ? getTemplate('forum-channel-settings') : ''}

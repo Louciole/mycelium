@@ -1,0 +1,4 @@
+<div class="role-sidebar-item ${String(global.state.currentRole?.id) === String(element.id) ? 'selected' : ''} ${element.isEveryone || !canManageRole(element) ? 'locked' : ''}" data-id="${element.id}" onclick="openRoleEditor('${element.id}', global.state.roleTab)" ${!element.isEveryone && canManageRole(element) ? 'draggable="true" ondragstart="onRoleDragStart(event)" ondragover="onRoleDragOver(event)" ondragleave="onRoleDragLeave(event)" ondrop="onRoleDrop(event)"' : ''}>
+    <div class="circle" style="background-color: ${escapeHTML(element.color)}"></div>
+    <span>${escapeHTML(element.name)}</span>
+</div>

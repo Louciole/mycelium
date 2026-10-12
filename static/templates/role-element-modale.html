@@ -1,4 +1,4 @@
 <div class="inline" onclick="attributeRole(${element.id})">
-    <div class="circle" style="background-color: ${element.color}"></div>
-    <div>${element.name}</div>
+    <div class="circle" style="background-color: ${escapeHTML(element.color)}"></div>
+    <div>${escapeHTML(element.name)}</div>
 </div>

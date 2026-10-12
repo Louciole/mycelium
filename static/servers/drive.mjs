@@ -367,8 +367,13 @@ function isExternalFileDrag(event) {
 }
 window.isExternalFileDrag = isExternalFileDrag
 
+/** Uploads (files, folders, drops) need send-messages in the drive. */
+function canUploadToDrive() {
+    return window.checkChannelRight(global.state.activeChan.id, 'drive', 'send-messages')
+}
+
 function onDriveUploadDragOver(event) {
-    if (!isExternalFileDrag(event)) return
+    if (!isExternalFileDrag(event) || !canUploadToDrive()) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
     event.currentTarget.classList.add('drive-upload-dragover')
@@ -388,6 +393,7 @@ async function handleDriveExternalDrop(event) {
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.classList.remove('drive-upload-dragover')
+    if (!canUploadToDrive()) return
 
     const drive_id = global.state.activeChan.id
     await uploadDroppedItems(event.dataTransfer, drive_id, getCurrentDriveFolder())
@@ -554,6 +560,7 @@ async function onDriveFolderDrop(event, targetFolderId) {
 
     // OS files dropped onto a folder tile → upload into that folder.
     if (external) {
+        if (!canUploadToDrive()) return
         const drive_id = global.state.activeChan.id
         await uploadDroppedItems(event.dataTransfer, drive_id, targetFolderId)
         loadDriveContent(drive_id, getCurrentDriveFolder())

@@ -1,18 +1,18 @@
-<div class="item">
-    <div>
-        <svg xmlns="http://www.w3.org/2000/svg" style="height:1.2rem;color: ${element.color}" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m368-336 112-84 110 84-42-136 112-88H524l-44-136-44 136H300l110 88-42 136ZM480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg>
-        ${element.name}
+<div class="item role-row ${canManageRole(element) ? '' : 'locked'}" data-id="${element.id}" ${canManageRole(element) && !roleListQuery() ? 'draggable="true" ondragstart="onRoleDragStart(event)" ondragover="onRoleDragOver(event)" ondragleave="onRoleDragLeave(event)" ondrop="onRoleDrop(event)"' : ''}>
+    <div class="role-name" onclick="openRoleEditor(${element.id})">
+        <svg xmlns="http://www.w3.org/2000/svg" class="role-shield" style="color: ${escapeHTML(element.color)}" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m368-336 112-84 110 84-42-136 112-88H524l-44-136-44 136H300l110 88-42 136ZM480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg>
+        <span>${escapeHTML(element.name)}</span>
     </div>
-    <div>
-        0
-        <img class="icon" src="/static/icons/material/person.svg"  style="height:1rem"/>
+    <div class="role-members" onclick="openRoleEditor(${element.id}, 'members')" title="${_t('Gérer les membres')}">
+        ${roleMemberCount(element.id)}
+        <img class="icon" src="/static/icons/material/person.svg" style="height:1rem"/>
     </div>
     <div class="actionList">
-        <div class="action hoverAction" onclick="global.state.currentRole = global.state.currentServer.roles[${element.id}];goTo( 'setting-server-content', 'server-role-settings')">
-            <img class="icon" src="/static/icons/material/edit.svg"  style="height:1.2rem"/>
+        <div class="action" onclick="openRoleEditor(${element.id})" title="${_t('Modifier')}">
+            <img class="icon" src="/static/icons/material/edit.svg" style="height:1.2rem"/>
         </div>
-        <div class="action">
-            <img class="icon" src="/static/icons/material/more.svg"  style="height:1.2rem"/>
+        <div class="action" data-id="${element.id}" onclick="openRoleMenu(event, ${element.id})" title="${_t('Plus')}">
+            <img class="icon" src="/static/icons/material/more.svg" style="height:1.2rem"/>
         </div>
     </div>
 </div>

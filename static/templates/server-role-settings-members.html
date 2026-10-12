@@ -1,0 +1,21 @@
+<div class="roles-toolbar">
+    <div class="search-field">
+        <img class="icon" src="/static/icons/material/search.svg">
+        <input type="text" id="role-member-search" placeholder="${_t('Rechercher des membres')}" oninput="renderRoleMembers()" autocomplete="off">
+    </div>
+    <div class="picker-anchor">
+        <div class="btn blue" id="role-add-members-btn" onclick="toggleRoleMemberPicker()" style="${canManageRole(global.state.currentRole) ? '' : 'display:none'}">${_t("Ajouter des membres")}</div>
+        <div class="role-member-picker" id="role-member-picker" style="display:none">
+            <div class="search-field">
+                <img class="icon" src="/static/icons/material/search.svg">
+                <input type="text" id="role-picker-search" placeholder="${_t('Rechercher des membres')}" oninput="renderRoleMemberPicker()" autocomplete="off">
+            </div>
+            <div id="role-picker-list"></div>
+            <div class="picker-actions">
+                <div class="underlhover" onclick="toggleRoleMemberPicker()">${_t("Annuler")}</div>
+                <div class="btn blue" id="role-picker-add" onclick="addSelectedRoleMembers()">${_t("Ajouter")}</div>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="role-member-list"></div>

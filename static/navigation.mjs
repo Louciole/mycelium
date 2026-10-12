@@ -818,8 +818,8 @@ function reset(){
         }
         updateDisplayedForm(key,global.state["currentForm"][key].defaultValue)
     }
+    const save_menu = document.getElementById(global.state["currentForm"]?.id) || document.querySelector(".save-settings")
     delete global.state["currentForm"]
-    const save_menu = document.querySelector(".save-settings")
     save_menu.style.display="none"
 }
 window.reset = reset
@@ -909,3 +909,27 @@ function showAddRole(event){
     elt.style.left = event.currentTarget.getBoundingClientRect().left + "px"
 }
 window.showAddRole = showAddRole
+
+/** Rights that give access to at least one tab of the server settings. */
+const SERVER_SETTINGS_RIGHTS = ['manage-server', 'manage-roles', 'manage-expressions', 'kick-members', 'ban-members']
+
+function canOpenServerSettings(){
+    return SERVER_SETTINGS_RIGHTS.some(right => checkServRights(right))
+}
+window.canOpenServerSettings = canOpenServerSettings
+
+/**
+ * Opens the server settings, re-rendered for the current server and rights
+ * (the template hides the tabs you can't use). Without "manage-server" the
+ * overview is hidden, so the first tab you can use is opened instead.
+ */
+function openServerParams(){
+    // One settings panel at a time: they share #setting-server-content (crud.mjs)
+    window.closeSettingsPanels()
+    openMenu("server-params", false)
+    if (checkServRights('manage-server')) return
+    if (checkServRights('manage-roles')) openRolesSettings()
+    else if (checkServRights('kick-members') || checkServRights('ban-members')) openModerationSettings()
+    else if (checkServRights('manage-expressions')) goTo('setting-server-content', 'server-emoji-settings')
+}
+window.openServerParams = openServerParams

@@ -103,23 +103,26 @@ export async function expectServerLoadedWithDefaultChannel(page, serverId) {
 
 /**
  * Opens server settings panel (server parameters modal) for the currently open server.
+ * The overview tab only exists with "manage-server": pass `{ overview: false }`
+ * for a member who opens the settings through another right (e.g. manage-roles).
  */
-export async function openServerSettings(page) {
+export async function openServerSettings(page, { overview = true } = {}) {
     await page.locator('#server-infos').click();
     await page.locator('#server-settings').waitFor({ state: 'visible', timeout: 5000 });
 
-    const paramsEntry = page.locator('#server-settings .item[onclick*="openMenu(\'server-params\')"]');
-    if (await paramsEntry.isVisible().catch(() => false)) {
-        await paramsEntry.click();
-    } else {
-        // Fallback for occasional flying-menu positioning/visibility race.
+    const paramsEntry = page.locator('#server-settings .item[onclick*="openServerParams"]');
+    // Fallback for the flying-menu race: the dropdown can be re-rendered (hidden)
+    // between the visibility check and the click when the server state refreshes.
+    const clicked = await paramsEntry.isVisible().catch(() => false)
+        && await paramsEntry.click({ timeout: 3000 }).then(() => true, () => false);
+    if (!clicked) {
         await page.evaluate(() => {
-            window.openMenu('server-params');
+            window.openServerParams();
         });
     }
 
     await page.locator('#server-params').waitFor({ state: 'visible', timeout: 5000 });
-    await page.locator('#name-input').waitFor({ state: 'visible', timeout: 5000 });
+    if (overview) await page.locator('#name-input').waitFor({ state: 'visible', timeout: 5000 });
 }
 
 /**

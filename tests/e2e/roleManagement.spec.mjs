@@ -32,8 +32,8 @@ async function apiPost(page, path) {
 async function openRolesSettings(page) {
     await openServerSettings(page);
     // The "Rôles" tab inside the server-params side menu.
-    await page.locator('#profil-settings').click();
-    await page.locator('#setting-server-content .btn.blue').first().waitFor({ state: 'visible', timeout: 5000 });
+    await page.locator('#server-roles-tab').click();
+    await page.locator('#create-role-btn').waitFor({ state: 'visible', timeout: 5000 });
 }
 
 /**
@@ -44,7 +44,7 @@ async function createRoleViaUi(page) {
     const before = await page.evaluate(() =>
         Object.keys(window.global?.state?.currentServer?.roles || {}).map(Number));
 
-    await page.locator('#setting-server-content .btn.blue').first().click();
+    await page.locator('#create-role-btn').click();
 
     // Editing screen for the freshly created role appears.
     await page.locator('#roleName').waitFor({ state: 'visible', timeout: 5000 });
@@ -124,9 +124,9 @@ test.describe('Role management — E2E', () => {
         }, { id: roleId, color: expectedColor }, { timeout: 5000 });
 
         // ── 4. Toggle a permission (right) — updates live and untoggles ───────
-        await page.locator('#setting-server-content h2[onclick*="server-role-settings-rights"]').click();
+        await page.locator('#role-tabs h2[data-tab="permissions"]').click();
         // The real checkbox is visually hidden inside a custom switch; toggle via the slider.
-        const permSlider = page.locator('#roleEditContent .permission .switch .slider').first();
+        const permSlider = page.locator('#roleEditContent .permission[data-right="server-admin"] .switch .slider');
         await permSlider.waitFor({ state: 'visible', timeout: 5000 });
 
         await permSlider.click();

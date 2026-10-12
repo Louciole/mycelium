@@ -1,10 +1,29 @@
-<h1>${_t("EDIT ROLE")} - ${global.state.currentRole.name}</h1>
-<div class="tabs">
-    <h2 onclick="goTo('roleEditContent', 'server-role-settings-display')" class="selected">${_t("Display")}</h2>
-    <h2 onclick="goTo('roleEditContent', 'server-role-settings-rights')">${_t("Rights")}</h2>
+<div class="role-editor">
+    <div class="role-editor-sidebar">
+        <div class="role-editor-sidebar-head">
+            <div class="back" onclick="openRolesSettings()">
+                <img class="icon" src="/static/icons/material/back.svg">
+                <span>${_t("RETOUR")}</span>
+            </div>
+            <img class="icon add" src="/static/icons/material/add.svg" onclick="createRole()" title="${_t('Créer un rôle')}" style="${checkServRights('manage-roles') ? '' : 'display:none'}">
+        </div>
+        <div id="role-editor-sidebar" class="scrollable"></div>
+    </div>
+    <div class="role-editor-main">
+        <div class="role-editor-head">
+            <h1 id="role-editor-title"></h1>
+            <div class="action" id="role-editor-more" onclick="openRoleMenu(event, global.state.currentRole.id)">
+                <img class="icon" src="/static/icons/material/more.svg" style="height:1.2rem"/>
+            </div>
+        </div>
+        <div class="tabs" id="role-tabs"></div>
+        <p class="role-locked-hint" id="role-locked-hint" style="display:none">${_t("Ce rôle n'est pas en dessous de ton rôle le plus élevé : tu ne peux que le consulter.")}</p>
+        <div id="roleEditContent"></div>
+    </div>
 </div>
-<div id="roleEditContent">
-    ${getTemplate('server-role-settings-display')}
+<div class="modale role-menu" id="role-actions-modale">
+    <div class="item" onclick="closeFM();copyRoleId(global.state.modaltarget.dataset.id)">${_t("Copier l'identifiant du rôle")}</div>
+    <div class="item crit" onclick="closeFM();deleteRole(global.state.modaltarget.dataset.id)">${_t("Supprimer le rôle")}</div>
 </div>
 <div id="formRole" class="save-settings" style="display: none">
     <p>${_t("Attention, il reste des modifications non enregistrées !")}</p>

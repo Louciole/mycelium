@@ -5,9 +5,9 @@
         ${Subscribe("global.convs["+global.state.activeChan.id+"].name", ()=>{return global.convs[global.state.activeChan.id].name})}
     </div>
     <div>
-        <img class="icon"  onclick="createNewDriveFolder()" src="/static/icons/material/folder.svg" title="${_t('New folder')}"/>
-        <img class="icon" onclick="uploadDriveFile()" src="/static/icons/material/add.svg" title="${_t('Upload files')}"/>
-        <img class="icon" onclick="uploadDriveFolder()" src="/static/icons/material/groupadd.svg" title="${_t('Upload a folder')}"/>
+        <img class="icon" id="drive-new-folder-btn" ${channelGate(global.state.activeChan.id, 'drive', 'send-messages')} onclick="createNewDriveFolder()" src="/static/icons/material/folder.svg" title="${_t('New folder')}"/>
+        <img class="icon" id="drive-upload-btn" ${channelGate(global.state.activeChan.id, 'drive', 'send-messages')} onclick="uploadDriveFile()" src="/static/icons/material/add.svg" title="${_t('Upload files')}"/>
+        <img class="icon" id="drive-upload-folder-btn" ${channelGate(global.state.activeChan.id, 'drive', 'send-messages')} onclick="uploadDriveFolder()" src="/static/icons/material/groupadd.svg" title="${_t('Upload a folder')}"/>
         <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg" style="margin-right: 0.8rem;">
         <img class="icon" src="/static/icons/material/inbox.svg" style="margin-right: 0.8rem;">
         <img class="icon" src="/static/icons/material/help.svg">

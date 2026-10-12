@@ -63,6 +63,9 @@ def _guard_target(self, uid, server_id, account_id):
     if (self.checkAccessRights(account_id, server_id, "server-admin")
             and not self.checkAccessRights(uid, server_id, "server-admin")):
         raise HTTPError(self.response, 403, "only a server-admin can moderate a server-admin")
+    # Role hierarchy: the target's highest role must sit strictly below yours.
+    if not self.outranks(server_id, uid, self.memberTopPosition(server_id, account_id)):
+        raise HTTPError(self.response, 403, "cannot moderate a member whose highest role is not below yours")
 
 
 def _eject_from_vocal(self, server_id, account_id):

@@ -7,9 +7,14 @@
             <span class="forum-open-title">${Subscribe("global.convs["+global.state.activeConv+"].title", ()=>{return escapeHTML(global.convs[global.state.activeConv].title)})}</span>
         </div>
         <div class="forum-header-actions">
-            ${checkServRights('edit') ? '<img class="icon'+(global.convs[global.state.activeConv].pinned ? ' active' : '')+'" src="/static/icons/material/'+(global.convs[global.state.activeConv].pinned ? 'flag' : 'flag_outlined')+'.svg" title="'+_t(global.convs[global.state.activeConv].pinned ? "Unpin post" : "Pin post")+'" onclick="togglePinPost('+global.state.activeConv+')">' : ''}
-            ${checkServRights('edit') ? '<img class="icon'+(global.convs[global.state.activeConv].locked ? ' active' : '')+'" src="/static/icons/material/'+(global.convs[global.state.activeConv].locked ? 'lock' : 'lock_open')+'.svg" title="'+_t(global.convs[global.state.activeConv].locked ? "Unlock post" : "Lock post")+'" onclick="toggleLockPost('+global.state.activeConv+')">' : ''}
-            ${(checkServRights('edit') || global.convs[global.state.activeConv].author === global.user.id) ? '<img class="icon" src="/static/icons/material/trash.svg" title="'+_t("Delete post")+'" onclick="deleteForumPost('+global.state.activeConv+')">' : ''}
+            ${(() => {
+                // manage-messages in this forum (channel overwrites count); authors may delete their own post
+                const id = global.state.activeConv, post = global.convs[id]
+                const gate = channelGate(post.forum, 'forum', 'manage-messages')
+                return `<img class="icon${post.pinned ? ' active' : ''}" id="forum-pin-btn" ${gate} src="/static/icons/material/${post.pinned ? 'flag' : 'flag_outlined'}.svg" title="${_t(post.pinned ? "Unpin post" : "Pin post")}" onclick="togglePinPost(${id})">`
+                    + `<img class="icon${post.locked ? ' active' : ''}" id="forum-lock-btn" ${gate} src="/static/icons/material/${post.locked ? 'lock' : 'lock_open'}.svg" title="${_t(post.locked ? "Unlock post" : "Lock post")}" onclick="toggleLockPost(${id})">`
+                    + `<img class="icon" id="forum-delete-btn" ${post.author === global.user.id ? '' : gate} src="/static/icons/material/trash.svg" title="${_t("Delete post")}" onclick="deleteForumPost(${id})">`
+            })()}
             <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg">
         </div>
     </div>

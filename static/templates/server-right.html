@@ -1,8 +1,8 @@
-<div class="permission">
+<div class="permission ${rightEditable(element.name) ? '' : 'disabled'}" data-right="${element.name}">
     <div class="inline space-between">
-        <h3>${element.name}</h3>
+        <h3>${_t(element.label)}</h3>
         <label class="switch">
-            <input type="checkbox" onchange="editRolePerm(event, '${element.name}')" ${global.state.currentRole.permissions[element.name] === '' ? 'checked' : ''}>
+            <input type="checkbox" onchange="editRolePerm(event, '${element.name}')" ${element.name in (global.state.currentRole.permissions || {}) ? 'checked' : ''} ${rightEditable(element.name) ? '' : 'disabled'}>
             <span class="slider"></span>
         </label>
     </div>

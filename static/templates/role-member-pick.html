@@ -1,0 +1,7 @@
+<label class="role-member-row pick" data-id="${element}">
+    <input type="checkbox" value="${element}">
+    <div class="checkbox"></div>
+    <div class="pfp" style="background-image:url(/static/attachments/${escapeHTML(global.users[element]?.pfp)})"></div>
+    <span class="name">${escapeHTML(global.users[element]?.display || global.users[element]?.username || '#' + element)}</span>
+    <span class="username">${escapeHTML(global.users[element]?.username || '')}</span>
+</label>

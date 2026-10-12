@@ -92,11 +92,10 @@ export function renderPostTags(forumId, tagIds){
 }
 window.renderPostTags = renderPostTags
 
-/** Inline style giving a member's name the color of their first role (same rule as messageGroup). */
+/** Inline style giving a member's name the color of their highest role (same rule as messageGroup). */
 export function forumAuthorStyle(uid){
     const serv = global.state.currentServer
-    const roleId = serv?.members?.[uid]?.roles?.[0]
-    const color = roleId != null ? serv.roles?.[roleId]?.color : null
+    const color = serv ? memberColor(uid, serv) : null
     return color ? 'style="color:'+esc(color)+'"' : ""
 }
 window.forumAuthorStyle = forumAuthorStyle
@@ -204,6 +203,7 @@ function resetComposerAttachments(){
 export function openCreatePostModal(forumId, title=""){
     const el = composer()
     if (!el) return
+    if (!window.checkChannelRight(forumId, "forum", "send-messages")) return   // the button is hidden too
     const forum = global.forums?.[forumId]
     el.dataset.forumId = forumId
     el.querySelector("[data-post-title]").value = (title || "").trim()
@@ -333,6 +333,7 @@ window.deleteForumPost = deleteForumPost
 /** Header badges/actions and the composer are static template content: re-render the open post. */
 function rerenderPost(){
     goTo('content', 'server-forum-post', undefined, false)
+    window.updateComposerLock?.()
 }
 
 function _syncPostInList(post){

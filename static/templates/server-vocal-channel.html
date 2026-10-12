@@ -1,4 +1,4 @@
-<div class="conv vocal-channel-row" id="channel-vocal-${element.id}" data-id="${element.id}" data-type="vocal" data-pos="${element.place}" ${checkServRights('edit') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} oncontextmenu="toggleModale('edit-channel-modale',event)" onclick="goToVocalChannel(${element.id})"><img class="icon" src="/static/icons/material/sound.svg"/>${element.name}</div>
+<div class="conv vocal-channel-row" id="channel-vocal-${element.id}" data-id="${element.id}" data-type="vocal" data-pos="${element.place}" ${checkServRights('manage-channels') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} oncontextmenu="openChannelMenu(event)" onclick="goToVocalChannel(${element.id})"><img class="icon" src="/static/icons/material/sound.svg"/>${escapeHTML(element.name)}</div>
 ${Subscribe(`global.state.currentServer.vocalOccupants[${element.id}]`, (chanId) => {
     const occupants = global.state.currentServer?.vocalOccupants?.[chanId] || []
     if (!occupants.length) return ''

@@ -401,6 +401,10 @@ export async function onMessage(event) {
                 case "server_member_removed":
                     window.removeServerMember?.(message.content.content.server_id, message.content.content.account);
                     break;
+                // Roles / channel permissions changed (routes/roles.py, access.mjs)
+                case "server_permissions_changed":
+                    window.onServerPermissionsChanged?.(message.content.content.server_id);
+                    break;
                 case "server_removed":
                     window.onRemovedFromServer?.(message.content.content);
                     break;

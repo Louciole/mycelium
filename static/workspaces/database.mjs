@@ -195,6 +195,11 @@ export class DatabaseView {
         return ''
     }
 
+    /** Computed databases, or edit-notes denied in the notes channel (access.mjs). */
+    _readOnly() {
+        return !!this.database.read_only || !window.checkChannelRight(this.channelId, 'note', 'edit-notes')
+    }
+
     // ─── Rendering ────────────────────────────────────────────────────
 
     render() {
@@ -206,7 +211,7 @@ export class DatabaseView {
             isTable: this.database.view_type === 'table',
             isGallery: this.database.view_type === 'gallery',
             isComputed: this.database.source === 'computed',
-            readOnly: !!this.database.read_only,
+            readOnly: this._readOnly(),
             isAdmin: !!(global.user && global.user.isAdmin),
         }
 
@@ -237,7 +242,7 @@ export class DatabaseView {
             blockUuid: this.blockUuid
         }))
 
-        const readOnly = !!this.database.read_only
+        const readOnly = this._readOnly()
 
         let html = '<div class="db-table-wrapper"><table class="db-table">'
         html += '<thead><tr>'
@@ -289,7 +294,7 @@ export class DatabaseView {
 
         let html = '<div class="db-gallery">'
         html += fillWith('database-gallery-card', cards)
-        if (!this.database.read_only) {
+        if (!this._readOnly()) {
             html += '<div class="gallery-card gallery-add" onclick="global.state.databaseViews[\'' + this.blockUuid + '\'].addRow()">+ New</div>'
         }
         html += '</div>'
@@ -302,7 +307,7 @@ export class DatabaseView {
         const b = 'global.state.databaseViews[\'' + this.blockUuid + '\']'
 
         // Computed / read-only databases: show static values, no inputs.
-        if (this.database.read_only) {
+        if (this._readOnly()) {
             return '<span class="cell-static">' + this._esc(this._displayValue(col, rawValue)) + '</span>'
         }
 
@@ -385,7 +390,7 @@ export class DatabaseView {
 
     openColumnMenu(colId, event) {
         event.stopPropagation()
-        if (this.database.read_only) return
+        if (this._readOnly()) return
         document.querySelectorAll('.col-menu').forEach(el => el.remove())
 
         const col = this.columns.find(c => c.id === colId)

@@ -94,18 +94,18 @@ function renderPopup() {
         switch (c.type) {
             case "user":
                 html += `<div class="mention-ac-item ${selected}" data-index="${i}" onmousedown="mentionSelect(${i})">
-                    <div class="mention-ac-avatar" style="${c.pfp ? "background-image:url(/static/attachments/" + c.pfp + ")" : ""}"></div>
+                    <div class="mention-ac-avatar" style="${c.pfp ? "background-image:url(/static/attachments/" + escapeHTML(c.pfp) + ")" : ""}"></div>
                     <div class="mention-ac-info">
-                        <span class="mention-ac-name">${c.display}</span>
-                        <span class="mention-ac-sub">${c.username || ""}</span>
+                        <span class="mention-ac-name">${escapeHTML(c.display)}</span>
+                        <span class="mention-ac-sub">${escapeHTML(c.username || "")}</span>
                     </div>
                 </div>`
                 break
             case "role":
                 html += `<div class="mention-ac-item ${selected}" data-index="${i}" onmousedown="mentionSelect(${i})">
-                    <div class="mention-ac-dot" style="background:${c.color || "#A8A8A8"}"></div>
+                    <div class="mention-ac-dot" style="background:${escapeHTML(c.color || "#A8A8A8")}"></div>
                     <div class="mention-ac-info">
-                        <span class="mention-ac-name">${c.display}</span>
+                        <span class="mention-ac-name">${escapeHTML(c.display)}</span>
                         <span class="mention-ac-sub">Role</span>
                     </div>
                 </div>`
@@ -114,7 +114,7 @@ function renderPopup() {
                 html += `<div class="mention-ac-item ${selected}" data-index="${i}" onmousedown="mentionSelect(${i})">
                     <img class="mention-ac-icon" src="/static/icons/material/hashtag.svg"/>
                     <div class="mention-ac-info">
-                        <span class="mention-ac-name">${c.display}</span>
+                        <span class="mention-ac-name">${escapeHTML(c.display)}</span>
                     </div>
                 </div>`
                 break

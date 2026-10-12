@@ -31,7 +31,8 @@ create table if not exists server (
     is_featured boolean DEFAULT false,
     description text,
     member_count integer DEFAULT 0,
-    storage_usage bigint DEFAULT 0
+    storage_usage bigint DEFAULT 0,
+    default_permissions jsonb DEFAULT '{"view-channels": "", "send-messages": ""}'  -- @everyone
 );
 
 create table if not exists accessServer (
@@ -64,7 +65,8 @@ create table if not exists server_cat (
     id bigserial NOT NULL PRIMARY KEY,
     name varchar(44) NOT NULL,
     server integer NOT NULL references server(id) ON DELETE CASCADE,
-    place float NOT NULL DEFAULT 0.1
+    place float NOT NULL DEFAULT 0.1,
+    is_private boolean DEFAULT false
 );
 
 create table if not exists conversationElement (
@@ -181,16 +183,19 @@ create table if not exists role (
     server integer NOT NULL references server(id) ON DELETE CASCADE,
     name varchar(24) NOT NULL,
     color varchar(7) DEFAULT '#A8A8A8',
-    permissions jsonb DEFAULT '{}'
+    permissions jsonb DEFAULT '{}',
+    position integer NOT NULL DEFAULT 0  -- 0 = top of the hierarchy
 );
 
 
 create table if not exists role_attribution (
     id bigserial NOT NULL PRIMARY KEY,
     account integer NOT NULL,
-    role integer NOT NULL,
+    role integer NOT NULL references role(id) ON DELETE CASCADE,
     server integer NOT NULL references server(id) ON DELETE CASCADE
 );
+create unique index if not exists idx_role_attribution_unique on role_attribution(account, role);
+create index if not exists idx_role_attribution_server on role_attribution(server, account);
 
 create table if not exists offline_notifs (
     id bigserial NOT NULL PRIMARY KEY,
@@ -408,17 +413,23 @@ create table if not exists call_session (
 create index if not exists idx_call_session_conversation on call_session(conversation_id);
 create index if not exists idx_call_session_active on call_session(active);
 
+-- Overwrite on a channel or category (channel_type "category"): for a role, a member
+-- (account) or @everyone (neither); permissions = allowed rights, deny = denied ones.
 create table if not exists channel_permission (
     id bigserial NOT NULL PRIMARY KEY,
     channel integer NOT NULL,
     channel_type varchar(20) NOT NULL,
-    role integer NOT NULL references role(id) ON DELETE CASCADE,
+    role integer references role(id) ON DELETE CASCADE,
+    account integer,
     server integer NOT NULL references server(id) ON DELETE CASCADE,
-    permissions jsonb DEFAULT '{}'
+    permissions jsonb DEFAULT '{}',
+    deny jsonb DEFAULT '{}'
 );
 
 create index if not exists idx_channel_permission_channel on channel_permission(channel, channel_type);
 create index if not exists idx_channel_permission_role on channel_permission(role);
+create unique index if not exists idx_channel_permission_target
+    on channel_permission(channel, channel_type, coalesce(role, 0), coalesce(account, 0));
 
 create table if not exists device_token (
     id bigserial NOT NULL PRIMARY KEY,

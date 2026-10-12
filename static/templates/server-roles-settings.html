@@ -1,12 +1,35 @@
-<h1>${_t("Roles")}</h1>
-<p>${_t("Use roles to group members and assign them permissions")}</p>
-<div class="btn blue" onclick="createRole()">${_t("Create Role")}</div>
-<div class="roleList">
-    <div class="head">
-        <h2>${_t("ROLES")} - 0</h2>
-        <h2>${_t("MEMBERS")}</h2>
+<div class="roles-settings">
+    <h1>${_t("Rôles")}</h1>
+    <p class="roles-hint">${_t("Utilise des rôles pour regrouper les membres de ton serveur et leur assigner des permissions.")}</p>
+
+    <div class="everyone-card" id="everyone-card" onclick="openRoleEditor('everyone')">
+        <img class="icon" src="/static/icons/material/group.svg">
+        <div class="grow">
+            <h3>${_t("Permissions par défaut")}</h3>
+            <p>@everyone · ${_t("s'applique à tous les membres du serveur")}</p>
+        </div>
+        <img class="icon chevron" src="/static/icons/material/back.svg">
     </div>
-    <div class="content">
-        ${fillWith('role-element',global.state.currentServer.roles)}
+
+    <div class="roles-toolbar">
+        <div class="search-field">
+            <img class="icon" src="/static/icons/material/search.svg">
+            <input type="text" id="role-search" placeholder="${_t('Rechercher des rôles')}" oninput="searchRoles(event)" autocomplete="off">
+        </div>
+        <div class="btn blue" id="create-role-btn" onclick="createRole()" style="${checkServRights('manage-roles') ? '' : 'display:none'}">${_t("Créer un rôle")}</div>
     </div>
+    <p class="roles-hint">${_t("Les membres utilisent la couleur du rôle le plus élevé qu'ils ont dans cette liste. Fais glisser les rôles pour les réorganiser.")}</p>
+
+    <div class="roleList">
+        <div class="head">
+            <h2 id="role-count"></h2>
+            <h2>${_t("MEMBRES")}</h2>
+            <div></div>
+        </div>
+        <div class="content" id="role-list-rows"></div>
+    </div>
+</div>
+<div class="modale role-menu" id="role-actions-modale">
+    <div class="item" onclick="closeFM();copyRoleId(global.state.modaltarget.dataset.id)">${_t("Copier l'identifiant du rôle")}</div>
+    <div class="item crit" onclick="closeFM();deleteRole(global.state.modaltarget.dataset.id)">${_t("Supprimer le rôle")}</div>
 </div>

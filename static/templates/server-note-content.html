@@ -8,7 +8,7 @@
 
 
 <div class="scrollable" style="width: 100%;height: calc(100svh - 3rem);flex-direction: column;">
-    <div class="editor" id="note-editor">
+    <div class="editor ${checkChannelRight(global.state.activeChan.id, 'note', 'edit-notes') ? '' : 'read-only'}" id="note-editor">
         ${Subscribe('global.notes['+global.state.activeChan.id+'].blocks', () => fillWith('note-row', global.state.noteEditor.getRenderableRows()))}
     </div>
 </div>

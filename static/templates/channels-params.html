@@ -10,16 +10,16 @@
   })()}
   <div id="settings-list-params" class="scrollable settings-list">
     <section id="">
-      <h3>${global.state.modaltarget.innerText}</h3>
-      <div class="item selected" onclick="goTo('setting-server-content', 'channel-main-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Vue d'ensemble")}</div>
-      <div class="item" onclick="goTo('setting-server-content', 'channel-permissions-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Permissions")}</div>
+      <h3>${escapeHTML(global.state.modaltarget.innerText)}</h3>
+      <div class="item ${canManageChannel() ? 'selected' : ''}" id="channel-overview-tab" ${channelGate(global.state.modaltarget.dataset.id, global.state.editingChannelType, 'manage-channels')} onclick="goTo('setting-server-content', 'channel-main-settings',{'category':'currentSettingTab' ,'event': event})">${_t("Vue d'ensemble")}</div>
+      <div class="item ${canManageChannel() ? '' : 'selected'}" id="channel-permissions-tab" ${channelGate(global.state.modaltarget.dataset.id, global.state.editingChannelType, 'manage-roles')} onclick="openChannelPermissions(event)">${_t("Permissions")}</div>
       <hr>
-      <div class="item crit settings-delete-item" onclick="deleteChannel()">${_t("Supprimer le salon")}<img class="icon red" src="/static/icons/material/trash.svg"/></div>
+      <div class="item crit settings-delete-item" ${channelGate(global.state.modaltarget.dataset.id, global.state.editingChannelType, 'manage-channels')} onclick="deleteChannel()">${_t("Supprimer le salon")}<img class="icon red" src="/static/icons/material/trash.svg"/></div>
     </section>
   </div>
   <div id="setting-panel" class="scrollable">
       <div id="setting-server-content" class="setting-content">
-        ${getTemplate('channel-main-settings')}
+        ${canManageChannel() ? getTemplate('channel-main-settings') : ''}
       </div>
       <div class="close" onclick="closeMenu('#channels-params')">+</div>
   </div>

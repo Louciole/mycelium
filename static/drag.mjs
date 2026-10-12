@@ -195,10 +195,19 @@ function dropChannel(chanId, serverId) {
     const chanType = draggedEl.dataset.type
     const channelType = chanType === "conv" ? "textual" : chanType
 
-    const chan = findChannelInDirs(chanId)
+    // Ids are per table (a forum and a text channel can share one): look in its own type
+    const chan = getChannelArray(channelType)?.find(c => c.id == chanId)
     const oldCat = chan?.category
     if ((oldCat || null) !== (newCatId || null)) {
-        xhr(`edit_server_channel?server_id=${serverId}&targetId=${chanId}&channel_type=${channelType}&field=category&value=${newCatId || ''}`)
+        // Changing category changes what the channel inherits (its permissions): the
+        // server may refuse it (manage-roles in the channel, manage-channels in the
+        // destination). Ask first, and leave the channel where it was if refused.
+        const req = xhr(`edit_server_channel?server_id=${serverId}&targetId=${chanId}&channel_type=${channelType}&field=category&value=${newCatId || ''}`, undefined, "POST", false)
+        if (req.status !== 200) {
+            alert(_t("Tu ne peux pas déplacer ce salon dans cette catégorie : cela changerait ses permissions."))
+            orderServDirs(global.state.currentServer)
+            return
+        }
     }
 
     if (chan) {
@@ -217,6 +226,7 @@ function dropChannel(chanId, serverId) {
     }
 
     orderServDirs(global.state.currentServer)
+    window.updateComposerLock?.()   // the open channel may have changed rights
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -227,15 +237,6 @@ function insertAfter(newNode, refNode, container) {
     } else {
         container.appendChild(newNode)
     }
-}
-
-function findChannelInDirs(id) {
-    const dirs = global.state.currentServer.dirs
-    for (const arr of [dirs.channels, dirs.vocals, dirs.drives, dirs.notes, dirs.forums]) {
-        const ch = arr?.find(c => c.id == id)
-        if (ch) return ch
-    }
-    return null
 }
 
 function getChannelArray(channelType) {

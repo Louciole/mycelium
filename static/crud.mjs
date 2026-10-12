@@ -398,6 +398,7 @@ export function loadForumPost(postId){
     }
 
     goTo('content','server-forum-post',undefined,false)
+    window.updateComposerLock?.()   // timeout / read-only forum (moderation.mjs)
 }
 
 export function createForumPost(forumId, title, content, tags=[], attachments=[]){
@@ -1284,6 +1285,7 @@ export function loadServer(id){
         for (let role of resp.roles){
             serv["roles"][role.id] = role
         }
+        serv["default_permissions"] = resp.default_permissions || {}
 
         serv["type"]= resp.type
         serv["channel_permissions"] = resp.channel_permissions || []
@@ -1486,12 +1488,36 @@ function deleteCat(catId){
 window.deleteCat = deleteCat
 
 /**
+ * Server, channel and category settings all render into #setting-server-content:
+ * with two of them in the DOM, goTo() (getElementById) would fill the hidden one.
+ * Keep a single settings panel, rebuilt for what is being edited.
+ */
+export function closeSettingsPanels(){
+    for (const id of ['server-params', 'channels-params', 'cat-params']) document.getElementById(id)?.remove()
+    // goTo() un-highlights this tab: it must not point into a removed panel
+    delete global.state.currentSettingTab
+}
+window.closeSettingsPanels = closeSettingsPanels
+
+/** Opens the settings of the category in global.state.modaltarget (rebuilt each time). */
+function openCategorySettings(){
+    closeSettingsPanels()
+    global.state.permissionsScope = 'category'
+    openMenu('cat-params', false)
+    if (!canManageCategory()) openChannelPermissions()
+}
+window.openCategorySettings = openCategorySettings
+
+/**
  * Opens the settings of the channel in global.state.modaltarget. #channels-params is rendered
  * for the channel it was opened on (name, type, Overview), so it is rebuilt every time.
  */
 function openChannelSettings(){
-    document.getElementById('channels-params')?.remove()
+    closeSettingsPanels()
+    global.state.permissionsScope = 'channel'   // channel-permissions.mjs
     openMenu('channels-params', false)
+    // Only channel-level "manage-roles": the overview is hidden, open the permissions
+    if (!canManageChannel()) openChannelPermissions()
 }
 window.openChannelSettings = openChannelSettings
 
@@ -1514,38 +1540,14 @@ function deleteChannel(){
 }
 window.deleteChannel = deleteChannel
 
-function createRole(){
-    const onload = function() {
-        const roleId = JSON.parse(this.responseText).id
-        addElement("global.state.currentServer.roles",{"name":"new role", "id":roleId, "permissions":{}})
-        global.state.currentRole = global.state.currentServer.roles[roleId]
-        goTo( 'setting-server-content', 'server-role-settings')
-    }
-
-    xhr("edit_server_role?server_id="+global.state.currentServer.id+"&action=create",onload)
-}
-window.createRole = createRole
-
-function setRoleColor(event){
-    const color = getComputedStyle(event.currentTarget).getPropertyValue('--color')
-
-    const onload = function() {
-        setElement("global.state.currentRole.color",color)
-    }
-    xhr("edit_server_role?server_id="+global.state.currentServer.id+"&field=color&value="+encodeURIComponent(color)+"&targetId="+global.state.currentRole.id, onload)
-}
-window.setRoleColor = setRoleColor
-
 function attributeRole(roleId){
     const onload = function() {
         if (this.status !== 200) {
             return;
         }
 
-        pushElement("global.state.currentServer.members[global.state.profileInfo.id].roles", roleId)
-        // The role tags on the profile card subscribe to profileInfo, not to the
-        // nested roles path — repaint it so the new tag shows without reopening.
-        updateElement("global.state.profileInfo")
+        // Updates the state and repaints the profile card, member list, role settings
+        applyMemberRole(global.state.profileInfo.id, roleId, true)
         const elt = document.getElementById("addRole")
         elt.style.display = "none"
     }
@@ -1562,9 +1564,7 @@ function removeRoleFromUser(event, roleId){
             return;
         }
 
-        deleteVal("global.state.currentServer.members[global.state.profileInfo.id].roles", Number(roleId))
-        // Repaint the profile card so the removed tag disappears live.
-        updateElement("global.state.profileInfo")
+        applyMemberRole(global.state.profileInfo.id, roleId, false)
     }
 
     xhr("edit_server_role?server_id="+global.state.currentServer.id+"&action=unattribute&value="+global.state.profileInfo.id+"&targetId="+roleId, onload)

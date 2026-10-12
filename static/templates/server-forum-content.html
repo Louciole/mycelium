@@ -6,7 +6,7 @@
             ${Subscribe("global.forums["+global.state.activeChan.id+"].name", ()=>{return escapeHTML(global.forums[global.state.activeChan.id].name)})}
         </div>
         <div class="forum-header-actions">
-            ${checkServRights('edit') ? '<img class="icon" src="/static/icons/material/settings.svg" title="'+_t("Forum settings")+'" onclick="openForumSettings('+global.state.activeChan.id+')">' : ''}
+            <img class="icon" id="forum-settings-btn" ${channelGate(global.state.activeChan.id, 'forum', 'manage-channels')} src="/static/icons/material/settings.svg" title="${_t('Forum settings')}" onclick="openForumSettings(${global.state.activeChan.id})">
             <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg">
         </div>
     </div>
@@ -16,7 +16,7 @@
             <div class="forum-search-bar">
                 <img class="icon" src="/static/icons/material/search.svg"/>
                 <input type="text" id="forum-search-input" maxlength="100" placeholder="${_t('Search or create a post...')}" oninput="setForumSearch(${global.state.activeChan.id}, this.value)" onkeydown="forumSearchKeyDown(event, ${global.state.activeChan.id})"/>
-                <div class="btn blue forum-new-post-btn" onclick="openCreatePostModal(${global.state.activeChan.id}, document.getElementById('forum-search-input').value)">
+                <div class="btn blue forum-new-post-btn" ${channelGate(global.state.activeChan.id, 'forum', 'send-messages')} onclick="openCreatePostModal(${global.state.activeChan.id}, document.getElementById('forum-search-input').value)">
                     <img class="icon" src="/static/icons/material/message.svg"/>${_t("New post")}
                 </div>
             </div>

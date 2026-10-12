@@ -10,13 +10,13 @@
       <hr>
       <p>${Subscribe('global.state.profileInfo.description',()=>{return(global.state.profileInfo?.description ? "<h3>".concat(_t("ABOUT ME"),"</h3>",MDToHTML(global.state.profileInfo?.description)) : "")},"mdBlock")}</p>
       <div class="userRoles">
-        <div class="global-state-profileInfo global-state-currentServer-members🪟global.state.profileInfo.id🥹.roles" data-content="()=&gt;{return(global.state.isServer ? fillWith(&quot;role-display&quot;,global.state.currentServer.members[global.state.profileInfo.id]?.roles || []) : &quot;&quot;)}">
+        <div class="global-state-profileInfo global-state-currentServer-members🪟global.state.profileInfo.id🥹.roles" data-content="()=&gt;{return(global.state.isServer ? fillWith(&quot;role-display&quot;,memberRoleIds(global.state.profileInfo?.id)) : &quot;&quot;)}">
         </div>
-        ${Subscribe('global.state.profileInfo', ()=>{return(global.state.isServer ?  "<div class='attributeRole' onclick='showAddRole(event)'>+</div>" : "")})}
+        ${Subscribe('global.state.profileInfo', ()=>{return(global.state.isServer && checkServRights('manage-roles') ?  "<div class='attributeRole' onclick='showAddRole(event)'>+</div>" : "")})}
       </div>
       ${Subscribe('global.state.profileInfo', ()=>{return(window.renderModActions ? window.renderModActions() : "")})}
     </div>
   </div>
 
-  ${Subscribe('global.state.profileInfo', ()=>{return(global.state.isServer ? '<div id="addRole" class="scrollable" style="display: none">' + fillWith("role-element-modale", global.state.currentServer.roles) + '</div>' : "")})}
+  ${Subscribe('global.state.profileInfo', ()=>{return(global.state.isServer ? '<div id="addRole" class="scrollable" style="display: none">' + fillWith("role-element-modale", sortedRoles().filter(r => canManageRole(r) && !memberRoleIds(global.state.profileInfo?.id).includes(r.id))) + '</div>' : "")})}
 </div>

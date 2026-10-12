@@ -1,7 +1,7 @@
 ${element.category === null ? fillWith('server-route-channel', [element]) : `<div class="group">
-    <div class="title" onclick="toggleGroup()" ${checkServRights('edit') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} data-id="${element.id}" data-pos="${element.place}" data-type="cat" oncontextmenu="toggleModale('edit-cat-modale',event)">
+    <div class="title" onclick="toggleGroup()" ${checkServRights('manage-channels') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} data-id="${element.id}" data-pos="${element.place}" data-type="cat" oncontextmenu="openCategoryMenu(event)">
         <div class="icon">></div>
-        <h2>${element.name.toUpperCase()}</h2>
+        <h2>${escapeHTML(element.name.toUpperCase())}</h2>
     </div>
     ${fillWith('server-route-channel', element.channels)}
 </div>`}

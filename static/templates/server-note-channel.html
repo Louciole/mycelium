@@ -1,2 +1,2 @@
-<div class="conv" id="channel-note-${element.id}" data-id="${element.id}" data-type="note" data-pos="${element.place}" ${checkServRights('edit') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} oncontextmenu="toggleModale('edit-channel-modale',event)" onclick="goToNoteChannel(${element.id})"><img class="icon" src="/static/icons/material/note.svg"/>${element.name}</div>
+<div class="conv" id="channel-note-${element.id}" data-id="${element.id}" data-type="note" data-pos="${element.place}" ${checkServRights('manage-channels') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} oncontextmenu="openChannelMenu(event)" onclick="goToNoteChannel(${element.id})"><img class="icon" src="/static/icons/material/note.svg"/>${escapeHTML(element.name)}</div>
 

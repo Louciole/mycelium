@@ -132,9 +132,11 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
 
         mention_targets.discard(uid)  # Don't notify the sender
 
-        # For private channels, filter targets to only those who can view the channel
-        if channel.get("is_private"):
-            mention_targets = {t for t in mention_targets if self.checkChannelAccess(t, channel["id"], channel_type, "view")}
+        # Only members who can view the channel are notified or receive the message
+        # (private channels, view overwrites; also drops @mentions of non-members).
+        viewers = {account for account, rights in self.channelMembersRights(channel, channel_type).items()
+                   if "view-channels" in rights}
+        mention_targets &= viewers
 
         # Fetch channel mutes for this channel
         now = datetime.datetime.now()
@@ -165,8 +167,7 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
             member_uid = m["account"]
             if member_uid == uid:
                 continue
-            # Skip private channel members without access
-            if channel.get("is_private") and not self.checkChannelAccess(member_uid, channel["id"], channel_type, "view"):
+            if member_uid not in viewers:
                 continue
             self.sendNotification(member_uid, {"type": "message", "content": message})
 

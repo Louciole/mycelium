@@ -130,13 +130,13 @@ def _like_prefix(query):
     return escaped + "%"
 
 
-def _visible(self, uid, row, channel_id, channel_type):
-    """The single existing authz rule: public channels are visible to every
-    server member (already enforced by the accessserver join); private ones go
-    through checkChannelAccess like get_serv_content does."""
-    if not row.get("is_private"):
-        return True
-    return self.checkChannelAccess(uid, channel_id, channel_type, "view")
+def _visible(self, uid, channel_id, channel_type, cache):
+    """Same rule as get_serv_content: checkChannelAccess "view" (private channels
+    AND view overwrites on public ones). Memoised per channel for this request."""
+    key = (channel_id, channel_type)
+    if key not in cache:
+        cache[key] = self.checkChannelAccess(uid, channel_id, channel_type, "view")
+    return cache[key]
 
 
 @Server.expose
@@ -170,13 +170,14 @@ def global_search(self, query):
                     paths.setdefault(row["leaf"], []).append(
                         {"id": row["id"], "name": row["foldername"]})
 
-    channels = [r for r in channels if _visible(self, uid, r, r["id"], r["kind"])]
+    seen = {}
+    channels = [r for r in channels if _visible(self, uid, r["id"], r["kind"], seen)]
     # The UNION concatenates five per-table batches (each sorted); re-sort so
     # the trim below doesn't systematically favor textual channels.
     channels.sort(key=lambda r: r["sim"], reverse=True)
-    posts = [r for r in posts if _visible(self, uid, r, r["forum"], "forum")]
-    files = [r for r in files if _visible(self, uid, r, r["drive_channel"], "drive")]
-    folders = [r for r in folders if _visible(self, uid, r, r["drive_channel"], "drive")]
+    posts = [r for r in posts if _visible(self, uid, r["forum"], "forum", seen)]
+    files = [r for r in files if _visible(self, uid, r["drive_channel"], "drive", seen)]
+    folders = [r for r in folders if _visible(self, uid, r["drive_channel"], "drive", seen)]
 
     for r in files + folders:
         r["path"] = paths.get(r["parent_folder"], [])

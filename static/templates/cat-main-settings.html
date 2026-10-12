@@ -2,7 +2,7 @@
 
 <div class="channel-name">
     <h2>${_t("Nom de la catégorie")}</h2>
-    <input id="cat-name-input" type="text" placeholder="${_t('nom de la catégorie')}" value="${global.state.editingCatName}" oninput="updatePreview('formCat', event, 'global.state.editingCatName')">
+    <input id="cat-name-input" type="text" placeholder="${_t('nom de la catégorie')}" value="${escapeHTML(global.state.editingCatName)}" oninput="updatePreview('formCat', event, 'global.state.editingCatName')">
 </div>
 
 <hr>

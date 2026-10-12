@@ -25,6 +25,8 @@ import {resolveSlashCommand, showSlashError, closeSlashMenu} from "/static/slash
 import {} from "/static/system-messages.mjs"; // System notices (dice rolls…) in conversations
 import {} from "/static/forum.mjs"; // Forum channels: posts, tags, layouts
 import {} from "/static/moderation.mjs"; // Kick/ban/timeout, reports, Moderation tab, op panel
+import {} from "/static/roles.mjs"; // Server settings › Roles (list, editor, hierarchy)
+import {} from "/static/channel-permissions.mjs"; // Channel settings › Permissions (overwrites)
 // Capacitor bridge — only activates when running inside a native shell
 import { hideSplash, registerPushNotifications } from "/static/capacitor-bridge.mjs";
 
@@ -579,19 +581,16 @@ function Save(endpoint="change_profile"){
                 // Envoyer la requête en arrière-plan (si ça échoue, on pourrait rollback)
                 xhr("edit_server_channel?server_id=".concat(global.state.currentServer.id, "&value=", encodeURIComponent(newValue), "&field=name&targetId=", id, "&channel_type=", type), undefined, "POST", false)
             }else if (endpoint === "editRole") {
-                const id = global.state.currentRole.id
-                const newValue = global.state["currentForm"][key].value
-                xhr("edit_server_role?server_id=".concat(global.state.currentServer.id, "&value=", encodeURIComponent(newValue), "&field=name&targetId=", id), undefined, "POST", false)
-                setElement("global.state.currentRole.name", newValue)
-                setElement("global.state.currentServer.roles[" + id + "].name", newValue)
+                saveRoleName(global.state["currentForm"][key].value)   // static/roles.mjs
             }else{
                 xhr(endpoint+"?element=".concat(target,"&value=",encodeURIComponent(global.state["currentForm"][key].value)), undefined,"POST",false)
                 setElement("global.user.".concat(target), global.state["currentForm"][key].value)
             }
         }
     }
+    // The bar of this form: several .save-settings can be in the DOM (user + server settings)
+    const save_menu = document.getElementById(global.state["currentForm"]?.id) || document.querySelector(".save-settings")
     delete global.state["currentForm"]
-    const save_menu = document.querySelector(".save-settings")
     save_menu.style.display="none"
 }
 window.Save = Save
