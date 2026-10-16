@@ -140,93 +140,94 @@ function handleChannelDragOver(e, target, container) {
 function dropSnippet(e) {
     e.preventDefault()
     if (!draggedEl || !indicator || !indicator.parentElement) { cleanup(); return }
-
-    const id = parseInt(draggedEl.dataset.id)
-    const serverId = global.state.currentServer.id
-
-    if (dragType === "cat") {
-        dropCategory(id, serverId)
-    } else {
-        dropChannel(id, serverId)
-    }
-
+    dropInList(global.state.currentServer.id)
     cleanup()
 }
 window.dropSnippet = dropSnippet
 
-function dropCategory(catId, serverId) {
-    const selector = document.getElementById("server-selector")
-    const container = selector?.firstElementChild || selector
+/**
+ * The sidebar is one list per container: the top level (categories + channels without
+ * category, crud.mjs orderServDirs) and each category (its channels, every type together).
+ * The dropped item takes the midpoint of its new neighbours in that list, so a reorder
+ * writes one place. The whole list is renumbered only when two neighbours share a place
+ * or floats run out between them (normalizeIfNeeded), in the order shown.
+ */
+function dropInList(serverId) {
+    const list = indicator.parentElement
+    const dragged = dragType === "cat" ? categoryItem(draggedEl) : listItem(draggedEl)
+    if (!dragged) return
+    const items = listItems(list, dragged)
+    const i = items.indexOf(dragged)
+    const place = computePlace(items[i - 1]?.place ?? null, items[i + 1]?.place ?? null)
 
-    const prevEl = findTopLevelSibling(indicator, 'previous', container, '.group')
-    const nextEl = findTopLevelSibling(indicator, 'next', container, '.group')
-
-    const newPlace = computePlace(getPlaceFromTopLevel(prevEl), getPlaceFromTopLevel(nextEl))
-
-    const cat = lookFor(catId, global.state.currentServer.dirs.cat)
-    if (cat) cat.place = newPlace
-
-    const normalized = normalizeIfNeeded(global.state.currentServer.dirs.cat, 'place', (item, val) => {
-        xhr(`edit_server_category?server_id=${serverId}&targetId=${item.id}&field=place&value=${val}`)
-    })
-    if (!normalized) {
-        xhr(`edit_server_category?server_id=${serverId}&targetId=${catId}&field=place&value=${newPlace}`)
-    }
-    orderServDirs(global.state.currentServer)
-}
-
-function dropChannel(chanId, serverId) {
-    // If indicator is inside a .group, the channel goes into that category
-    const parentGroup = indicator.parentElement?.classList.contains('group')
-        ? indicator.parentElement : null
-    const newCatId = parentGroup
-        ? parseInt(parentGroup.querySelector('.title')?.dataset.id)
-        : null
-
-    // Find neighbor .conv elements for position calculation
-    const prevConv = findConvSibling(indicator, 'previous')
-    const nextConv = findConvSibling(indicator, 'next')
-
-    const newPlace = computePlace(
-        prevConv ? parseFloat(prevConv.dataset.pos) : null,
-        nextConv ? parseFloat(nextConv.dataset.pos) : null
-    )
-
-    const chanType = draggedEl.dataset.type
-    const channelType = chanType === "conv" ? "textual" : chanType
-
-    // Ids are per table (a forum and a text channel can share one): look in its own type
-    const chan = getChannelArray(channelType)?.find(c => c.id == chanId)
-    const oldCat = chan?.category
-    if ((oldCat || null) !== (newCatId || null)) {
+    const newCatId = list.classList.contains('group') ? Number(list.querySelector(':scope > .title')?.dataset.id) : null
+    if (dragged.kind === "channel" && (dragged.ref.category || null) !== newCatId) {
         // Changing category changes what the channel inherits (its permissions): the
         // server may refuse it (manage-roles in the channel, manage-channels in the
-        // destination). Ask first, and leave the channel where it was if refused.
-        const req = xhr(`edit_server_channel?server_id=${serverId}&targetId=${chanId}&channel_type=${channelType}&field=category&value=${newCatId || ''}`, undefined, "POST", false)
+        // destination). Ask first — with the new place, one request — and leave the
+        // channel where it was if refused.
+        const req = xhr(`edit_server_channel?server_id=${serverId}&targetId=${dragged.id}&channel_type=${dragged.type}&field=category&value=${newCatId || ''}&place=${place}`, undefined, "POST", false)
         if (req.status !== 200) {
             alert(_t("Tu ne peux pas déplacer ce salon dans cette catégorie : cela changerait ses permissions."))
             orderServDirs(global.state.currentServer)
             return
         }
-    }
-
-    if (chan) {
-        chan.place = newPlace
-        chan.category = newCatId
-    }
-
-    // Normalize channels sharing the same category to avoid float precision loss
-    const channelArr = getChannelArray(channelType)
-    const siblingsInCat = channelArr?.filter(c => (c.category || null) === (newCatId || null))
-    const normalized = normalizeIfNeeded(siblingsInCat, 'place', (item, val) => {
-        xhr(`edit_server_channel?server_id=${serverId}&targetId=${item.id}&channel_type=${channelType}&field=place&value=${val}`)
-    })
-    if (!normalized) {
-        xhr(`edit_server_channel?server_id=${serverId}&targetId=${chanId}&channel_type=${channelType}&field=place&value=${newPlace}`)
+        dragged.ref.category = newCatId
+        dragged.ref.place = dragged.place = place
+        renumberIfNeeded(items, serverId)
+    } else {
+        dragged.ref.place = dragged.place = place
+        if (!renumberIfNeeded(items, serverId)) savePlace(dragged, place, serverId)
     }
 
     orderServDirs(global.state.currentServer)
-    window.updateComposerLock?.()   // the open channel may have changed rights
+    if (dragged.kind === "channel") window.updateComposerLock?.()   // the open channel may have changed rights
+}
+
+/** {kind, type, id, place, ref} of a top-level .group or a .conv; ref = the dirs object. */
+function listItem(el) {
+    if (el.matches('.group')) return categoryItem(el.querySelector(':scope > .title'))
+    if (!el.matches('.conv')) return null
+    const type = el.dataset.type === "conv" ? "textual" : el.dataset.type
+    // Ids are per table (a forum and a text channel can share one): look in its own type
+    const ref = getChannelArray(type)?.find(c => c.id == el.dataset.id)
+    return ref ? {kind: "channel", type, id: ref.id, place: ref.place, ref} : null
+}
+
+function categoryItem(title) {
+    const ref = title && lookFor(title.dataset.id, global.state.currentServer.dirs.cat)
+    return ref ? {kind: "cat", id: ref.id, place: ref.place, ref} : null
+}
+
+/** The items of `list` in the order shown, the dragged one where the indicator is. */
+function listItems(list, dragged) {
+    const draggedGroup = dragType === "cat" ? draggedEl.closest('.group') : null
+    const items = []
+    for (const el of list.children) {
+        if (el === indicator) items.push(dragged)
+        else if (el !== draggedEl && el !== draggedGroup) {
+            const item = listItem(el)
+            if (item) items.push(item)
+        }
+    }
+    return items
+}
+
+function savePlace(item, place, serverId) {
+    if (item.kind === "cat") {
+        xhr(`edit_server_category?server_id=${serverId}&targetId=${item.id}&field=place&value=${place}`)
+    } else {
+        xhr(`edit_server_channel?server_id=${serverId}&targetId=${item.id}&channel_type=${item.type}&field=place&value=${place}`)
+    }
+}
+
+/** Renumber the whole list (every item, every type) when needed. `items` are in the order
+ *  shown and normalizeIfNeeded's sort is stable: equal places keep that order. */
+function renumberIfNeeded(items, serverId) {
+    return normalizeIfNeeded(items, 'place', (item, val) => {
+        item.ref.place = val
+        savePlace(item, val, serverId)
+    })
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -245,11 +246,12 @@ function getChannelArray(channelType) {
     return map[channelType] || null
 }
 
+// Steps of 1 at the ends, like the server's end-of-list places (routes/servers.py)
 function computePlace(prevPlace, nextPlace) {
     if (prevPlace != null && nextPlace != null) return (prevPlace + nextPlace) / 2
-    if (prevPlace != null) return prevPlace + 0.1
-    if (nextPlace != null) return nextPlace / 2
-    return 0.1
+    if (prevPlace != null) return prevPlace + 1
+    if (nextPlace != null) return nextPlace - 1
+    return 1
 }
 
 /**
@@ -268,69 +270,6 @@ export function normalizeIfNeeded(items, posKey, saveCallback) {
         if (saveCallback) saveCallback(item, item[posKey])
     })
     return true
-}
-
-/**
- * Find the nearest sibling .conv, crossing .group boundaries if needed.
- * Skips the currently dragged element so its stale position isn't used.
- */
-function findConvSibling(el, direction) {
-    const prop = direction === 'previous' ? 'previousElementSibling' : 'nextElementSibling'
-
-    function firstValidConv(convs) {
-        const arr = [...convs].filter(c => c !== draggedEl)
-        return direction === 'previous' ? arr[arr.length - 1] : arr[0]
-    }
-
-    let sibling = el[prop]
-    while (sibling) {
-        if (sibling.matches('.conv') && sibling !== draggedEl) return sibling
-        if (sibling.matches('.group')) {
-            const match = firstValidConv(sibling.querySelectorAll('.conv'))
-            if (match) return match
-        }
-        sibling = sibling[prop]
-    }
-    // If inside a .group, continue searching at the container level
-    const parent = el.parentElement
-    if (parent?.classList.contains('group')) {
-        let groupSibling = parent[prop]
-        while (groupSibling) {
-            if (groupSibling.matches('.conv') && groupSibling !== draggedEl) return groupSibling
-            if (groupSibling.matches('.group')) {
-                const match = firstValidConv(groupSibling.querySelectorAll('.conv'))
-                if (match) return match
-            }
-            groupSibling = groupSibling[prop]
-        }
-    }
-    return null
-}
-
-function findTopLevelSibling(el, direction, container, selector) {
-    const prop = direction === 'previous' ? 'previousElementSibling' : 'nextElementSibling'
-    const draggedGroup = draggedEl?.closest('.group')
-    let sibling = el[prop]
-    while (sibling) {
-        if (sibling !== indicator && sibling !== draggedGroup && sibling !== draggedEl) {
-            if (selector) {
-                if (sibling.matches(selector)) return sibling
-            } else if (sibling.matches('.group') || sibling.matches('.conv')) {
-                return sibling
-            }
-        }
-        sibling = sibling[prop]
-    }
-    return null
-}
-
-function getPlaceFromTopLevel(el) {
-    if (!el) return null
-    if (el.matches('.group')) {
-        const title = el.querySelector('.title')
-        return title ? parseFloat(title.dataset.pos) : null
-    }
-    return el.dataset.pos ? parseFloat(el.dataset.pos) : null
 }
 
 function getIndicator() {

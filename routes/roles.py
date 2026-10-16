@@ -236,7 +236,8 @@ def _channel(self, channelId, channelType):
 
 def _overwrite_target(self, uid, server_id, roleId, accountId):
     """(role, account) of the overwrite to edit, checked against the hierarchy:
-    a role below yours, a member whose highest role is below yours, or @everyone."""
+    a role below yours, a member whose highest role is below yours, or @everyone
+    (like edit_server_role: anyone holding a role outranks it, a role-less member doesn't)."""
     if accountId not in (None, ""):
         account = _int(self, accountId, "accountId")
         if not self.db.getFilters("accessserver", ["account", "=", account, "and", "server", "=", server_id]):
@@ -246,6 +247,7 @@ def _overwrite_target(self, uid, server_id, roleId, accountId):
             raise HTTPError(self.response, 403, "this member is not below your highest role")
         return None, account
     if roleId in (None, "", EVERYONE):
+        _require_outranks(self, uid, server_id, None)
         return None, None
     role = self.db.getSomething("role", _int(self, roleId, "roleId"))
     if not role or role["server"] != server_id:
@@ -319,6 +321,8 @@ def _edit_channel_permissions(self, uid, chan, channel_type, table, action, role
                               permission, value, allow, deny):
     server_id = chan["server"]
     if action == "togglePrivacy":
+        # Private = @everyone loses view-channels: same hierarchy rule as its overwrite
+        _require_outranks(self, uid, server_id, None)
         private = not chan.get("is_private", False)
         self.db.edit(table, chan["id"], "is_private", private)
         return json.dumps({"is_private": private})

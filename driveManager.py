@@ -117,6 +117,12 @@ class DriveManager:
         if not self.srv.checkChannelAccess(uid, drive_id, "drive", "send-messages"):
             raise HTTPError(self.srv.response, 403, "No permission for this drive channel")
 
+    def _get_drive_write_access(self, drive_id, uid):
+        """Drive row for a write (new folder, moves): view + send-messages, like uploads."""
+        drive = self._get_drive_access(drive_id, uid)
+        self._require_drive_write(drive, drive_id, uid)
+        return drive
+
     def upload_file(self, drive_id, filename, file, parent_folder=None):
         uid = self.srv.getUser()
         drive = self._get_drive_access(drive_id, uid)
@@ -345,7 +351,7 @@ class DriveManager:
 
     def create_folder(self, drive_id, foldername, parent_folder=None):
         uid = self.srv.getUser()
-        self._get_drive_access(drive_id, uid)
+        self._get_drive_write_access(drive_id, uid)
 
         if parent_folder and parent_folder != "null":
             parent_folder = int(parent_folder)
@@ -426,7 +432,7 @@ class DriveManager:
         if not file_info:
             raise HTTPError(self.srv.response, 404, "File not found")
 
-        self._get_drive_access(file_info["drive_channel"], uid)
+        self._get_drive_write_access(file_info["drive_channel"], uid)
 
         if target_folder and target_folder != "null":
             target_folder = int(target_folder)
@@ -446,7 +452,7 @@ class DriveManager:
         if not folder_info:
             raise HTTPError(self.srv.response, 404, "Folder not found")
 
-        self._get_drive_access(folder_info["drive_channel"], uid)
+        self._get_drive_write_access(folder_info["drive_channel"], uid)
 
         if target_folder and target_folder != "null":
             target_folder = int(target_folder)
@@ -503,9 +509,8 @@ class DriveManager:
                     if not file_info:
                         errors.append(f"File {item_id} not found")
                         continue
-                    try:
-                        self._get_drive_access(file_info["drive_channel"], uid)
-                    except HTTPError:
+                    # Not via HTTPError: vesta's HTTPError sends the response when built
+                    if not self.srv.checkChannelAccess(uid, file_info["drive_channel"], "drive", "send-messages"):
                         errors.append(f"No access to file {item_id}")
                         continue
 
@@ -521,9 +526,8 @@ class DriveManager:
                     if not folder_info:
                         errors.append(f"Folder {item_id} not found")
                         continue
-                    try:
-                        self._get_drive_access(folder_info["drive_channel"], uid)
-                    except HTTPError:
+                    # Not via HTTPError: vesta's HTTPError sends the response when built
+                    if not self.srv.checkChannelAccess(uid, folder_info["drive_channel"], "drive", "send-messages"):
                         errors.append(f"No access to folder {item_id}")
                         continue
 

@@ -40,6 +40,8 @@ create table if not exists accessServer (
     account integer NOT NULL,
     server integer NOT NULL references server(id) ON DELETE CASCADE
 );
+create index if not exists idx_accessserver_server on accessServer(server, account);
+create index if not exists idx_accessserver_account on accessServer(account);
 
 -- Trigger function to update server member_count
 CREATE OR REPLACE FUNCTION update_server_member_count()
@@ -68,6 +70,7 @@ create table if not exists server_cat (
     place float NOT NULL DEFAULT 0.1,
     is_private boolean DEFAULT false
 );
+create index if not exists idx_server_cat_server on server_cat(server);
 
 create table if not exists conversationElement (
     id bigserial NOT NULL PRIMARY KEY
@@ -79,6 +82,8 @@ create table if not exists conversation (
     last_activity timestamp DEFAULT CURRENT_TIMESTAMP,
     pfp varchar(255)
 ) inherits (conversationElement);
+-- An inheriting table doesn't get its parent's primary key: index id explicitly
+create index if not exists idx_conversation_id on conversation(id);
 
 create table if not exists textual_channel (
     name varchar(255) NOT NULL,
@@ -87,6 +92,8 @@ create table if not exists textual_channel (
     place float NOT NULL DEFAULT 0.1,
     is_private boolean DEFAULT false
 ) inherits (conversationElement);
+create index if not exists idx_textual_channel_id on textual_channel(id);
+create index if not exists idx_textual_channel_server on textual_channel(server);
 
 create table if not exists forum_channel (
     name varchar(255) NOT NULL,
@@ -102,6 +109,7 @@ create table if not exists forum_channel (
     PRIMARY KEY (id)
 ) inherits (conversationElement);
 ALTER TABLE forum_channel ADD COLUMN IF NOT EXISTS require_tag boolean DEFAULT false;
+create index if not exists idx_forum_channel_server on forum_channel(server);
 
 create table if not exists forum_post (
     forum integer NOT NULL REFERENCES forum_channel(id) ON DELETE CASCADE,
@@ -116,6 +124,7 @@ create table if not exists forum_post (
 ) inherits (conversationElement);
 
 create index if not exists idx_forum_post_forum on forum_post(forum);
+create index if not exists idx_forum_post_id on forum_post(id);
 
 create table if not exists accessConversation (
     id bigserial NOT NULL PRIMARY KEY,
@@ -186,6 +195,7 @@ create table if not exists role (
     permissions jsonb DEFAULT '{}',
     position integer NOT NULL DEFAULT 0  -- 0 = top of the hierarchy
 );
+create index if not exists idx_role_server on role(server);
 
 
 create table if not exists role_attribution (
@@ -250,6 +260,7 @@ create table if not exists drive_channel (
     place float NOT NULL DEFAULT 0.1,
     is_private boolean DEFAULT false
 );
+create index if not exists idx_drive_channel_server on drive_channel(server);
 
 create table if not exists vocal_channel (
     id bigserial NOT NULL PRIMARY KEY,
@@ -259,6 +270,7 @@ create table if not exists vocal_channel (
     place float NOT NULL DEFAULT 0.1,
     is_private boolean DEFAULT false
 );
+create index if not exists idx_vocal_channel_server on vocal_channel(server);
 
 create table if not exists notes_channel (
     id bigserial NOT NULL PRIMARY KEY,
@@ -268,6 +280,7 @@ create table if not exists notes_channel (
     place float NOT NULL DEFAULT 0.1,
     is_private boolean DEFAULT false
 );
+create index if not exists idx_notes_channel_server on notes_channel(server);
 
 create table if not exists note_block (
     id bigserial NOT NULL PRIMARY KEY,
@@ -428,6 +441,7 @@ create table if not exists channel_permission (
 
 create index if not exists idx_channel_permission_channel on channel_permission(channel, channel_type);
 create index if not exists idx_channel_permission_role on channel_permission(role);
+create index if not exists idx_channel_permission_server on channel_permission(server);
 create unique index if not exists idx_channel_permission_target
     on channel_permission(channel, channel_type, coalesce(role, 0), coalesce(account, 0));
 

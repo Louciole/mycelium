@@ -85,7 +85,8 @@ export async function openServerFromSidebarById(page, serverId) {
 }
 
 /**
- * Verifies the created server is loaded with at least one textual channel selected.
+ * Verifies the server is loaded with its first text channel selected: the first one
+ * shown in the sidebar (place is per category, so not always dirs.channels[0]).
  */
 export async function expectServerLoadedWithDefaultChannel(page, serverId) {
     await page.waitForFunction((id) => {
@@ -93,11 +94,11 @@ export async function expectServerLoadedWithDefaultChannel(page, serverId) {
         const server = state?.currentServer;
         if (!server || Number(server.id) !== Number(id)) return false;
 
-        const channels = server?.dirs?.channels || [];
-        if (channels.length === 0) return false;
+        const first = document.querySelector('#server-selector .conv[data-type="conv"]');
+        if (!first) return false;
 
         const activeChan = state?.activeChan;
-        return activeChan && activeChan.type === 'conv' && Number(activeChan.id) === Number(channels[0].id);
+        return activeChan && activeChan.type === 'conv' && Number(activeChan.id) === Number(first.dataset.id);
     }, serverId, { timeout: 10000 });
 }
 

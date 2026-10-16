@@ -856,7 +856,8 @@ function goToServer(event,id){
     loadServer(id)
     goTo('sec-selector','serverSelector',{'category':'currentTab' ,'event': event},true,()=> {
         if (!restoreLastChannel()) {
-            goToChannel(global.state.currentServer.dirs.channels[0].id)
+            const first = window.firstTextChannel(global.state.currentServer)
+            if (first) goToChannel(first.id)
         }
     })
 

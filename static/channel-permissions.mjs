@@ -89,7 +89,7 @@ function targetEditable(target) {
     const {id, type} = current()
     if (!canManageChannelPermissions(id, type)) return false
     const t = parseTarget(target)
-    if (t.kind === EVERYONE) return true
+    if (t.kind === EVERYONE) return outranks(null)   // routes/roles.py _overwrite_target
     if (t.kind === "role") return outranks(serv().roles[t.id]?.position)
     return t.id !== serv().owner && outranks(memberTopPosition(t.id))
 }

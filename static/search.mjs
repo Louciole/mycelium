@@ -208,7 +208,7 @@ function openSearchResultAt(i) {
             // '/0' opens the server without a channel; then land on the first
             // textual channel like a sidebar click would.
             handleHashRoute(item.id + '/0')
-            const first = global.state.currentServer?.dirs?.channels?.[0]
+            const first = window.firstTextChannel(global.state.currentServer)
             if (first) goToChannel(first.id)
             break
         }

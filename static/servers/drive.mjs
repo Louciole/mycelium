@@ -367,7 +367,7 @@ function isExternalFileDrag(event) {
 }
 window.isExternalFileDrag = isExternalFileDrag
 
-/** Uploads (files, folders, drops) need send-messages in the drive. */
+/** Uploads (files, folders, drops), new folders and moves need send-messages in the drive. */
 function canUploadToDrive() {
     return window.checkChannelRight(global.state.activeChan.id, 'drive', 'send-messages')
 }
@@ -488,6 +488,8 @@ function isDriveSelected(type, id) {
 }
 
 function onDriveItemDrag(event, type, id) {
+    // Moving files/folders is a write, like uploads (driveManager _get_drive_write_access)
+    if (!canUploadToDrive()) return event.preventDefault()
     // If the dragged item is not in the selection, replace selection with it
     if (!isDriveSelected(type, id)) {
         global.driveSelection = [{ type, id }]

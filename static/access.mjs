@@ -305,7 +305,7 @@ function refreshServerPermissions(serverId) {
 
 /** The open channel can't be viewed anymore: open the first text channel left (or nothing). */
 function leaveHiddenChannel(serv) {
-    const first = serv?.dirs?.channels?.[0]
+    const first = window.firstTextChannel(serv)
     if (first) return window.goToChannel(first.id)
     global.state.activeChan = undefined
     global.state.activeConv = undefined

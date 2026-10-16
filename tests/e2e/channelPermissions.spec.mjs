@@ -14,7 +14,7 @@ const sendMessage = (page, chan, text) =>
     status(page, `/send_message?conv=${enc(JSON.stringify({ id: chan }))}&content=${enc(text)}&reply=`);
 const visibleChannels = async (page, sid) =>
     (await json(page, `/get_serv_content?server_id=${sid}`)).channels.map(c => Number(c.id));
-// #général is created with the server: the lowest id (get_serv_content's order isn't guaranteed)
+// #général is created with the server: the lowest id (the first listed only until channels are reordered)
 const generalChannel = (page) => page.evaluate(() => Math.min(...window.global.state.currentServer.dirs.channels.map(c => Number(c.id))));
 
 /** Right-click the channel in the sidebar → Edit channel → Permissions tab. */
@@ -335,6 +335,8 @@ test.describe('Channel permissions', () => {
         const room = await createChannel(s.owner, sid);
         await openServer(b.page, sid);
         const general = await generalChannel(b.page);
+        // get_serv_content sorts by (place, id): #général, the oldest channel, is opened
+        await expect(b.page.locator(`#channel-conv-${general}`)).toHaveClass(/selected/);
 
         // Read-only toggled on the open channel: the composer locks and unlocks
         await expect(b.page.locator('.chat-input')).not.toHaveClass(/locked/);
@@ -443,6 +445,67 @@ test.describe('Channel permissions', () => {
         await setPerm(s.owner, notes, `accountId=${b.id}`, 'edit-notes', 'allow', 'note');
         await expect(b.page.locator('#note-editor')).not.toHaveClass(/read-only/);
         await expect(text).toHaveAttribute('contenteditable', 'true');
+        await s.close();
+    });
+
+    test('read-only drive: new folders and moves are refused by the server too', async ({ browser }) => {
+        const s = await setupServer(browser, 'chan_drive_ro', 1);
+        const [b] = s.members;
+        const drive = await createChannel(s.owner, s.serverId, 'drive');
+        const folder = async (page, name) => (await json(page, `/create_drive_folder?drive_id=${drive}&foldername=${name}`)).folder_id;
+        const f1 = await folder(s.owner, 'one');
+        const f2 = await folder(s.owner, 'two');
+        const moveItems = (page) => json(page, `/move_drive_items?items=${enc(JSON.stringify([{ type: 'folder', id: f1 }]))}&target_folder=${f2}`);
+
+        await setPerm(s.owner, drive, 'roleId=everyone', 'send-messages', 'deny', 'drive');
+        expect(await status(b.page, `/create_drive_folder?drive_id=${drive}&foldername=nope`)).toBe(403);
+        expect(await status(b.page, `/move_drive_folder?folder_id=${f1}&target_folder=${f2}`)).toBe(403);
+        expect((await moveItems(b.page)).moved_folders).toBe(0);
+        expect(await status(b.page, `/get_drive_folders?drive_id=${drive}`)).toBe(200);   // still readable
+
+        await setPerm(s.owner, drive, 'roleId=everyone', 'send-messages', 'inherit', 'drive');
+        expect(await status(b.page, `/create_drive_folder?drive_id=${drive}&foldername=yes`)).toBe(200);
+        expect((await moveItems(b.page)).moved_folders).toBe(1);
+        await s.close();
+    });
+
+    test('a channel\'s messages are only readable through get_chan_content (channel rights)', async ({ browser }) => {
+        // Regression: get_serv_content?channel_id= returned any place's messages to any server member
+        const s = await setupServer(browser, 'chan_leak', 1);
+        const [b] = s.members;
+        const chan = await createChannel(s.owner, s.serverId);
+        await api(s.owner, `${perms(chan)}&action=togglePrivacy`);
+        const secret = `secret${s.stamp}`;
+        expect(await sendMessage(s.owner, chan, secret)).toBe(200);
+
+        expect(await status(b.page, `/get_chan_content?channel_id=${chan}`)).toBe(403);
+        const res = await api(b.page, `/get_serv_content?server_id=${s.serverId}&channel_id=${chan}`, { expectOk: false });
+        expect(res.text).not.toContain(secret);
+        await s.close();
+    });
+
+    test('@everyone overwrites and channel privacy need a role, like @everyone in the role editor', async ({ browser }) => {
+        const s = await setupServer(browser, 'chan_everyone', 1);
+        const [c] = s.members;   // no role
+        const chan = await createChannel(s.owner, s.serverId);
+        await setPerm(s.owner, chan, `accountId=${c.id}`, 'manage-roles', 'allow');
+
+        expect(await status(c.page, `${perms(chan)}&action=togglePrivacy`)).toBe(403);
+        expect(await status(c.page, `${perms(chan)}&action=setPermission&roleId=everyone&permission=send-messages&value=deny`)).toBe(403);
+
+        // UI: the @everyone switches and the private toggle are read-only for C
+        await openServer(c.page, s.serverId);
+        await c.page.locator(`#channel-conv-${chan}`).click({ button: 'right' });
+        await c.page.locator('#edit-channel-item').click();
+        await c.page.locator('#chan-perm-list .chan-perm').first().waitFor({ state: 'visible' });
+        await c.page.locator('#chan-target-list .chan-target[data-target="everyone"]').click();
+        await expect(c.page.locator('#chan-perm-list button:not([disabled])')).toHaveCount(0);
+        await expect(c.page.locator('#chan-private-toggle')).toBeDisabled();
+
+        // Holding any role puts C above @everyone
+        const low = await createRole(s.owner, s.serverId, { name: 'Low' });
+        await giveRole(s.owner, s.serverId, low, c.id);
+        expect(await status(c.page, `${perms(chan)}&action=setPermission&roleId=everyone&permission=send-messages&value=deny`)).toBe(200);
         await s.close();
     });
 });

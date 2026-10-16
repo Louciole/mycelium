@@ -1320,6 +1320,22 @@ function firstGreater(arr, target) {
 }
 
 export function orderServDirs(serv){
+    setElement("global.state.currentServer['displayed-dirs']", sidebarOrder(serv))
+}
+
+/** The first text channel shown in the sidebar — place is per list (top level, each
+ *  category), so it isn't the lowest place of dirs.channels. */
+export function firstTextChannel(serv) {
+    for (const item of serv?.dirs ? sidebarOrder(serv) : []) {
+        const chan = item.channels ? item.channels.find(c => c.type === "textual") : item.type === "textual" && item
+        if (chan) return chan
+    }
+}
+window.firstTextChannel = firstTextChannel
+
+/** Sidebar order: categories and channels without category by place (a channel before a
+ *  category with the same place), each category's channels by place. Fills cat.channels. */
+function sidebarOrder(serv){
     serv?.dirs?.cat.sort((a, b) => a.place - b.place);
 
     for (let cat of serv.dirs.cat){
@@ -1349,7 +1365,7 @@ export function orderServDirs(serv){
             ordered.splice(firstGreater(ordered, chan.place) ?? ordered.length, 0, chan)
         }
     }
-    setElement("global.state.currentServer['displayed-dirs']", ordered)
+    return ordered
 }
 
 function createInvitation(){
@@ -1470,18 +1486,10 @@ window.saveCatSettings = saveCatSettings
 
 function deleteCat(catId){
     if (!confirm(_t("Delete this category? Channels inside will be moved out."))) return
+    // The server moves its channels (every type) to its spot and copies its permissions
+    // onto them (routes/servers.py _detach_from_category): reload rather than guess.
     const onload = function(){
-        // Remove category from dirs
-        const idx = global.state.currentServer.dirs.cat.findIndex(c => c.id == catId)
-        if (idx > -1) global.state.currentServer.dirs.cat.splice(idx, 1)
-        // Unassign channels locally
-        const allArrays = [global.state.currentServer.dirs.channels, global.state.currentServer.dirs.vocals, global.state.currentServer.dirs.drives, global.state.currentServer.dirs.notes]
-        for (const arr of allArrays) {
-            for (const ch of arr) {
-                if (ch.category == catId) ch.category = null
-            }
-        }
-        orderServDirs(global.state.currentServer)
+        loadServer(global.state.currentServer.id)
     }
     xhr("edit_server_category?server_id="+global.state.currentServer.id+"&targetId="+catId+"&action=delete", onload)
 }

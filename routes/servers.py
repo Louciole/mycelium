@@ -4,6 +4,7 @@ Endpoints take the live Mycelium instance as ``self``; shared helpers remain on
 the class (see server.py).
 """
 import json
+import math
 import re
 
 from vesta import Server, HTTPError, HTTPRedirect
@@ -14,6 +15,41 @@ import permissions
 from routes.roles import notify_permissions_changed
 
 CHANNEL_TYPES = ("textual", "vocal", "drive", "note", "forum")
+CHANNEL_TABLES = ("textual_channel", "vocal_channel", "drive_channel", "notes_channel", "forum_channel")
+
+# Sidebar order: `place` floats, one list per container — the top level (categories +
+# channels without a category) and each category (its channels, every type together).
+# A reorder writes the dragged item's place only (static/drag.mjs).
+
+
+def _parse_place(self, value):
+    """A finite float: NaN/inf would break the sort on every client."""
+    try:
+        place = float(value)
+    except (TypeError, ValueError):
+        raise HTTPError(self.response, 400, "place must be a number")
+    if not math.isfinite(place):
+        raise HTTPError(self.response, 400, "place must be a number")
+    return place
+
+
+def _top_level_places_sql():
+    """Places of the top-level list of server %(server)s: categories + channels without one."""
+    return " UNION ALL ".join(
+        ["SELECT place FROM server_cat WHERE server = %(server)s"]
+        + [f"SELECT place FROM {t} WHERE server = %(server)s AND category IS NULL" for t in CHANNEL_TABLES])
+
+
+def _insert_at_end(self, table, row):
+    """Insert a channel or category at the end of the top level of its server's
+    sidebar (after the last category / channel without category), in one statement.
+    `table` and the columns come from this module, never from the request."""
+    columns = list(row)
+    sql = (f"INSERT INTO {table} ({', '.join(columns)}, place) "
+           f"SELECT {', '.join(f'%({c})s' for c in columns)}, coalesce(max(place), 0) + 1 "
+           f"FROM ({_top_level_places_sql()}) t RETURNING id")
+    with self.db.pool.connection() as conn:
+        return conn.execute(sql, row).fetchone()["id"]
 
 
 @Server.expose
@@ -25,9 +61,9 @@ def create_server(self, name=None):
         raise HTTPError(self.response, 400, f"Server name must be 1 to {MAX_SERVER_NAME} characters")
     server_id = self.db.insertDict('server', {'name': name, "owner": account_id}, getId=True)
     self.db.insertDict('accessserver', {'account': account_id, 'server': server_id})
-    textCatID = self.db.insertDict('server_cat', {'name': "salons textuels", 'server': server_id},getId=True)
-    self.db.insertDict('server_cat', {'name': "salons vocaux", 'server': server_id})
-    self.db.insertDict('textual_channel', {'name': "général", 'server': server_id, "category": textCatID})
+    textCatID = self.db.insertDict('server_cat', {'name': "salons textuels", 'server': server_id, 'place': 1}, getId=True)
+    self.db.insertDict('server_cat', {'name': "salons vocaux", 'server': server_id, 'place': 2})
+    self.db.insertDict('textual_channel', {'name': "général", 'server': server_id, "category": textCatID, 'place': 1})
     server = self.db.getSomething('server', server_id)
     server["customEmojis"] = []
     return json.dumps(server, default=str)
@@ -67,71 +103,70 @@ def leave_server(self, server_id):
 
 
 @Server.expose
-def get_serv_content(self, server_id, channel_id=None):
+def get_serv_content(self, server_id):
     uid = self.getUser()
     self.require_member(uid, server_id)
     content = {}
-    if not channel_id:
-        content["channels"] = self.db.getAll("textual_channel", server_id,"server")
-        content["vocals"] = self.db.getAll("vocal_channel", server_id,"server")
-        content["drives"] = self.db.getAll("drive_channel", server_id,"server")
-        content["notes"] = self.db.getAll("notes_channel", server_id,"server")
-        content["forums"] = self.db.getAll("forum_channel", server_id,"server")
-        # content["whiteboard"] = self.db.getAll("drive_channel", server_id,"server")
-        op = self.db.getSomething("op_servs", server_id, "server")
-        if op:
-            content["op"] = True
-        content["cat"] = self.db.getAll("server_cat", server_id,"server")
-        content["roles"] = sorted(self.db.getAll("role", server_id, "server") or [], key=lambda r: (r["position"], r["id"]))
-        content["default_permissions"] = (self.db.getSomething("server", server_id) or {}).get("default_permissions") or {}
+    # Sidebar order (place), then creation order for ties (data from before
+    # db/migrate_channel_order.sql): rows come back unordered from the DB.
+    by_place = lambda table: sorted(self.db.getAll(table, server_id, "server") or [], key=lambda r: (r["place"], r["id"]))
+    content["channels"] = by_place("textual_channel")
+    content["vocals"] = by_place("vocal_channel")
+    content["drives"] = by_place("drive_channel")
+    content["notes"] = by_place("notes_channel")
+    content["forums"] = by_place("forum_channel")
+    op = self.db.getSomething("op_servs", server_id, "server")
+    if op:
+        content["op"] = True
+    content["cat"] = by_place("server_cat")
+    content["roles"] = sorted(self.db.getAll("role", server_id, "server") or [], key=lambda r: (r["position"], r["id"]))
+    content["default_permissions"] = (self.db.getSomething("server", server_id) or {}).get("default_permissions") or {}
 
-        personal = self.db.getFilters("personal_server", ["server", "=", server_id])
-        if personal:
-            content["type"] = "personal"
-            owner = self.db.getSomething("mycelium_account", personal[0]["owner"])
-            content["storage_usage"] = owner.get("storage_usage", 0) if owner else 0
-            content["storage_quota"] = USER_STORAGE_QUOTA
-        else:
-            content["type"] = "standard"
-            server_data = self.db.getSomething("server", server_id)
-            content["storage_usage"] = server_data.get("storage_usage", 0) if server_data else 0
-            content["storage_quota"] = SERVER_STORAGE_QUOTA
-
-        content["members"] = self.db.getFilters("accessserver", ["server", "=", server_id])
-        for i in range(0, len(content["members"])):
-            userRoles = self.db.getFilters("role_attribution", ["server", "=", server_id, "and", "account", "=", content["members"][i]["account"]])
-            for j in range (0,len(userRoles)):
-                userRoles[j] = userRoles[j]["role"]
-            content["members"][i] = {"id": content["members"][i]["account"], "roles": userRoles}
-
-        # Only the channels the user can view (private channels, view overwrites)
-        ctx = self.channelContext(uid, server_id)
-        visible = lambda chans, ctype: [ch for ch in chans if "view-channels" in self.channelRights(ctx, ch, ctype)]
-        content["channels"] = visible(content["channels"], "textual")
-        content["vocals"] = visible(content["vocals"], "vocal")
-
-        # Attach live occupant lists to each vocal channel
-        for chan in content["vocals"]:
-            call = self.callManager.get_call_by_vocal_channel(chan["id"])
-            chan["occupants"] = call.participants if call else []
-        content["drives"] = visible(content["drives"], "drive")
-        content["notes"] = visible(content["notes"], "note")
-        content["forums"] = visible(content["forums"], "forum")
-
-        # Overwrites of the visible channels only: the client mirrors the rights
-        # computation (access.mjs channelRightsFor) to lock what you can't do.
-        shown = {(ch["id"], t) for key, t in (("channels", "textual"), ("vocals", "vocal"), ("drives", "drive"),
-                                                ("notes", "note"), ("forums", "forum")) for ch in content[key]}
-        # A category shows if you can view it or one of its channels (a channel can
-        # re-allow what its category hides); its overwrites come along for the mirror.
-        used = {ch.get("category") for key in ("channels", "vocals", "drives", "notes", "forums") for ch in content[key]}
-        content["cat"] = [c for c in content["cat"]
-                          if c["id"] in used or "view-channels" in self.channelRights(ctx, c, "category")]
-        shown |= {(c["id"], "category") for c in content["cat"]}
-        content["channel_permissions"] = [row for rows in ctx["overwrites"].values() for row in rows
-                                          if (row["channel"], row["channel_type"]) in shown]
+    personal = self.db.getFilters("personal_server", ["server", "=", server_id])
+    if personal:
+        content["type"] = "personal"
+        owner = self.db.getSomething("mycelium_account", personal[0]["owner"])
+        content["storage_usage"] = owner.get("storage_usage", 0) if owner else 0
+        content["storage_quota"] = USER_STORAGE_QUOTA
     else:
-        content["messages"] = self.db.getFilters("message", ["place", "=", channel_id, "order by timestamp"])
+        content["type"] = "standard"
+        server_data = self.db.getSomething("server", server_id)
+        content["storage_usage"] = server_data.get("storage_usage", 0) if server_data else 0
+        content["storage_quota"] = SERVER_STORAGE_QUOTA
+
+    # Every member's role ids: one query for the whole server, not one per member
+    roles_of = {}
+    for attribution in self.db.getAll("role_attribution", server_id, "server") or []:
+        roles_of.setdefault(attribution["account"], []).append(attribution["role"])
+    content["members"] = [{"id": m["account"], "roles": roles_of.get(m["account"], [])}
+                          for m in self.db.getFilters("accessserver", ["server", "=", server_id]) or []]
+
+    # Only the channels the user can view (private channels, view overwrites)
+    ctx = self.channelContext(uid, server_id)
+    visible = lambda chans, ctype: [ch for ch in chans if "view-channels" in self.channelRights(ctx, ch, ctype)]
+    content["channels"] = visible(content["channels"], "textual")
+    content["vocals"] = visible(content["vocals"], "vocal")
+
+    # Attach live occupant lists to each vocal channel
+    for chan in content["vocals"]:
+        call = self.callManager.get_call_by_vocal_channel(chan["id"])
+        chan["occupants"] = call.participants if call else []
+    content["drives"] = visible(content["drives"], "drive")
+    content["notes"] = visible(content["notes"], "note")
+    content["forums"] = visible(content["forums"], "forum")
+
+    # Overwrites of the visible channels only: the client mirrors the rights
+    # computation (access.mjs channelRightsFor) to lock what you can't do.
+    shown = {(ch["id"], t) for key, t in (("channels", "textual"), ("vocals", "vocal"), ("drives", "drive"),
+                                            ("notes", "note"), ("forums", "forum")) for ch in content[key]}
+    # A category shows if you can view it or one of its channels (a channel can
+    # re-allow what its category hides); its overwrites come along for the mirror.
+    used = {ch.get("category") for key in ("channels", "vocals", "drives", "notes", "forums") for ch in content[key]}
+    content["cat"] = [c for c in content["cat"]
+                      if c["id"] in used or "view-channels" in self.channelRights(ctx, c, "category")]
+    shown |= {(c["id"], "category") for c in content["cat"]}
+    content["channel_permissions"] = [row for rows in ctx["overwrites"].values() for row in rows
+                                      if (row["channel"], row["channel_type"]) in shown]
     return json.dumps(content, default=str)
 
 
@@ -309,7 +344,8 @@ def edit_server_property(self, server_id, property, value=None):
 
 
 @Server.expose
-def edit_server_channel(self, server_id, action="edit", field=None, value=None, targetId=None, channel_type=None):
+def edit_server_channel(self, server_id, action="edit", field=None, value=None, targetId=None, channel_type=None,
+                        place=None):
     uid = self.getUser()
 
     channel_type = channel_type or "textual"
@@ -320,7 +356,7 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
         self.require_server_perm(uid, server_id, "manage-channels")
         table = self._getChannelTable(channel_type)
 
-        defaults = {"server": server_id}
+        defaults = {"server": int(server_id)}
         if channel_type == "vocal":
             defaults["name"] = "Salon vocal"
         elif channel_type == "drive":
@@ -332,7 +368,7 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
         else:
             defaults["name"] = "new channel"
 
-        channel_id = self.db.insertDict(table, defaults, getId=True)
+        channel_id = _insert_at_end(self, table, defaults)
         channel = self.db.getSomething(table, channel_id)
         return json.dumps({"channel": channel, "type": channel_type}, default=str)
 
@@ -361,9 +397,18 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
             moved = value != chan.get("category")
             if moved:
                 _require_category_move(self, uid, chan, channel_type, value)
-        elif field == "place":
-            value = float(value)
-        self.db.edit(table_name, targetId, field, value)
+            if place is None:
+                self.db.edit(table_name, chan["id"], "category", value)
+            else:
+                # A drag into another category: its place in the new list, same UPDATE
+                new_place = _parse_place(self, place)
+                with self.db.pool.connection() as conn:
+                    conn.execute(f"UPDATE {table_name} SET category = %s, place = %s WHERE id = %s",
+                                 (value, new_place, chan["id"]))
+        else:
+            if field == "place":
+                value = _parse_place(self, value)
+            self.db.edit(table_name, chan["id"], field, value)
         if moved:
             # The channel now inherits another category's permissions
             notify_permissions_changed(self, chan["server"], exclude=uid)
@@ -391,29 +436,39 @@ def _detach_from_category(self, cat):
     deleting e.g. a private category doesn't expose its channels: privacy is kept
     and, per target, the channel's own setting of a right wins over the category's."""
     cat_rows = self.db.getFilters("channel_permission", ["channel", "=", cat["id"], "and", "channel_type", "=", "category"]) or []
-    for channel_type in CHANNEL_TYPES:
+    # Its channels take its spot in the top-level list (between it and the next item),
+    # in the order they were shown: place, then type, then id (crud.mjs sidebarOrder).
+    channels = sorted(((channel_type, ch) for channel_type in CHANNEL_TYPES
+                       for ch in self.db.getFilters(self._getChannelTable(channel_type), ["category", "=", cat["id"]]) or []),
+                      key=lambda tc: (tc[1]["place"], CHANNEL_TYPES.index(tc[0]), tc[1]["id"]))
+    with self.db.pool.connection() as conn:
+        after = conn.execute(f"SELECT min(place) AS place FROM ({_top_level_places_sql()}) t WHERE place > %(place)s",
+                             {"server": cat["server"], "place": cat["place"]}).fetchone()["place"]
+    step = (after - cat["place"] if after is not None else len(channels) + 1) / (len(channels) + 1)
+    for position, (channel_type, ch) in enumerate(channels, start=1):
         table = self._getChannelTable(channel_type)
         scope = permissions.CHANNEL_PERMISSIONS[channel_type]
-        for ch in self.db.getFilters(table, ["category", "=", cat["id"]]) or []:
-            if cat.get("is_private") and not ch.get("is_private"):
-                self.db.edit(table, ch["id"], "is_private", True)
-            own = {(r.get("role"), r.get("account")): r for r in self.db.getFilters("channel_permission", [
-                "channel", "=", ch["id"], "and", "channel_type", "=", channel_type]) or []}
-            for row in cat_rows:
-                target = (row.get("role"), row.get("account"))
-                mine = own.get(target)
-                set_here = set((mine or {}).get("permissions") or {}) | set((mine or {}).get("deny") or {})
-                allow = (set((mine or {}).get("permissions") or {}) | (set(row.get("permissions") or {}) - set_here)) & scope
-                deny = (set((mine or {}).get("deny") or {}) | (set(row.get("deny") or {}) - set_here)) & scope
-                values = {"permissions": json.dumps({r: "" for r in allow}), "deny": json.dumps({r: "" for r in deny})}
-                if mine:
-                    for field, value in values.items():
-                        self.db.edit("channel_permission", mine["id"], field, value)
-                else:
-                    self.db.insertDict("channel_permission", {"channel": ch["id"], "channel_type": channel_type,
-                                                              "server": ch["server"], "role": target[0],
-                                                              "account": target[1], **values})
-            self.db.edit(table, ch["id"], "category", None)
+        if cat.get("is_private") and not ch.get("is_private"):
+            self.db.edit(table, ch["id"], "is_private", True)
+        own = {(r.get("role"), r.get("account")): r for r in self.db.getFilters("channel_permission", [
+            "channel", "=", ch["id"], "and", "channel_type", "=", channel_type]) or []}
+        for row in cat_rows:
+            target = (row.get("role"), row.get("account"))
+            mine = own.get(target)
+            set_here = set((mine or {}).get("permissions") or {}) | set((mine or {}).get("deny") or {})
+            allow = (set((mine or {}).get("permissions") or {}) | (set(row.get("permissions") or {}) - set_here)) & scope
+            deny = (set((mine or {}).get("deny") or {}) | (set(row.get("deny") or {}) - set_here)) & scope
+            values = {"permissions": json.dumps({r: "" for r in allow}), "deny": json.dumps({r: "" for r in deny})}
+            if mine:
+                for field, value in values.items():
+                    self.db.edit("channel_permission", mine["id"], field, value)
+            else:
+                self.db.insertDict("channel_permission", {"channel": ch["id"], "channel_type": channel_type,
+                                                          "server": ch["server"], "role": target[0],
+                                                          "account": target[1], **values})
+        with self.db.pool.connection() as conn:
+            conn.execute(f"UPDATE {table} SET category = NULL, place = %s WHERE id = %s",
+                         (cat["place"] + step * position, ch["id"]))
     for row in cat_rows:
         self.db.deleteSomething("channel_permission", row["id"])
 
@@ -424,7 +479,7 @@ def edit_server_category(self, server_id, action=None, field=None, value=None, t
 
     if action == "create":
         self.require_server_perm(uid, server_id, "manage-channels")
-        cat_id = self.db.insertDict("server_cat", {"name": "New Category", "server": server_id}, getId=True)
+        cat_id = _insert_at_end(self, "server_cat", {"name": "New Category", "server": int(server_id)})
         cat = self.db.getSomething("server_cat", cat_id)
         return json.dumps(cat, default=str)
 
@@ -443,7 +498,7 @@ def edit_server_category(self, server_id, action=None, field=None, value=None, t
         return json.dumps({"status": "ok"})
 
     if field in ("name", "place"):
-        val = float(value) if field == "place" else value
+        val = _parse_place(self, value) if field == "place" else value
         self.db.edit("server_cat", targetId, field, val)
         return json.dumps({"status": "ok"})
 
