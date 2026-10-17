@@ -1,0 +1,6 @@
+<button type="button" class="drive-chip ${element.value ? 'active' : ''}" data-filter="${element.name}" onclick="openDriveFilterMenu(event, '${element.name}')">
+    ${escapeHTML(element.value || element.label)}
+    ${element.value
+        ? `<span class="drive-chip-clear" role="button" aria-label="${_t('Clear')}" onclick="event.stopPropagation(); setDriveFilter('${element.name}', '')">✕</span>`
+        : `<img class="icon" src="/static/icons/material/down.svg" alt=""/>`}
+</button>

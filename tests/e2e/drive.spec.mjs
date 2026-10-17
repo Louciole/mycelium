@@ -3,135 +3,55 @@ import { loginUser } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import { createServerViaUi, openServerFromSidebarById } from './helpers/serverHelpers.mjs';
 import { reloadAndWaitForApp } from './helpers/messagingHelpers.mjs';
+import { api, json, enc, createChannel, setupServer, openServer } from './helpers/permissionHelpers.mjs';
+import { acceptDialog } from './helpers/dialogHelpers.mjs';
 
 const TEST_TIMEOUT = 120000;
 
-// ─── Channel helpers ──────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Creates a drive channel using the same frontend function as the UI,
- * waits for its sidebar entry, and navigates to it.
- * Returns the drive channel ID.
- */
-async function createAndOpenDriveChannel(page) {
-    const beforeDrives = await page.evaluate(() =>
-        (window.global?.state?.currentServer?.dirs?.drives || []).map((d) => Number(d.id)),
-    );
+/** Uploads a text file through the API (same request as the UI). Returns its id. */
+async function uploadText(page, driveId, filename, text, folderId = null) {
+    return page.evaluate(async ({ driveId, filename, text, folderId }) => {
+        const file = 'data:text/plain;base64,' + btoa(unescape(encodeURIComponent(text)));
+        const url = `/upload_drive_file?drive_id=${driveId}&filename=${encodeURIComponent(filename)}`
+            + (folderId ? `&parent_folder=${folderId}` : '');
+        const r = await fetch(url, { method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) });
+        if (!r.ok) throw new Error(`upload ${r.status}`);
+        return (await r.json()).file_id;
+    }, { driveId, filename, text, folderId });
+}
 
-    await page.evaluate(() => window.createChan('drive'));
+const createFolder = async (page, driveId, name, parent = null) =>
+    (await json(page, `/create_drive_folder?drive_id=${driveId}&foldername=${enc(name)}` + (parent ? `&parent_folder=${parent}` : ''))).folder_id;
 
-    // Wait for state to include the new channel
-    await page.waitForFunction((prev) => {
-        const drives = window.global?.state?.currentServer?.dirs?.drives || [];
-        return drives.length > prev.length;
-    }, beforeDrives, { timeout: 10000 });
+const renameChannel = (page, serverId, chan, name, type) => api(page,
+    `/edit_server_channel?server_id=${serverId}&action=edit&field=name&value=${enc(name)}&targetId=${chan}&channel_type=${type}`);
 
-    const driveId = await page.evaluate((prev) => {
-        const drives = window.global?.state?.currentServer?.dirs?.drives || [];
-        const newChan = drives.find((d) => !prev.includes(Number(d.id)));
-        return newChan ? Number(newChan.id) : null;
-    }, beforeDrives);
-
-    expect(driveId).toBeTruthy();
-
-    // Sidebar entry should be visible
-    await expect(page.locator(`#channel-drive-${driveId}`)).toBeVisible({ timeout: 10000 });
-
-    // Navigate to the drive channel
-    await page.evaluate((id) => window.goToDriveChannel(id), driveId);
+/** Opens a drive from the sidebar and waits for its listing. */
+async function openDrive(page, driveId) {
+    await page.locator(`#channel-drive-${driveId}`).click();
     await page.waitForFunction((id) => {
-        const ac = window.global?.state?.activeChan;
-        return ac && Number(ac.id) === Number(id) && ac.type === 'drive';
+        const d = window.global?.drive;
+        return d && Number(d.id) === Number(id) && !d.loading && document.getElementById('drive-view');
     }, driveId, { timeout: 10000 });
-
-    // Wait for drive content area to render
-    await page.locator('#drive-file-input').waitFor({ state: 'attached', timeout: 10000 });
-
-    return driveId;
 }
 
-// ─── Drive UI helpers ─────────────────────────────────────────────────────────
+const fileItem = (page, id) => page.locator(`.drive-file-item[data-file-id="${id}"]`);
+const folderItem = (page, id) => page.locator(`.drive-folder-item[data-folder-id="${id}"]`);
+const menuItem = (page, label) => page.locator('.drive-context-menu .drive-context-item', { hasText: label });
 
-/**
- * Creates a folder via the UI folder button, which uses browser prompt().
- * Returns the folder DOM element.
- */
-async function createFolderViaUi(page, driveId, folderName) {
-    page.once('dialog', (dialog) => dialog.accept(folderName));
-    await page.locator('img[onclick="createNewDriveFolder()"]').click();
-
-    // Wait for the folder item to appear in the DOM
-    await page.waitForFunction((name) => {
-        return Array.from(document.querySelectorAll('.drive-folder-item'))
-            .some((el) => el.querySelector('.folder-name, [class*="name"]')?.textContent?.trim() === name
-                || el.textContent?.includes(name));
-    }, folderName, { timeout: 10000 });
-
-    // Also wait for it in global state
-    await page.waitForFunction(({ id, name }) => {
-        return (window.global?.driveFolders?.[id] || []).some((f) => f.foldername === name);
-    }, { id: driveId, name: folderName }, { timeout: 10000 });
-
-    const folderId = await page.evaluate(({ id, name }) => {
-        const folder = (window.global?.driveFolders?.[id] || []).find((f) => f.foldername === name);
-        return folder ? Number(folder.id) : null;
-    }, { id: driveId, name: folderName });
-
-    expect(folderId).toBeTruthy();
-    return folderId;
-}
-
-/**
- * Uploads a text file via the file-input (triggered by the + upload icon).
- * Returns the file ID from global state.
- */
-async function uploadFileViaUi(page, driveId, filename, content) {
-    const beforeFiles = await page.evaluate((id) =>
-        (window.global?.driveFiles?.[id] || []).map((f) => Number(f.id)),
-    driveId);
-
-    const [fileChooser] = await Promise.all([
-        page.waitForEvent('filechooser'),
-        page.locator('img[onclick="uploadDriveFile()"]').click(),
-    ]);
-
-    await fileChooser.setFiles({
-        name: filename,
-        mimeType: 'text/plain',
-        buffer: Buffer.from(content),
-    });
-
-    // Wait for the file item to appear in the DOM
-    await page.waitForFunction((prev) => {
-        return document.querySelectorAll('.drive-file-item').length > prev;
-    }, beforeFiles.length, { timeout: 15000 });
-
-    // Get the new file ID from state
-    await page.waitForFunction(({ id, prev }) => {
-        return (window.global?.driveFiles?.[id] || []).some((f) => !prev.includes(Number(f.id)));
-    }, { id: driveId, prev: beforeFiles }, { timeout: 10000 });
-
-    const fileId = await page.evaluate(({ id, prev }) => {
-        const file = (window.global?.driveFiles?.[id] || []).find((f) => !prev.includes(Number(f.id)));
-        return file ? Number(file.id) : null;
-    }, { id: driveId, prev: beforeFiles });
-
-    expect(fileId).toBeTruthy();
-    return fileId;
-}
-
-/**
- * Deletes a drive file by clicking its trash icon.
- */
-async function deleteFileViaUi(page, fileId) {
-    // Accept the confirm dialog if the app shows one (some delete paths do)
-    page.once('dialog', (dialog) => dialog.accept().catch(() => {}));
-
-    await page.locator(`.drive-file-item[data-file-id="${fileId}"] .icon-wrapper[onclick*="deleteDriveFile"]`)
-        .click({ force: true });
-
-    // Wait for the item to disappear from the DOM
-    await page.locator(`.drive-file-item[data-file-id="${fileId}"]`).waitFor({ state: 'detached', timeout: 10000 });
+/** Sends `text` in the open text channel and waits for the server-confirmed message. */
+async function sendRaw(page, text) {
+    const input = page.locator('.chat-input textarea.selected');
+    await input.fill(text);
+    await input.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction((body) => {
+        const messages = window.global?.convs?.[window.global.state.activeConv]?.messages || {};
+        return Object.values(messages).some(m => m?.body === body && !String(m.id).startsWith('tmp_'));
+    }, text, { timeout: 10000 });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -139,78 +59,259 @@ async function deleteFileViaUi(page, fileId) {
 test.describe('Drive — E2E', () => {
     test.setTimeout(TEST_TIMEOUT);
 
-    test('Full drive workflow: create channel, upload, folder, move, delete', async ({ page }) => {
+    test('browse, upload, rename, move, view and delete like Google Drive', async ({ page }) => {
         const suffix = Date.now();
         await loginUser(page, `e2e_drive_${suffix}`);
         await waitForAppReady(page);
 
         const serverId = await createServerViaUi(page);
         await openServerFromSidebarById(page, serverId);
+        const driveId = await createChannel(page, serverId, 'drive');
+        await openServer(page, serverId);
+        await openDrive(page, driveId);
 
-        // ── 1. Create a drive channel via frontend JS ─────────────────────────
-        const driveId = await createAndOpenDriveChannel(page);
+        // ── URL follows the drive ─────────────────────────────────────────────
+        await expect(page).toHaveURL(new RegExp(`#${serverId}/${driveId}$`));
+        await expect(page.locator('.drive-empty')).toBeVisible();
 
-        // ── 2. Upload a text file ─────────────────────────────────────────────
-        const filename = `test-${suffix}.txt`;
-        const fileContent = `Hello from E2E test ${suffix}`;
-        const fileId = await uploadFileViaUi(page, driveId, filename, fileContent);
+        // ── Menus toggle on their button; the member list opens ───────────────
+        await page.locator('.drive-chip[data-filter="type"]').click();
+        await expect(page.locator('.drive-context-menu')).toBeVisible();
+        await page.locator('.drive-chip[data-filter="type"]').click();
+        await expect(page.locator('.drive-context-menu')).toHaveCount(0);
+        await page.locator('#drive-view .selected-info img[src$="group.svg"]').click();
+        await expect(page.locator('#member-list')).toBeVisible();
 
-        // File item is visible in the DOM
-        await expect(page.locator(`.drive-file-item[data-file-id="${fileId}"]`)).toBeVisible({ timeout: 5000 });
-        await expect(
-            page.locator(`.drive-file-item[data-file-id="${fileId}"] .file-name`),
-        ).toContainText(filename, { timeout: 5000 });
+        // ── Upload through New › Upload files ─────────────────────────────────
+        const filename = `rapport-${suffix}.txt`;
+        await page.locator('#drive-new-btn').click();
+        const [chooser] = await Promise.all([
+            page.waitForEvent('filechooser'),
+            menuItem(page, 'Upload files').click(),
+        ]);
+        await chooser.setFiles({ name: filename, mimeType: 'text/plain', buffer: Buffer.from(`Hello ${suffix}`) });
+        const card = page.locator('.drive-file-item', { hasText: filename });
+        await expect(card).toBeVisible({ timeout: 15000 });
+        await expect(card.locator('.drive-preview-text pre')).toContainText(`Hello ${suffix}`);
+        const fileId = Number(await card.getAttribute('data-file-id'));
 
-        // ── 3. Create a folder ────────────────────────────────────────────────
-        const folderName = `folder-${suffix}`;
-        const folderId = await createFolderViaUi(page, driveId, folderName);
+        // ── New › New folder (prompt) ─────────────────────────────────────────
+        await page.locator('#drive-new-btn').click();
+        await menuItem(page, 'New folder').click();
+        expect((await acceptDialog(page, `Dossier ${suffix}`)).kind).toBe('prompt');
+        const folder = page.locator('.drive-folder-item', { hasText: `Dossier ${suffix}` });
+        await expect(folder).toBeVisible();
+        const folderId = Number(await folder.getAttribute('data-folder-id'));
 
-        // Folder item is visible in the DOM
-        await expect(page.locator(`.drive-folder-item[data-folder-id="${folderId}"]`)).toBeVisible({ timeout: 5000 });
+        // Names are escaped (no HTML injection through a file name)
+        await uploadText(page, driveId, `<img src=x onerror="window.__xss=1">.txt`, 'x');
+        await page.evaluate(() => window.reloadDrive());
+        await expect(page.locator('.drive-file-item', { hasText: '<img src=x' })).toBeVisible();
+        expect(await page.evaluate(() => window.__xss)).toBeUndefined();
 
-        // ── 4. Upload a second file ───────────────────────────────────────────
-        const fileId2 = await uploadFileViaUi(page, driveId, `second-${suffix}.txt`, 'second file content');
-        await expect(page.locator(`.drive-file-item[data-file-id="${fileId2}"]`)).toBeVisible({ timeout: 5000 });
+        // ── Rename via the ⋮ menu ─────────────────────────────────────────────
+        await fileItem(page, fileId).locator('.drive-more').click();
+        await menuItem(page, 'Rename').click();
+        await acceptDialog(page, `final-${suffix}.txt`);
+        await expect(fileItem(page, fileId).locator('.drive-item-name')).toHaveText(`final-${suffix}.txt`);
 
-        // ── 5. Move first file into the folder via API + verify state ─────────
-        // (drag-and-drop is hard to automate; direct API is the accepted shortcut
-        //  matching how forum.spec uses window.goToForumChannel instead of clicking)
-        await page.evaluate(async ({ fileId, folderId }) => {
-            const r = await fetch(`/move_drive_file?file_id=${fileId}&target_folder=${folderId}`, {
-                method: 'POST', credentials: 'include',
-            });
-            if (!r.ok) throw new Error(`move_drive_file ${r.status}`);
-        }, { fileId, folderId });
+        // ── Selection bar + Move to… dialog ───────────────────────────────────
+        await fileItem(page, fileId).click();
+        await expect(page.locator('.drive-selection-count')).toBeVisible();
+        await page.locator('.drive-selection-bar .drive-bar-btn', { hasText: 'Move' }).click();
+        await expect(page.locator('#drive-dialog')).toBeVisible();
+        await expect(page.locator('#drive-move-here')).toBeDisabled();   // already here
+        await page.locator(`[data-move-folder="${folderId}"]`).click();
+        await expect(page.locator('#drive-move-here')).toBeEnabled();
+        await page.locator('#drive-move-here').click();
+        await expect(fileItem(page, fileId)).toHaveCount(0);
 
-        // Reload drive content to reflect the move
-        await page.evaluate((id) => window.goToDriveChannel(id), driveId);
+        // ── Open the folder: URL, breadcrumb, back button ─────────────────────
+        await folder.dblclick();
+        await expect(page).toHaveURL(new RegExp(`#${serverId}/${driveId}/folder/${folderId}$`));
+        await expect(page.locator('.drive-crumb.current')).toContainText(`Dossier ${suffix}`);
+        await expect(fileItem(page, fileId)).toBeVisible();
 
-        // File should have left root
-        await page.waitForFunction((id) => {
-            return !(window.global?.driveFiles?.[id] || []).some((f) => Number(f.id) === Number(id));
-        }, fileId, { timeout: 10000 }).catch(() => {}); // it may already be gone
+        await page.locator('.drive-crumb[data-crumb="null"]').click();
+        await expect(folderItem(page, folderId)).toBeVisible();
+        await page.goBack();
+        await expect(fileItem(page, fileId)).toBeVisible();
 
-        // ── 6. Delete the second file via the UI trash icon ───────────────────
-        await deleteFileViaUi(page, fileId2);
-
-        // File is gone from state too
-        await page.waitForFunction(({ driveId, fileId }) => {
-            return !(window.global?.driveFiles?.[driveId] || []).some((f) => Number(f.id) === Number(fileId));
-        }, { driveId, fileId: fileId2 }, { timeout: 5000 });
-
-        // ── 7. Reload and verify DOM reflects deletions ───────────────────────
+        // ── A folder URL survives a reload ────────────────────────────────────
         await reloadAndWaitForApp(page);
-        await openServerFromSidebarById(page, serverId);
-        await page.evaluate((id) => window.goToDriveChannel(id), driveId);
-        await page.waitForFunction((id) => {
-            const ac = window.global?.state?.activeChan;
-            return ac && Number(ac.id) === Number(id);
-        }, driveId, { timeout: 10000 });
+        await page.waitForFunction((id) => Number(window.global?.drive?.folder) === Number(id) && !window.global.drive.loading, folderId, { timeout: 15000 });
+        await expect(fileItem(page, fileId)).toBeVisible();
 
-        // Second file is gone from DOM
-        await expect(page.locator(`.drive-file-item[data-file-id="${fileId2}"]`)).toHaveCount(0);
+        // ── Viewer (double-click), its own URL, Escape closes ─────────────────
+        await fileItem(page, fileId).dblclick();
+        await expect(page.locator('#drive-viewer')).toBeVisible();
+        await expect(page.locator('#drive-viewer .drive-viewer-text')).toContainText(`Hello ${suffix}`);
+        await expect(page).toHaveURL(new RegExp(`#${serverId}/${driveId}/file/${fileId}$`));
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#drive-viewer')).toHaveCount(0);
+        await expect(page).toHaveURL(new RegExp(`/folder/${folderId}$`));
 
-        // Folder still exists
-        await expect(page.locator(`.drive-folder-item[data-folder-id="${folderId}"]`)).toBeVisible({ timeout: 5000 });
+        // ── List view, kept after a reload ────────────────────────────────────
+        await page.locator('#drive-view-list').click();
+        await expect(page.locator(`.drive-row[data-file-id="${fileId}"]`)).toBeVisible();
+        await expect(page.locator('.drive-list-head')).toContainText('Owner');
+        await reloadAndWaitForApp(page);
+        await expect(page.locator(`.drive-row[data-file-id="${fileId}"]`)).toBeVisible({ timeout: 15000 });
+        await page.locator('#drive-view-grid').click();
+
+        // ── Details panel ─────────────────────────────────────────────────────
+        await fileItem(page, fileId).click();
+        await page.locator('#drive-details-btn').click();
+        await expect(page.locator(`.drive-details[data-details-id="${fileId}"]`)).toContainText('TXT');
+
+        // ── Touch screens: a tap opens, a long press starts a selection ───────
+        await page.keyboard.press('Escape');
+        await page.evaluate(() => { window.global.state.isMobile = true; });
+        await fileItem(page, fileId).dispatchEvent('touchstart');
+        await page.waitForTimeout(700);
+        await fileItem(page, fileId).dispatchEvent('touchend');
+        await fileItem(page, fileId).click();                      // the click ending the press
+        await expect(page.locator('.drive-selection-count')).toBeVisible();
+        expect(await page.evaluate(() => window.global.driveSelection.length)).toBe(1);
+        await page.evaluate(() => { window.global.state.isMobile = false; });
+        await page.keyboard.press('Escape');
+
+        // ── Type filter ───────────────────────────────────────────────────────
+        await page.locator('.drive-crumb[data-crumb="null"]').click();
+        await page.locator('.drive-chip[data-filter="type"]').click();
+        await menuItem(page, 'Folders').click();
+        await expect(folderItem(page, folderId)).toBeVisible();
+        await expect(page.locator('.drive-file-item')).toHaveCount(0);
+        await page.locator('.drive-chip[data-filter="type"] .drive-chip-clear').click();
+        await expect(page.locator('.drive-file-item')).toHaveCount(1);
+
+        // ── Delete the folder (and the file inside) from the selection bar ────
+        await folderItem(page, folderId).click();
+        await page.locator('.drive-selection-bar .drive-bar-btn.danger').click();
+        expect((await acceptDialog(page)).kind).toBe('confirm');
+        await expect(folderItem(page, folderId)).toHaveCount(0);
+        const left = await json(page, `/list_drive?drive_id=${driveId}`);
+        expect(left.folders).toHaveLength(0);
+    });
+
+    test('drive links in messages and notes, and the # autocomplete', async ({ browser }) => {
+        const { owner, serverId, members, stamp, close } = await setupServer(browser, 'drivelinks', 1);
+        const member = members[0].page;
+        try {
+            const driveName = `docs${stamp}`;
+            const driveId = await createChannel(owner, serverId, 'drive');
+            await renameChannel(owner, serverId, driveId, driveName, 'drive');
+            const folderId = await createFolder(owner, driveId, 'Eseo');
+            const fileId = await uploadText(owner, driveId, `rapport-${stamp}.txt`, 'contenu', folderId);
+
+            const privateDrive = await createChannel(owner, serverId, 'drive');
+            await api(owner, `/edit_channel_permissions?channelId=${privateDrive}&channelType=drive&action=togglePrivacy`);
+            const secretId = await uploadText(owner, privateDrive, `secret-${stamp}.txt`, 'secret');
+            const noteName = `memo${stamp}`;
+            const noteId = await createChannel(owner, serverId, 'note');
+            await renameChannel(owner, serverId, noteId, noteName, 'note');
+
+            await openServer(owner, serverId);
+
+            // ── # autocomplete browses the drive and inserts a file link ──────
+            const input = owner.locator('.chat-input textarea.selected');
+            await input.click();
+            await owner.keyboard.type(`#${driveName.slice(0, 6)}`);
+            await expect(owner.locator('.mention-ac-item', { hasText: driveName })).toBeVisible();
+            await owner.keyboard.press('Tab');                      // "#docs…/" — inside the drive
+            await expect(input).toHaveValue(`#${driveName}/`);
+            await expect(owner.locator('.mention-ac-item', { hasText: 'Eseo' })).toBeVisible();
+            await owner.keyboard.type('Eseo/rap');
+            await expect(owner.locator('.mention-ac-item', { hasText: `rapport-${stamp}.txt` })).toBeVisible();
+            await owner.keyboard.press('Enter');
+            await expect(input).toHaveValue(`<#drive:${driveId}/f:${fileId}> `);
+            await input.fill('');
+
+            // Notes ids may equal textual ones: the token names the type
+            await owner.keyboard.type(`#${noteName}`);
+            await owner.locator('.mention-ac-item', { hasText: noteName }).first().waitFor();
+            await owner.keyboard.press('Enter');
+            await expect(input).toHaveValue(`<#notes:${noteId}> `);
+            await input.fill('');
+            await sendRaw(owner, `<#notes:${noteId}>`);
+            await expect(owner.locator(`.mention-channel[data-channel-id="notes:${noteId}"]`).last()).toHaveText(`#${noteName}`);
+
+            // ── A lone file link renders as a chip + a card ───────────────────
+            const fileRef = `drive:${driveId}/f:${fileId}`;
+            await sendRaw(owner, `<#${fileRef}>`);
+            const chip = owner.locator(`.mention-channel[data-channel-id="${fileRef}"]`).last();
+            await expect(chip).toHaveText(`#${driveName} › rapport-${stamp}.txt`);
+            await expect(owner.locator(`.drive-link-card[data-drive-card="${fileRef}"]`).last()).toContainText('Eseo');
+
+            // Folder link, drive link, and a link to a private drive's file
+            await sendRaw(owner, `voir <#drive:${driveId}/d:${folderId}> et <#drive:${driveId}> et <#drive:${privateDrive}/f:${secretId}>`);
+            await expect(owner.locator(`.mention-channel[data-channel-id="drive:${driveId}/d:${folderId}"]`).last()).toHaveText(`#${driveName} › Eseo`);
+            await expect(owner.locator(`.mention-channel[data-channel-id="drive:${driveId}"]`).last()).toHaveText(`#${driveName}`);
+            const privateName = await owner.evaluate((id) => window.global.state.currentServer.dirs.drives.find(d => d.id === id).name, privateDrive);
+            await expect(owner.locator(`.mention-channel[data-channel-id="drive:${privateDrive}/f:${secretId}"]`).last()).toHaveText(`#${privateName} › secret-${stamp}.txt`);
+
+            // The member can't see the private drive: no name, no card
+            await openServer(member, serverId);
+            const denied = member.locator(`.mention-channel[data-channel-id="drive:${privateDrive}/f:${secretId}"]`).last();
+            await expect(denied).toHaveText('#inaccessible item');
+            await expect(denied).toHaveClass(/mention-denied/);
+            await expect(member.locator(`.mention-channel[data-channel-id="${fileRef}"]`).last()).toHaveText(`#${driveName} › rapport-${stamp}.txt`);
+
+            // ── Clicking a file link opens the drive on that file ─────────────
+            await member.locator(`.drive-link-card[data-drive-card="${fileRef}"]`).last().click();
+            await expect(member.locator(`#drive-viewer[data-file-id="${fileId}"]`)).toBeVisible();
+            await expect(member).toHaveURL(new RegExp(`#${serverId}/${driveId}/file/${fileId}$`));
+            await member.keyboard.press('Escape');
+            await expect(member.locator('.drive-crumb.current')).toContainText('Eseo');
+
+            // A folder link
+            await member.goBack();
+            await member.waitForFunction(() => window.global?.state?.activeChan?.type === 'conv', undefined, { timeout: 10000 });
+            await member.locator(`.mention-channel[data-channel-id="drive:${driveId}/d:${folderId}"]`).last().click();
+            await member.waitForFunction((id) => Number(window.global?.drive?.folder) === Number(id), folderId, { timeout: 10000 });
+
+            // The viewer belongs to the drive view: Back to the conversation closes it
+            await member.goBack();
+            await member.waitForFunction(() => window.global?.state?.activeChan?.type === 'conv', undefined, { timeout: 10000 });
+            await member.locator(`.drive-link-card[data-drive-card="${fileRef}"]`).last().click();
+            await expect(member.locator(`#drive-viewer[data-file-id="${fileId}"]`)).toBeVisible();
+            await member.goBack();
+            await member.waitForFunction(() => window.global?.state?.activeChan?.type === 'conv', undefined, { timeout: 10000 });
+            await expect(member.locator('#drive-viewer')).toHaveCount(0);
+
+            // ── Notes render drive links too ──────────────────────────────────
+            const rendered = await owner.evaluate(async (ref) => {
+                await import('/static/workspaces/notes.mjs');   // loaded with the first notes channel
+                return window.MDToPreview(`<#${ref}>`) + window.MDToRender(`<#${ref}>`);
+            }, fileRef);
+            expect(rendered).toContain(`data-channel-id='${fileRef}'`);
+            expect(rendered).toContain(`rapport-${stamp}.txt`);
+        } finally {
+            await close();
+        }
+    });
+
+    test('changes made by another member show up live', async ({ browser }) => {
+        const { owner, serverId, members, stamp, close } = await setupServer(browser, 'drivelive', 1);
+        const member = members[0].page;
+        try {
+            const driveId = await createChannel(owner, serverId, 'drive');
+            await openServer(member, serverId);
+            await openDrive(member, driveId);
+
+            await createFolder(owner, driveId, `live-${stamp}`);
+            await expect(member.locator('.drive-folder-item', { hasText: `live-${stamp}` })).toBeVisible({ timeout: 10000 });
+
+            const fileId = await uploadText(owner, driveId, `live-${stamp}.txt`, 'x');
+            await expect(fileItem(member, fileId)).toBeVisible({ timeout: 10000 });
+
+            await api(owner, `/rename_drive_item?item_type=file&item_id=${fileId}&name=${enc(`renamed-${stamp}.txt`)}`);
+            await expect(fileItem(member, fileId).locator('.drive-item-name')).toHaveText(`renamed-${stamp}.txt`, { timeout: 10000 });
+
+            await api(owner, `/delete_drive_file?file_id=${fileId}`);
+            await expect(fileItem(member, fileId)).toHaveCount(0, { timeout: 10000 });
+        } finally {
+            await close();
+        }
     });
 });

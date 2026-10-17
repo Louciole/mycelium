@@ -318,8 +318,8 @@ export function toggleLockPost(postId){
 }
 window.toggleLockPost = toggleLockPost
 
-export function deleteForumPost(postId){
-    if (!confirm(_t("Delete this post and all its replies?"))) return
+export async function deleteForumPost(postId){
+    if (!(await uiConfirm(_t("Delete this post and all its replies?"), {danger: true, confirmLabel: _t("Delete")}))) return
     const post = global.convs?.[postId]
     const forumId = post?.forum
     editForumPost(postId, "delete")
@@ -483,8 +483,8 @@ export function saveForumTag(forumId){
 }
 window.saveForumTag = saveForumTag
 
-export function removeForumTag(forumId, tagId){
-    if (!confirm(_t("Delete this tag? It will be removed from the posts that use it."))) return
+export async function removeForumTag(forumId, tagId){
+    if (!(await uiConfirm(_t("Delete this tag? It will be removed from the posts that use it."), {danger: true, confirmLabel: _t("Delete")}))) return
     editForumTags(forumId, "remove", null, tagId)
     const forum = global.forums[forumId]
     if (String(forum.tagFilter) === String(tagId)) forum.tagFilter = null

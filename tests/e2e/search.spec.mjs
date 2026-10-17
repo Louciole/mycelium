@@ -89,10 +89,11 @@ test.describe('Global search (Ctrl+K)', () => {
         await expect(page.locator('#search-palette')).toBeHidden();
         await page.waitForFunction(({ driveId }) => {
             const state = window.global.state;
-            const stack = window.global.driveCurrentFolder?.[driveId] || [];
+            const path = window.global.drive?.path || [];
             return state.activeChan?.type === 'drive'
                 && Number(state.activeChan.id) === Number(driveId)
-                && stack.length === 2; // racine / feuille
+                && path.length === 2; // racine / feuille
         }, { driveId });
+        await expect(page).toHaveURL(new RegExp(`/${driveId}/folder/\\d+$`));
     });
 });

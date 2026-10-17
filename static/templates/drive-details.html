@@ -1,0 +1,12 @@
+<aside class="drive-details">
+    <div class="drive-details-head"><b>${escapeHTML(element.title)}</b>
+        <button type="button" class="drive-round-btn" title="${_t('Close')}" onclick="toggleDriveDetails()"><img class="icon" src="/static/icons/material/close.svg" alt="${_t('Close')}"/></button>
+    </div>
+    ${element.multi ? '' : `
+    <div class="drive-details-preview"><img class="icon big" src="/static/icons/material/folder.svg" alt=""/></div>
+    <dl>
+        <dt>${_t('Content')}</dt><dd>${element.folders} ${_t('folders')} · ${element.files} ${_t('files')}</dd>
+        <dt>${_t('Location')}</dt><dd>${fillWith('drive-path-link', element.location)}</dd>
+    </dl>
+    <span class="drive-details-hint">${_t('Select an item to see its details')}</span>`}
+</aside>

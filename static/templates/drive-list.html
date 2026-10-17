@@ -1,0 +1,8 @@
+<div class="drive-list" role="table">
+    <div class="drive-list-head" role="row">
+        ${element.columns.map(col => col.key
+            ? `<button type="button" class="drive-col ${col.sorted ? 'sorted' : ''}" onclick="sortDriveBy('${col.key}')">${_t(col.label)}${col.sorted ? element.arrow : ''}</button>`
+            : `<span class="drive-col">${col.label ? _t(col.label) : ''}</span>`).join('')}
+    </div>
+    ${fillWith('drive-row-item', element.rows)}
+</div>

@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 import { waitForAppReady } from './callHelpers.mjs';
+import { acceptDialog } from './dialogHelpers.mjs';
 
 /**
  * Opens the friends view from the private conversations column.
@@ -178,19 +179,14 @@ export async function replyToMessage(page, originalMessageId, replyText) {
 }
 
 /**
- * Deletes a message through the UI (accepts the browser confirm dialog).
+ * Deletes a message through the UI (confirms the in-app dialog delMsg() opens).
  */
 export async function deleteMessageById(page, messageId) {
-    const onDialog = async (dialog) => {
-        await dialog.accept();
-    };
-    page.on('dialog', onDialog);
-
+    // Don't return delMsg()'s promise: it only settles once the dialog is answered
     await page.evaluate((id) => {
         window.delMsg(id);
     }, messageId);
-
-    page.off('dialog', onDialog);
+    await acceptDialog(page);
 
     // Let the async xhr() call start before next UI action.
     await page.waitForTimeout(500);

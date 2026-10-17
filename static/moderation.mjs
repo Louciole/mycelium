@@ -59,53 +59,58 @@ function _target() {
     return { uid: global.state.profileInfo?.id, sid: global.state.currentServer?.id };
 }
 
-function modKick() {
+// Kick/ban: one dialog asks for confirmation and the (optional) reason; cancelling it aborts.
+async function modKick() {
     const { uid, sid } = _target();
     if (!uid || !sid) return;
-    if (!confirm(_t("Expulser ce membre du serveur ?"))) return;
-    const reason = prompt(_t("Raison (optionnel) :")) || "";
+    const reason = await uiPrompt(_t("Raison (optionnel) :"),
+        { title: _t("Expulser ce membre du serveur ?"), danger: true, confirmLabel: _t("Expulser") });
+    if (reason === null) return;
     xhr(`kick_member?server_id=${sid}&account_id=${uid}&reason=${encodeURIComponent(reason)}`,
         function () { if (this.status === 200) { removeServerMember(sid, uid); window.closeFM?.(); } }, "POST");
 }
 window.modKick = modKick;
 
-function modBan() {
+async function modBan() {
     const { uid, sid } = _target();
     if (!uid || !sid) return;
-    if (!confirm(_t("Bannir ce membre ? Il ne pourra plus rejoindre le serveur."))) return;
-    const reason = prompt(_t("Raison (optionnel) :")) || "";
-    const purge = Math.max(0, parseInt(prompt(_t("Purger les messages des N derniers jours (0 = aucun) :"), "0"), 10) || 0);
+    const reason = await uiPrompt(_t("Raison (optionnel) :"),
+        { title: _t("Bannir ce membre ? Il ne pourra plus rejoindre le serveur."), danger: true, confirmLabel: _t("Bannir") });
+    if (reason === null) return;
+    const purgeAnswer = await uiPrompt(_t("Purger les messages des N derniers jours (0 = aucun) :"), { value: "0", type: "number" });
+    if (purgeAnswer === null) return;   // cancelling either dialog aborts the ban
+    const purge = Math.max(0, parseInt(purgeAnswer, 10) || 0);
     xhr(`ban_member?server_id=${sid}&account_id=${uid}&reason=${encodeURIComponent(reason)}&purge_days=${purge}`,
         function () { if (this.status === 200) { removeServerMember(sid, uid); window.closeFM?.(); } }, "POST");
 }
 window.modBan = modBan;
 
-function modTimeout() {
+async function modTimeout() {
     const { uid, sid } = _target();
     if (!uid || !sid) return;
-    const minutes = parseInt(prompt(_t("Durée du timeout en minutes (5, 10, 60, 1440…) :"), "10"), 10);
+    const minutes = parseInt(await uiPrompt(_t("Durée du timeout en minutes (5, 10, 60, 1440…) :"), { value: "10", type: "number" }), 10);
     if (!(minutes > 0)) return;
-    const reason = prompt(_t("Raison (optionnel) :")) || "";
+    const reason = (await uiPrompt(_t("Raison (optionnel) :"))) || "";
     xhr(`timeout_member?server_id=${sid}&account_id=${uid}&minutes=${minutes}&reason=${encodeURIComponent(reason)}`,
         function () { if (this.status === 200) window.closeFM?.(); }, "POST");
 }
 window.modTimeout = modTimeout;
 
-function reportUser() {
+async function reportUser() {
     const { uid } = _target();
     if (!uid) return;
-    const reason = prompt(_t("Signaler cet utilisateur — raison :"));
+    const reason = await uiPrompt(_t("Signaler cet utilisateur — raison :"), { required: true, maxLength: 1000 });
     if (!reason) return;
     xhr(`report_content?target_account=${uid}&reason=${encodeURIComponent(reason)}`,
-        function () { if (this.status === 200) alert(_t("Signalement envoyé.")); }, "POST");
+        function () { if (this.status === 200) uiAlert(_t("Signalement envoyé.")); }, "POST");
 }
 window.reportUser = reportUser;
 
-function reportMessage(msgId) {
-    const reason = prompt(_t("Signaler ce message — raison :"));
+async function reportMessage(msgId) {
+    const reason = await uiPrompt(_t("Signaler ce message — raison :"), { required: true, maxLength: 1000 });
     if (!reason) return;
     xhr(`report_content?target_message=${msgId}&reason=${encodeURIComponent(reason)}`,
-        function () { if (this.status === 200) alert(_t("Signalement envoyé.")); }, "POST");
+        function () { if (this.status === 200) uiAlert(_t("Signalement envoyé.")); }, "POST");
 }
 window.reportMessage = reportMessage;
 
@@ -211,8 +216,8 @@ function resolveReport(reportId, status) {
 }
 window.resolveReport = resolveReport;
 
-function opDeleteMessage(messageId, reportId) {
-    const reason = prompt(_t("Raison de la suppression :")) || "";
+async function opDeleteMessage(messageId, reportId) {
+    const reason = (await uiPrompt(_t("Raison de la suppression :"))) || "";
     xhr(`platform_delete_message?message_id=${messageId}&reason=${encodeURIComponent(reason)}`,
         function () {
             if (this.status === 200) {
@@ -228,12 +233,12 @@ function opSuspendUser() {
     const account = document.getElementById("op-suspend-account")?.value.trim();
     const reason = document.getElementById("op-suspend-reason")?.value.trim();
     const minutes = document.getElementById("op-suspend-minutes")?.value.trim();
-    if (!account || !reason) { alert(_t("Compte et raison requis.")); return; }
+    if (!account || !reason) { uiAlert(_t("Compte et raison requis.")); return; }
     let ep = `suspend_user?account_id=${encodeURIComponent(account)}&reason=${encodeURIComponent(reason)}`;
     if (minutes) ep += `&duration_minutes=${encodeURIComponent(minutes)}`;
     xhr(ep, function () {
-        if (this.status === 200) { alert(_t("Utilisateur suspendu.")); renderPlatformLog(); }
-        else alert(_t("Échec de la suspension."));
+        if (this.status === 200) { uiAlert(_t("Utilisateur suspendu.")); renderPlatformLog(); }
+        else uiAlert(_t("Échec de la suspension."));
     }, "POST");
 }
 window.opSuspendUser = opSuspendUser;
@@ -242,17 +247,18 @@ function opUnsuspendUser() {
     const account = document.getElementById("op-suspend-account")?.value.trim();
     if (!account) return;
     xhr(`unsuspend_user?account_id=${encodeURIComponent(account)}`,
-        function () { if (this.status === 200) { alert(_t("Suspension levée.")); renderPlatformLog(); } }, "POST");
+        function () { if (this.status === 200) { uiAlert(_t("Suspension levée.")); renderPlatformLog(); } }, "POST");
 }
 window.opUnsuspendUser = opUnsuspendUser;
 
-function opDeleteServer() {
+async function opDeleteServer() {
     const sid = document.getElementById("op-delete-server")?.value.trim();
     if (!sid) return;
-    if (!confirm(_t("Supprimer définitivement ce serveur ?"))) return;
-    const reason = prompt(_t("Raison :")) || "";
+    const reason = await uiPrompt(_t("Raison :"),
+        { title: _t("Supprimer définitivement ce serveur ?"), danger: true, confirmLabel: _t("Delete") });
+    if (reason === null) return;
     xhr(`platform_delete_server?server_id=${encodeURIComponent(sid)}&reason=${encodeURIComponent(reason)}`,
-        function () { if (this.status === 200) { alert(_t("Serveur supprimé.")); renderPlatformLog(); } }, "POST");
+        function () { if (this.status === 200) { uiAlert(_t("Serveur supprimé.")); renderPlatformLog(); } }, "POST");
 }
 window.opDeleteServer = opDeleteServer;
 
@@ -304,7 +310,7 @@ function onRemovedFromServer(content) {
         window.goTo('sec-column', "column-perso", undefined, true, () => { window.goTo('sec-selector', "privateMessage") });
     }
     const msg = content.kind === "ban" ? _t("Vous avez été banni·e d'un serveur.") : _t("Vous avez été expulsé·e d'un serveur.");
-    alert(content.reason ? msg + "\n" + _t("Raison :") + " " + content.reason : msg);
+    uiAlert(content.reason ? msg + "\n" + _t("Raison :") + " " + content.reason : msg);
 }
 window.onRemovedFromServer = onRemovedFromServer;
 

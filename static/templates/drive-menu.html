@@ -1,0 +1,5 @@
+<div class="drive-context-menu" role="menu" style="left: ${element.x}px; top: ${element.y}px">
+    ${element.items.map((item, i) => `<button type="button" role="menuitem" class="drive-context-item${item.danger ? ' danger' : ''}${item.checked ? ' checked' : ''}" onclick="runDriveMenuItem(event, ${i})">
+        ${item.icon ? `<img class="icon" src="/static/icons/material/${item.icon}.svg" alt=""/>` : ''}<span>${escapeHTML(item.label)}</span>${item.checked ? '<span class="drive-check">✓</span>' : ''}
+    </button>`).join('')}
+</div>

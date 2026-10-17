@@ -1017,7 +1017,7 @@ function MDToPreview(text){
     const engine = new Markdown()
     const tokens = engine.tokenize(text)
     console.log("text",text,"tokens",tokens)
-    return engine.render(tokens, preview_equiv)
+    return window.enhanceChannelMentions(engine.render(tokens, preview_equiv))
 }
 
 const render_equiv = {
@@ -1059,7 +1059,7 @@ function MDToRender(text){
     const rendered = engine.render(tokens, render_equiv)
 
     //evaluating functions
-    return evaluateText(rendered)
+    return window.enhanceChannelMentions(evaluateText(rendered))
 }
 window.MDToRender = MDToRender
 window.MDToPreview = MDToPreview

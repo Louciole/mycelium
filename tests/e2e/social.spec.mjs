@@ -10,6 +10,7 @@ import {
     openPrivateConversation,
     getPrivateConversationIdWithUsername,
 } from './helpers/messagingHelpers.mjs';
+import { acceptDialog } from './helpers/dialogHelpers.mjs';
 
 const TEST_TIMEOUT = 120000;
 
@@ -33,10 +34,9 @@ async function removeFriendViaUi(page, friendshipId) {
     await page.locator(`.action[data-id="${friendshipId}"][onclick*="more-friends"]`).click();
     await page.locator('#more-friends').waitFor({ state: 'visible', timeout: 5000 });
 
-    // Accept the native confirm() dialog that friend('remove', ...) triggers
-    page.once('dialog', (d) => d.accept());
-    // Click "Retirer l'ami" (the critical red item)
+    // Click "Retirer l'ami" (the critical red item), then confirm in the dialog friend('remove', ...) opens
     await page.locator('#more-friends .item.crit').click();
+    await acceptDialog(page);
     await page.locator('#more-friends').waitFor({ state: 'hidden', timeout: 5000 });
 
     // Wait until the friendship is gone from state

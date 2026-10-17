@@ -466,7 +466,7 @@ export function loadUser(){
     request.send();
 }
 
-function friend(action, element, event = undefined){
+async function friend(action, element, event = undefined){
     //element is the id of the invitation for an accept or the username for an add
 
     const effect = function() {
@@ -516,7 +516,7 @@ function friend(action, element, event = undefined){
         xhr("accept_friend?invitation_id=".concat(invitationId), onAccept)
     }else if(action === "remove"){
         element = lookFor(element.getAttribute("data-id"),global.user.friends)
-        if (confirm("Do you really want to remove ".concat(global.users[getRelevantUser(element)].display," from your friends ?"))){
+        if (await uiConfirm(_t("Do you really want to remove {name} from your friends?").replace("{name}", global.users[getRelevantUser(element)].display), {danger: true, confirmLabel: _t("Remove")})){
             const remEffect = function(){
                 deleteElement("global.user.friends",element)
             }
@@ -525,7 +525,7 @@ function friend(action, element, event = undefined){
         }
     }else if(action === "removeYES"){
         if (element.confirm){
-            if (! confirm("Do you really want to remove ".concat(global.users[element.id].display," from your friends ?"))){
+            if (! await uiConfirm(_t("Do you really want to remove {name} from your friends?").replace("{name}", global.users[element.id].display), {danger: true, confirmLabel: _t("Remove")})){
                 return
             }
         }
@@ -859,9 +859,9 @@ window.uploadResizeImage = uploadResizeFile
  */
 function showQuotaExceeded(targetType) {
     if (targetType === 'user') {
-        alert(_t("Your personal storage is full (15 GB). Please delete some files or upgrade your plan to upload more."))
+        return uiAlert(_t("Your personal storage is full (15 GB). Please delete some files or upgrade your plan to upload more."), {title: _t("Storage full")})
     } else {
-        alert(_t("This server's storage is full (5 GB). Please delete some files or upgrade the server's storage plan."))
+        return uiAlert(_t("This server's storage is full (5 GB). Please delete some files or upgrade the server's storage plan."), {title: _t("Storage full")})
     }
 }
 window.showQuotaExceeded = showQuotaExceeded
@@ -892,7 +892,7 @@ window.handleQuotaError = handleQuotaError
 function displayMessageAttachment(file) {
     // Check file size
     if (file.size > MAX_FILE_SIZE) {
-        alert(`File "${file.name}" is too large. Maximum size is 50MB.`)
+        uiAlert(_t('File "{name}" is too large. Maximum size is 50MB.').replace("{name}", file.name))
         return
     }
 
@@ -1484,8 +1484,8 @@ function saveCatSettings(){
 }
 window.saveCatSettings = saveCatSettings
 
-function deleteCat(catId){
-    if (!confirm(_t("Delete this category? Channels inside will be moved out."))) return
+async function deleteCat(catId){
+    if (!(await uiConfirm(_t("Delete this category? Channels inside will be moved out."), {danger: true, confirmLabel: _t("Delete")}))) return
     // The server moves its channels (every type) to its spot and copies its permissions
     // onto them (routes/servers.py _detach_from_category): reload rather than guess.
     const onload = function(){
@@ -1529,11 +1529,11 @@ function openChannelSettings(){
 }
 window.openChannelSettings = openChannelSettings
 
-function deleteChannel(){
+async function deleteChannel(){
     const id = global.state.modaltarget?.dataset?.id
     const type = global.state.editingChannelType || 'textual'
     if (!id) return
-    if (!confirm(_t("Delete this channel? This action cannot be undone."))) return
+    if (!(await uiConfirm(_t("Delete this channel? This action cannot be undone."), {danger: true, confirmLabel: _t("Delete")}))) return
     const onload = function(){
         const arrMap = {textual: 'channels', vocal: 'vocals', drive: 'drives', note: 'notes', forum: 'forums'}
         const arr = global.state.currentServer.dirs[arrMap[type]]
@@ -1586,7 +1586,7 @@ function createApiKey(){
 
     if(!name){
         // simple client-side validation
-        alert('Please provide a name for the API key')
+        uiAlert(_t('Please provide a name for the API key'))
         return
     }
 
@@ -1618,8 +1618,8 @@ function createApiKey(){
 }
 window.createApiKey = createApiKey
 
-function revokeKey(id){
-    if(!confirm(''+_t('Are you sure you want to revoke this API key?'))){
+async function revokeKey(id){
+    if(!(await uiConfirm(_t('Are you sure you want to revoke this API key?'), {danger: true, confirmLabel: _t('Revoke')}))){
         return
     }
     const onload = function(){
@@ -1636,8 +1636,8 @@ function revokeKey(id){
 }
 window.revokeKey = revokeKey
 
-function regenerateKey(id){
-    if(!confirm(''+_t('Regenerate this API key ? The previous value will stop working.'))){
+async function regenerateKey(id){
+    if(!(await uiConfirm(_t('Regenerate this API key ? The previous value will stop working.'), {danger: true, confirmLabel: _t('Regenerate')}))){
         return
     }
     const onload = function(){
@@ -1733,7 +1733,7 @@ function addEmail(){
     const onload = function() {
         const response = JSON.parse(this.responseText)
         if (response.error) {
-            alert(response.error)
+            uiAlert(response.error)
         } else {
             // Add the new email to the list
             if (!global.user.additional_emails) {
@@ -1747,15 +1747,15 @@ function addEmail(){
 }
 window.addEmail = addEmail
 
-function removeEmail(emailId){
-    if (!confirm('Are you sure you want to remove this email address?')) {
+async function removeEmail(emailId){
+    if (!(await uiConfirm(_t('Are you sure you want to remove this email address?'), {danger: true, confirmLabel: _t('Remove')}))) {
         return
     }
 
     const onload = function() {
         const response = JSON.parse(this.responseText)
         if (response.error) {
-            alert(response.error)
+            uiAlert(response.error)
         } else {
             // Remove the email from the list
             if (global.user.additional_emails) {
@@ -1902,10 +1902,10 @@ function removeServerTag(index) {
 }
 window.removeServerTag = removeServerTag
 
-function leaveServer(){
+async function leaveServer(){
     const serverId = global.state.currentServer?.id
     if (!serverId) return
-    if (!confirm(_t("Quitter ce serveur ?"))) return
+    if (!(await uiConfirm(_t("Quitter ce serveur ?"), {danger: true, confirmLabel: _t("Quitter le serveur")}))) return
     const onload = function() {
         deleteElementDict("global.servers", serverId)
         goTo('sec-column', "column-perso", undefined, true, () => { goTo('sec-selector', "privateMessage") })

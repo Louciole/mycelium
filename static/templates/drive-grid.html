@@ -1,0 +1,6 @@
+<div class="drive-sort">
+    <button type="button" class="drive-sort-key" onclick="openDriveSortMenu(event)">${_t(element.sortLabel)}</button>
+    <button type="button" class="drive-sort-dir" title="${_t('Reverse order')}" onclick="toggleDriveSortDir()">${element.arrow}</button>
+</div>
+${element.folders.length ? `<div class="drive-section-title">${_t('Folders')}</div><div class="drive-folder-grid">${fillWith('drive-folder-item', element.folders)}</div>` : ''}
+${element.files.length ? `<div class="drive-section-title">${_t('Files')}</div><div class="drive-file-grid">${fillWith('drive-file-item', element.files)}</div>` : ''}

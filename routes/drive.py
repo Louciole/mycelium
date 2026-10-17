@@ -28,6 +28,11 @@ def upload_drive_file(self, drive_id, filename, file, parent_folder=None):
 
 
 @Server.expose
+def list_drive(self, drive_id, folder_id=None):
+    return self.drive.list_drive(drive_id, folder_id)
+
+
+@Server.expose
 def get_drive_files(self, drive_id, parent_folder=None):
     return self.drive.get_files(drive_id, parent_folder)
 
@@ -61,6 +66,17 @@ def create_drive_folder(self, drive_id, foldername, parent_folder=None):
 @Server.expose
 def get_drive_folders(self, drive_id, parent_folder=None):
     return self.drive.get_folders(drive_id, parent_folder)
+
+
+@Server.expose
+def rename_drive_item(self, item_type, item_id, name):
+    return self.drive.rename_item(item_type, item_id, name)
+
+
+@Server.expose
+def drive_links(self, refs):
+    """Names/paths of drive links shown in messages, forums and notes."""
+    return self.drive.links(refs)
 
 
 @Server.expose

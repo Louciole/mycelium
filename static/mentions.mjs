@@ -57,13 +57,48 @@ function buildUserCandidates(query) {
     return results.slice(0, 15)
 }
 
+// Text channels, forums, notes and drives; "#drive/folder/…" browses inside a
+// drive (static/drive-links.mjs). The token names the channel type when its ids
+// may collide with textual ones ("<#notes:7>", "<#drive:12>").
+const MENTIONABLE = [["channels", "hashtag"], ["forums", "inbox"], ["notes", "note"], ["drives", "folder"]]
+
 function buildChannelCandidates(query) {
-    if (!global.state?.isServer || !global.state?.currentServer?.dirs?.channels) return []
+    const dirs = global.state?.currentServer?.dirs
+    if (!global.state?.isServer || !dirs) return []
+    if (query.includes("/")) return window.driveMentionCandidates?.(query, refreshMentionPopup) || []
     const q = query.toLowerCase()
-    return global.state.currentServer.dirs.channels
-        .filter(ch => ch.name.toLowerCase().includes(q))
-        .slice(0, 15)
-        .map(ch => ({ type: "channel", id: ch.id, display: ch.name }))
+    const results = []
+    for (const [key, icon] of MENTIONABLE) {
+        for (const ch of dirs[key] || []) {
+            if (!ch.name.toLowerCase().includes(q)) continue
+            results.push({ type: "channel", id: ch.id, display: ch.name, icon,
+                           token: window.channelToken(key, ch.id),
+                           browse: key === "drives" ? ch.name + "/" : undefined })
+        }
+    }
+    return results.slice(0, 15)
+}
+
+// Finds the "#…" being typed before the caret: stops at a space, unless the
+// query already browses a drive of the server ("#travail/S9 — projets/rap").
+function findChannelTrigger(text) {
+    const i = text.lastIndexOf("#")
+    if (i < 0 || i < text.lastIndexOf("\n") || text.length - i > 101) return -1
+    if (i > 0 && text[i - 1] === "<") return -1
+    const query = text.slice(i + 1)
+    if (!/\s/.test(query)) return i
+    const slash = query.indexOf("/")
+    if (slash < 0) return -1
+    const drive = query.slice(0, slash).toLowerCase()
+    return (global.state?.currentServer?.dirs?.drives || []).some(d => d.name.toLowerCase() === drive) ? i : -1
+}
+
+// A drive listing arrived (drive-links.mjs browse): run the autocomplete again
+// on the field being typed in (the popup closed while the listing loaded).
+function refreshMentionPopup() {
+    const el = document.activeElement
+    if (el?.matches?.(".chat-input textarea")) window.mentionOnInput({ currentTarget: el })
+    else if (el?.isContentEditable && el.closest("[data-block-id]")) window.mentionNoteOnInput(null, { currentTarget: el })
 }
 
 // ─── Popup rendering ─────────────────────────────────────────────────────────
@@ -112,9 +147,10 @@ function renderPopup() {
                 break
             case "channel":
                 html += `<div class="mention-ac-item ${selected}" data-index="${i}" onmousedown="mentionSelect(${i})">
-                    <img class="mention-ac-icon" src="/static/icons/material/hashtag.svg"/>
+                    <img class="mention-ac-icon" src="/static/icons/material/${c.icon || "hashtag"}.svg"/>
                     <div class="mention-ac-info">
                         <span class="mention-ac-name">${escapeHTML(c.display)}</span>
+                        ${c.sub ? `<span class="mention-ac-sub">${escapeHTML(c.sub)}</span>` : ""}
                     </div>
                 </div>`
                 break
@@ -158,7 +194,7 @@ function selectCandidate(textarea, index) {
     switch (c.type) {
         case "user":     insertText = `<@${c.id}>`; break
         case "role":     insertText = `<@&${c.id}>`; break
-        case "channel":  insertText = `<#${c.id}>`; break
+        case "channel":  insertText = c.token || `<#${c.id}>`; break
         case "everyone": insertText = `<@everyone>`; break
         case "here":     insertText = `<@here>`; break
     }
@@ -173,6 +209,17 @@ function selectCandidate(textarea, index) {
     textarea.selectionStart = textarea.selectionEnd = newPos
 
     closePopup()
+}
+
+// "#trav" + Tab on the drive "travail" → "#travail/", listing its root.
+function browseCandidate(textarea, c) {
+    const before = textarea.value.substring(0, triggerStart + 1)
+    const after = textarea.value.substring(textarea.selectionEnd)
+    textarea.value = before + c.browse + after
+    textarea.selectionStart = textarea.selectionEnd = before.length + c.browse.length
+    candidates = buildChannelCandidates(c.browse)
+    selectedIndex = 0
+    renderPopup()
 }
 
 window.mentionSelect = function(index) {
@@ -284,7 +331,7 @@ function selectNoteCandidate(index) {
     if (!c || !activeBlockEl) return
     if (c.type !== 'channel') return
 
-    const insertToken = `<#${c.id}> `
+    const insertToken = `${c.token || `<#${c.id}>`} `
 
     // Work in raw-content space so existing mention spans are not corrupted
     const rawContent = window.blockToRawContent(activeBlockEl)
@@ -303,7 +350,7 @@ function selectNoteCandidate(index) {
 
         // Find the inserted span: it's the (N+1)-th .mention-channel where N is
         // the number of <#id> tokens already in rawPrefix
-        const prevCount = (rawPrefix.match(/<#\d+>/g) || []).length
+        const prevCount = (rawPrefix.match(/<#[^>\s]+>/g) || []).length
         const spans = activeBlockEl.querySelectorAll('.mention-channel')
         const targetSpan = spans[prevCount]
         if (targetSpan) {
@@ -339,23 +386,12 @@ window.mentionNoteOnInput = function(blockId, event) {
     // not a channel link — let the note editor show its block/heading selector.
     if (/^#+$/.test(textBefore)) { closePopup(); activeBlockEl = null; return }
 
-    let i = textBefore.length - 1
-    while (i >= 0) {
-        const ch = textBefore[i]
-        if (ch === ' ' || ch === '\n') { closePopup(); activeBlockEl = null; return }
-        if (ch === '#') {
-            // Skip already-formed tokens like <#123>
-            if (i > 0 && textBefore[i - 1] === '<') { closePopup(); activeBlockEl = null; return }
-            currentTrigger = '#'
-            triggerStart = i
-            break
-        }
-        i--
-    }
+    const i = findChannelTrigger(textBefore)
     if (i < 0) { closePopup(); activeBlockEl = null; return }
+    currentTrigger = '#'
+    triggerStart = i
 
     const query = textBefore.substring(triggerStart + 1)
-    if (query.length > 30) { closePopup(); activeBlockEl = null; return }
 
     activeBlockEl = el
     createPopupForNoteBlock(el)
@@ -425,7 +461,7 @@ window.mentionOnInput = function(event) {
     let i = caret - 1
     while (i >= 0) {
         const ch = val[i]
-        if (ch === ' ' || ch === '\n') { closePopup(); return }
+        if (ch === ' ' || ch === '\n') { i = -1; break }
         if (ch === '@' || ch === '#') {
             // Don't trigger if preceded by '<' (already a raw-ID token being typed naturally – shouldn't happen from user, but be safe)
             if (i > 0 && val[i - 1] === '<') { closePopup(); return }
@@ -435,10 +471,16 @@ window.mentionOnInput = function(event) {
         }
         i--
     }
-    if (i < 0) { closePopup(); return }
+    // A "#drive/folder name/…" query may contain spaces
+    if (i < 0) {
+        i = findChannelTrigger(val.substring(0, caret))
+        if (i < 0) { closePopup(); return }
+        currentTrigger = '#'
+        triggerStart = i
+    }
 
     const query = val.substring(triggerStart + 1, caret)
-    if (query.length > 30) { closePopup(); return }
+    if (query.length > 100 || (currentTrigger === '@' && query.length > 30)) { closePopup(); return }
 
     createPopupIfNeeded(textarea)
 
@@ -474,6 +516,10 @@ window.mentionOnKeyDown = function(event) {
         case "Enter":
             event.preventDefault()
             event.stopPropagation()
+            if (event.key === "Tab" && candidates[selectedIndex]?.browse) {
+                browseCandidate(event.currentTarget, candidates[selectedIndex])
+                return true
+            }
             selectCandidate(event.currentTarget, selectedIndex)
             return true
         case "Escape":

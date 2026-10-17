@@ -1,0 +1,8 @@
+<div class="drive-selection-bar">
+    <button type="button" class="drive-round-btn" title="${_t('Clear selection')}" onclick="clearDriveSelection()"><img class="icon" src="/static/icons/material/close.svg" alt="${_t('Clear selection')}"/></button>
+    <span class="drive-selection-count">${element.count === 1 ? _t('1 selected') : element.count + ' ' + _t('selected')}</span>
+    ${element.hasFiles ? `<button type="button" class="drive-bar-btn" onclick="downloadDriveSelection()"><img class="icon" src="/static/icons/material/download.svg" alt=""/>${_t('Download')}</button>` : ''}
+    ${element.canMove ? `<button type="button" class="drive-bar-btn" onclick="openDriveMoveDialog(global.driveSelection)"><img class="icon" src="/static/icons/material/move.svg" alt=""/>${_t('Move')}</button>` : ''}
+    <button type="button" class="drive-bar-btn" onclick="copyDriveLinks(global.driveSelection)"><img class="icon" src="/static/icons/material/link.svg" alt=""/>${_t('Copy link')}</button>
+    ${element.canDelete ? `<button type="button" class="drive-bar-btn danger" onclick="deleteDriveItems(global.driveSelection)"><img class="icon" src="/static/icons/material/trash.svg" alt=""/>${_t('Delete')}</button>` : ''}
+</div>

@@ -1,10 +1,71 @@
 import global from "../framework/global.mjs";
 import {goTo} from "../framework/navigation.mjs";
-import {setElement} from "../framework/vesta.mjs";
+import {updateElement} from "../framework/vesta.mjs";
 import {xhr} from "../framework/templating.mjs";
 import {lookFor} from "../crud.mjs";
+import {DRIVE_KINDS, canManageDriveItem, canUploadToDrive, driveFileKind, driveItemAuthor, driveItemDate, driveItemName, driveName, findDriveItem, getFileExtension, getFilePreviewType} from "./drive-files.mjs";
+import {closeDriveViewer, editInPhoton, isPhotonEditable, openDriveFile, openDriveViewer} from "./drive-viewer.mjs";
+import {closeDriveMoveDialog, openDriveMoveDialog} from "./drive-move.mjs";
+import {downloadDriveFile, uploadDriveFile, uploadDriveFolder} from "./drive-upload.mjs";
 
-function goToDriveChannel(id){
+// Drive channels — this module: state, navigation, painting, menus, selection
+// and actions. Alongside: drive-files.mjs (file kinds, rights, formatters),
+// drive-viewer.mjs (viewer, Photon), drive-move.mjs ("Move to…", drag & drop
+// moves), drive-upload.mjs (uploads, downloads). Links: static/drive-links.mjs.
+
+// ── State ─────────────────────────────────────────────────────────────────────
+// global.drive: the open drive, one folder at a time —
+//   {id, server, folder (null = root), path: [{id, name}], folders, files, loading}
+// global.driveSelection: [{type: 'file'|'folder', id}]
+// global.driveFilters: Type / People / Modified chips, reset when a drive opens.
+// global.drivePrefs: grid/list, sort and details panel, kept per browser.
+// The view is painted by the Subscribe('global.drive.*') blocks of
+// server-drive-content.html: paintDrive() repaints them all, paintDrive('toolbar')
+// one of them.
+
+const PREFS_KEY = 'drive_prefs'
+const DEFAULT_PREFS = {view: 'grid', sort: 'name', dir: 1, details: false}
+
+function loadPrefs() {
+    try {
+        return {...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')}
+    } catch (e) {
+        return {...DEFAULT_PREFS}
+    }
+}
+
+function savePrefs() {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(global.drivePrefs)) } catch (e) {}
+}
+
+global.drivePrefs = loadPrefs()
+global.driveFilters = {type: '', person: '', modified: ''}
+global.driveSelection = []
+let selectionAnchor = null   // last clicked item, for Shift+click ranges
+let loadSeq = 0              // only the latest list_drive response is applied
+
+function paintDrive(part) {
+    if (global.state.activeChan?.type !== 'drive') return
+    updateElement(part ? 'global.drive.' + part : 'global.drive')
+    applyDriveSelectionClasses()
+}
+
+window.repaintDrive = () => paintDrive()
+
+export function driveRoute(folderId) {
+    const drive = global.drive
+    return drive.server + '/' + drive.id + (folderId ? '/folder/' + folderId : '')
+}
+
+// ── Opening a drive / a folder ────────────────────────────────────────────────
+
+/**
+ * Opens a drive channel, at its root or at `target.folder`, or opens
+ * `target.file` (its folder + the viewer) — what /channels#<server>/<drive>/folder/<id>
+ * and .../file/<id> links resolve to (navigation.mjs handleHashRoute).
+ */
+function goToDriveChannel(id, target = {}) {
+    id = Number(id)
     let targetElt
     if(global.state.activeChan){
         targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
@@ -23,883 +84,697 @@ function goToDriveChannel(id){
     }
 
     targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
-    targetElt.classList.add("selected")
+    targetElt?.classList.add("selected")
 
-    if (!global.driveCurrentFolder) global.driveCurrentFolder = {}
-    if (!global.driveCurrentFolder[id]) global.driveCurrentFolder[id] = []
-
-    loadDriveContent(id)
+    global.drive = {id, server: global.state.currentServer.id, folder: null, path: [], folders: [], files: [], loading: true}
+    global.driveSelection = []
+    global.driveFilters = {type: '', person: '', modified: ''}
+    selectionAnchor = null
+    // Overlays of a drive left earlier: painted (empty) with the new view
+    global.driveViewer = global.driveMove = global.driveMenu = null
 
     goTo('content','server-drive-content',undefined,false)
+
+    if (target.file) {
+        window.pushRoute?.(driveRoute(null))   // the viewer then replaces it with the file's URL
+        openDriveFileById(Number(target.file))
+    } else {
+        loadDriveFolder(target.folder ? Number(target.folder) : null, {route: 'push'})
+    }
 }
 window.goToDriveChannel = goToDriveChannel
 
-function getCurrentDriveFolder() {
-    const drive_id = global.state.activeChan.id
-    const folderStack = global.driveCurrentFolder[drive_id] || []
-    return folderStack.length > 0 ? folderStack[folderStack.length - 1].id : null
+/**
+ * Loads one folder of the open drive (null = root) and repaints. `opts.route`
+ * ('push' | 'replace') updates the URL; `opts.then` runs once it's painted.
+ */
+function loadDriveFolder(folderId = null, opts = {}) {
+    const drive = global.drive
+    if (!drive) return
+    const seq = ++loadSeq
+    drive.requested = folderId   // a reload (live update) must not undo a navigation in flight
+    if (opts.route === 'push') window.pushRoute?.(driveRoute(folderId))
+    if (opts.route === 'replace') window.replaceRoute?.(driveRoute(folderId))
+
+    const url = `list_drive?drive_id=${drive.id}` + (folderId ? `&folder_id=${folderId}` : '')
+    xhr(url, function () {
+        if (seq !== loadSeq || global.drive !== drive) return
+        if (this.status !== 200) {
+            // The folder was deleted (or moved out of reach): fall back to the root.
+            if (folderId && this.status === 404) loadDriveFolder(null, {route: 'replace'})
+            return
+        }
+        const data = JSON.parse(this.responseText)
+        if (drive.folder !== data.folder_id) {
+            global.driveSelection = []
+            selectionAnchor = null
+        }
+        Object.assign(drive, {folder: data.folder_id, folderCreator: data.folder_creator, path: data.path,
+                              folders: data.folders, files: data.files, loading: false})
+        global.driveSelection = global.driveSelection.filter(s => findDriveItem(s.type, s.id))
+        if (global.driveViewer != null && !findDriveItem('file', global.driveViewer)) closeDriveViewer()
+        paintDrive()
+        opts.then?.()
+    })
 }
 
-function loadDriveContent(drive_id, parent_folder = null) {
-    loadDriveFiles(drive_id, parent_folder)
-    loadDriveFolders(drive_id, parent_folder)
+export function reloadDrive() {
+    if (global.drive) loadDriveFolder(global.drive.requested)
 }
-window.loadDriveContent = loadDriveContent // Ctrl+K palette deep-opens folders (search.mjs)
+window.reloadDrive = reloadDrive
 
-function loadDriveFiles(drive_id, parent_folder = null) {
-    const onload = function() {
-        const files = JSON.parse(this.responseText)
-        if (!global.driveFiles) global.driveFiles = {}
-        setElement(`global.driveFiles[${drive_id}]`, files)
-        setTimeout(() => loadDrivePreviews(), 0)
-    }
-    const url = parent_folder ? `get_drive_files?drive_id=${drive_id}&parent_folder=${parent_folder}` : `get_drive_files?drive_id=${drive_id}`
-    xhr(url, onload, "GET", false)
-}
-window.loadDriveFiles = loadDriveFiles
-
-function loadDriveFolders(drive_id, parent_folder = null) {
-    const onload = function() {
-        const folders = JSON.parse(this.responseText)
-        if (!global.driveFolders) global.driveFolders = {}
-        setElement(`global.driveFolders[${drive_id}]`, folders)
-    }
-    const url = parent_folder ? `get_drive_folders?drive_id=${drive_id}&parent_folder=${parent_folder}` : `get_drive_folders?drive_id=${drive_id}`
-    xhr(url, onload, "GET", false)
-}
-window.loadDriveFolders = loadDriveFolders
-
-function createNewDriveFolder() {
-    const foldername = prompt(_t("Enter folder name:"))
-    if (!foldername) return
-
-    const drive_id = global.state.activeChan.id
-    const parent_folder = getCurrentDriveFolder()
-
-    const onload = function() {
-        console.log("Folder created:", this.responseText)
-        // Reload drive content
-        loadDriveContent(drive_id, parent_folder)
-    }
-
-    const url = parent_folder
-        ? `create_drive_folder?drive_id=${drive_id}&foldername=${encodeURIComponent(foldername)}&parent_folder=${parent_folder}`
-        : `create_drive_folder?drive_id=${drive_id}&foldername=${encodeURIComponent(foldername)}`
-
-    xhr(url, onload, "POST", false)
-}
-window.createNewDriveFolder = createNewDriveFolder
-
-function openDriveFolder(folder_id) {
-    const drive_id = global.state.activeChan.id
-    const folder = (global.driveFolders[drive_id] || []).find(f => f.id === folder_id)
-
-    if (!folder) return
-
-    // Add to navigation stack
-    if (!global.driveCurrentFolder[drive_id]) global.driveCurrentFolder[drive_id] = []
-    global.driveCurrentFolder[drive_id].push({id: folder_id, name: folder.foldername})
-    setElement(`global.driveCurrentFolder[${drive_id}]`, global.driveCurrentFolder[drive_id])
-
-    // Load content of this folder
-    loadDriveContent(drive_id, folder_id)
+function openDriveFolder(folderId) {
+    loadDriveFolder(folderId ? Number(folderId) : null, {route: 'push'})
 }
 window.openDriveFolder = openDriveFolder
 
-function navigateDriveFolderUp() {
-    const drive_id = global.state.activeChan.id
-    if (!global.driveCurrentFolder[drive_id] || global.driveCurrentFolder[drive_id].length === 0) return
-
-    // Remove current folder from stack
-    global.driveCurrentFolder[drive_id].pop()
-    setElement(`global.driveCurrentFolder[${drive_id}]`, global.driveCurrentFolder[drive_id])
-
-    // Get parent folder (or null for root)
-    const parent_folder = global.driveCurrentFolder[drive_id].length > 0
-        ? global.driveCurrentFolder[drive_id][global.driveCurrentFolder[drive_id].length - 1].id
-        : null
-
-    // Load content of parent folder
-    loadDriveContent(drive_id, parent_folder)
-}
-window.navigateDriveFolderUp = navigateDriveFolderUp
-
-function deleteDriveFolder(folder_id) {
-    if (!confirm(_t('Are you sure you want to delete this folder and all its contents?'))) return
-
-    const drive_id = global.state.activeChan.id
-    const parent_folder = getCurrentDriveFolder()
-
-    const onload = function() {
-        console.log("Folder deleted:", this.responseText)
-        // Reload drive content
-        loadDriveContent(drive_id, parent_folder)
-    }
-
-    xhr(`delete_drive_folder?folder_id=${folder_id}`, onload, "POST", false)
-}
-window.deleteDriveFolder = deleteDriveFolder
-
-function uploadDriveFile() {
-    const input = document.getElementById('drive-file-input')
-    if (input) {
-        input.click()
-    }
-}
-window.uploadDriveFile = uploadDriveFile
-
-function uploadDriveFolder() {
-    const input = document.getElementById('drive-folder-input')
-    if (input) {
-        input.click()
-    }
-}
-window.uploadDriveFolder = uploadDriveFolder
-
-// Upload a single File object into the given folder (null = root of the drive).
-// Resolves on success, rejects with Error("quota") when the quota is exceeded.
-function uploadSingleDriveFile(file, drive_id, parent_folder) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = function(e) {
-            const base64 = e.target.result
-
-            const onload = function() {
-                if (this.status === 413) {
-                    handleQuotaError(this)
-                    reject(new Error("quota"))
-                    return
-                }
-                if (this.status >= 400) {
-                    reject(new Error("upload failed: " + this.status))
-                    return
-                }
-                resolve()
-            }
-
-            const url = parent_folder
-                ? `upload_drive_file?drive_id=${drive_id}&filename=${encodeURIComponent(file.name)}&parent_folder=${parent_folder}`
-                : `upload_drive_file?drive_id=${drive_id}&filename=${encodeURIComponent(file.name)}`
-
-            // Send file content in the body, not in the URL
-            const request = xhr(url, onload, "POST", true, {"file": base64})
-            request.onerror = () => reject(new Error("network error"))
+// A file link: open the file's folder, then the file in the viewer.
+function openDriveFileById(fileId) {
+    const drive = global.drive
+    const ref = `drive:${drive.id}/f:${fileId}`
+    xhr(`drive_links?refs=${encodeURIComponent(JSON.stringify([ref]))}`, function () {
+        if (global.drive !== drive) return
+        const info = this.status === 200 ? JSON.parse(this.responseText)[ref] : null
+        if (!info?.ok) {
+            loadDriveFolder(null, {route: 'replace'})
+            return
         }
-        reader.onerror = () => reject(reader.error || new Error("read error"))
-        reader.readAsDataURL(file)
+        loadDriveFolder(info.folder || null, {then: () => openDriveViewer(fileId)})
     })
 }
 
-// Create a folder remotely and resolve with its new id.
-function createDriveFolderRemote(drive_id, foldername, parent_folder) {
-    return new Promise((resolve, reject) => {
-        const onload = function() {
-            if (this.status >= 400) {
-                reject(new Error("folder creation failed: " + this.status))
-                return
-            }
-            try {
-                resolve(JSON.parse(this.responseText).folder_id)
-            } catch (e) {
-                reject(e)
-            }
-        }
-        const url = parent_folder
-            ? `create_drive_folder?drive_id=${drive_id}&foldername=${encodeURIComponent(foldername)}&parent_folder=${parent_folder}`
-            : `create_drive_folder?drive_id=${drive_id}&foldername=${encodeURIComponent(foldername)}`
-        const request = xhr(url, onload, "POST", true)
-        request.onerror = () => reject(new Error("network error"))
+// Live updates (driveManager.notify_changed → static/ws/onMessage.mjs).
+let changedTimer = null
+function onDriveChanged(content) {
+    const driveId = Number(content?.drive_id)
+    window.forgetDriveLinks?.(driveId)
+    if (global.state.activeChan?.type !== 'drive' || global.drive?.id !== driveId) return
+    clearTimeout(changedTimer)
+    changedTimer = setTimeout(reloadDrive, 250)
+}
+window.onDriveChanged = onDriveChanged
+
+// ── What's shown: filters + sort ──────────────────────────────────────────────
+
+const MODIFIED_FILTERS = {
+    today: {label: 'Today', days: 1},
+    week:  {label: 'Last 7 days', days: 7},
+    month: {label: 'Last 30 days', days: 30},
+    year:  {label: 'This year', days: 365},
+}
+const SORTS = {name: 'Name', modified: 'Modified', size: 'Size'}
+
+export function visibleDriveItems() {
+    const drive = global.drive
+    if (!drive) return {folders: [], files: []}
+    const {type, person, modified} = global.driveFilters
+    const since = modified ? Date.now() - MODIFIED_FILTERS[modified].days * 86400000 : null
+
+    const keep = (item, isFolder) => {
+        if (type === 'folder' && !isFolder) return false
+        if (type && type !== 'folder' && (isFolder || driveFileKind(item.filename) !== type)) return false
+        if (person && driveItemAuthor(item) !== person) return false
+        if (since && new Date(driveItemDate(item)).getTime() < since) return false
+        return true
+    }
+    const {sort, dir} = global.drivePrefs
+    const byName = (a, b) => driveItemName(a).localeCompare(driveItemName(b), undefined, {numeric: true, sensitivity: 'base'})
+    const compare = (a, b) => {
+        let diff = 0
+        if (sort === 'modified') diff = new Date(driveItemDate(a)) - new Date(driveItemDate(b))
+        if (sort === 'size') diff = (a.size || 0) - (b.size || 0)
+        return (diff || byName(a, b)) * dir
+    }
+    return {
+        folders: drive.folders.filter(f => keep(f, true)).sort(compare),
+        files: drive.files.filter(f => keep(f, false)).sort(compare),
+    }
+}
+
+// Display order (folders first), for Shift+click ranges, arrows and the viewer.
+function orderedDriveItems() {
+    const {folders, files} = visibleDriveItems()
+    return [...folders.map(f => ({type: 'folder', id: f.id})), ...files.map(f => ({type: 'file', id: f.id}))]
+}
+
+// ── Painting (Subscribe blocks of server-drive-content.html) ──────────────────
+// Each block renders a static/templates/drive-*.html template from a small
+// view model; fillWith caches the templates.
+
+const render = (template, model) => fillWith(template, [model])
+
+function driveCrumbsHtml() {
+    const drive = global.drive
+    if (!drive) return ''
+    let crumbs = [{id: null, name: driveName()}, ...drive.path]
+    window._driveHiddenCrumbs = []
+    if (crumbs.length > 4) {
+        window._driveHiddenCrumbs = crumbs.slice(1, -2)
+        crumbs = [crumbs[0], {more: true}, ...crumbs.slice(-2)]
+    }
+    crumbs[crumbs.length - 1] = {...crumbs[crumbs.length - 1], current: true}
+    return fillWith('drive-crumb', crumbs)
+}
+window.driveCrumbsHtml = driveCrumbsHtml
+
+window.driveViewButtonsHtml = () => render('drive-view-buttons', global.drivePrefs)
+
+function driveToolbarHtml() {
+    const sel = global.driveSelection
+    if (sel.length) {
+        return render('drive-selection-bar', {
+            count: sel.length,
+            hasFiles: sel.some(s => s.type === 'file'),
+            canMove: canUploadToDrive(),
+            canDelete: sel.every(s => canManageDriveItem(s.type, findDriveItem(s.type, s.id))),
+        })
+    }
+    const {type, person, modified} = global.driveFilters
+    return render('drive-toolbar', {
+        canUpload: canUploadToDrive(),
+        chips: [
+            {name: 'type', label: _t('Type'), value: type === 'folder' ? _t('Folders') : type ? _t(DRIVE_KINDS[type].label) : ''},
+            {name: 'person', label: _t('People'), value: person},
+            {name: 'modified', label: _t('Modified'), value: modified ? _t(MODIFIED_FILTERS[modified].label) : ''},
+        ],
     })
 }
+window.driveToolbarHtml = driveToolbarHtml
 
-async function handleDriveFileSelect(event) {
-    const files = Array.from(event.target.files || [])
-    if (!files.length) return
-
-    const drive_id = global.state.activeChan.id
-    const parent_folder = getCurrentDriveFolder()
-
-    for (const file of files) {
-        try {
-            await uploadSingleDriveFile(file, drive_id, parent_folder)
-        } catch (e) {
-            console.warn("Upload failed for", file.name, e)
-            if (e.message === "quota") break
-        }
+function driveBodyHtml() {
+    const drive = global.drive
+    if (!drive || drive.loading) return render('drive-empty', {message: _t('Loading…')})
+    const {folders, files} = visibleDriveItems()
+    if (!folders.length && !files.length) {
+        const filtered = Object.values(global.driveFilters).some(Boolean)
+        return render('drive-empty', {
+            icon: true,
+            message: filtered ? _t('No item matches these filters') : _t('This folder is empty'),
+            hint: !filtered && canUploadToDrive() ? _t('Drop files here or use the New button') : '',
+        })
     }
 
-    loadDriveContent(drive_id, parent_folder)
-    event.target.value = ''
+    const {view, sort, dir} = global.drivePrefs
+    const arrow = render('drive-sort-arrow', {dir})
+    if (view === 'list') {
+        return render('drive-list', {
+            arrow,
+            columns: [{key: 'name', label: 'Name'}, {label: 'Owner'}, {key: 'modified', label: 'Modified'}, {key: 'size', label: 'Size'}, {}]
+                .map(col => ({...col, sorted: col.key === sort})),
+            rows: [...folders.map(f => ({...f, _type: 'folder'})), ...files.map(f => ({...f, _type: 'file'}))],
+        })
+    }
+    return render('drive-grid', {arrow, sortLabel: SORTS[sort], folders, files})
 }
-window.handleDriveFileSelect = handleDriveFileSelect
+window.driveBodyHtml = driveBodyHtml
 
-async function handleDriveFolderSelect(event) {
-    const files = Array.from(event.target.files || [])
-    if (!files.length) return
-
-    const drive_id = global.state.activeChan.id
-    const rootParent = getCurrentDriveFolder()
-
-    // Maps a relative directory path (e.g. "myfolder/sub") to its created folder id.
-    // The empty path maps to the folder we are currently browsing.
-    const folderMap = { '': rootParent }
-
-    async function ensureFolder(dirPath) {
-        if (dirPath in folderMap) return folderMap[dirPath]
-        const slashIdx = dirPath.lastIndexOf('/')
-        const parentPath = slashIdx === -1 ? '' : dirPath.slice(0, slashIdx)
-        const name = slashIdx === -1 ? dirPath : dirPath.slice(slashIdx + 1)
-        const parentId = await ensureFolder(parentPath)
-        const folderId = await createDriveFolderRemote(drive_id, name, parentId)
-        folderMap[dirPath] = folderId
-        return folderId
-    }
-
-    for (const file of files) {
-        const relPath = file.webkitRelativePath || file.name
-        const slashIdx = relPath.lastIndexOf('/')
-        const dirPath = slashIdx === -1 ? '' : relPath.slice(0, slashIdx)
-        try {
-            const folderId = await ensureFolder(dirPath)
-            await uploadSingleDriveFile(file, drive_id, folderId)
-        } catch (e) {
-            console.warn("Upload failed for", relPath, e)
-            if (e.message === "quota") break
-        }
-    }
-
-    loadDriveContent(drive_id, rootParent)
-    event.target.value = ''
+// [{id, name, first}] from the root of the drive down `path`, for drive-path-link.
+function drivePathLinks(path) {
+    return [{id: null, name: driveName()}, ...path].map((c, i) => ({...c, first: i === 0}))
 }
-window.handleDriveFolderSelect = handleDriveFolderSelect
 
-// ── Drop files/folders from the OS onto the drive to upload ───────────────────
+function driveDetailsHtml() {
+    if (!global.drivePrefs.details || !global.drive) return ''
+    const drive = global.drive
+    const sel = global.driveSelection
+    if (sel.length > 1) return render('drive-details', {multi: true, title: `${sel.length} ${_t('selected')}`})
 
-// Recursively walk a dropped FileSystemEntry into a flat list of
-// {file, dirPath} (dirPath = "" at root, "sub/deep" for nested folders).
-function walkDriveEntry(entry, dirPath, out) {
-    return new Promise((resolve) => {
-        if (entry.isFile) {
-            entry.file(
-                (file) => { out.push({ file, dirPath }); resolve() },
-                () => resolve()
-            )
-        } else if (entry.isDirectory) {
-            const subPath = dirPath ? `${dirPath}/${entry.name}` : entry.name
-            const reader = entry.createReader()
-            // readEntries returns results in batches — keep reading until empty.
-            const readBatch = () => {
-                reader.readEntries(async (results) => {
-                    if (!results.length) { resolve(); return }
-                    for (const child of results) await walkDriveEntry(child, subPath, out)
-                    readBatch()
-                }, () => resolve())
-            }
-            readBatch()
-        } else {
-            resolve()
-        }
+    const item = sel.length ? findDriveItem(sel[0].type, sel[0].id) : null
+    if (!item) {
+        return render('drive-details', {
+            title: drive.path.length ? drive.path[drive.path.length - 1].name : driveName(),
+            folders: drive.folders.length,
+            files: drive.files.length,
+            location: drivePathLinks(drive.path.slice(0, -1)),
+        })
+    }
+    const type = sel[0].type
+    return render('drive-details-item', {
+        type, item,
+        image: type === 'file' && getFilePreviewType(item.filename) === 'image',
+        extension: type === 'file' ? getFileExtension(item.filename).toUpperCase() : '',
+        location: drivePathLinks(drive.path),
     })
 }
+window.driveDetailsHtml = driveDetailsHtml
 
-// Upload a flat {file, dirPath} list into targetFolder, creating any missing
-// folders first. Does NOT refresh the view — the caller decides what to reload.
-async function uploadDriveFileList(fileList, drive_id, targetFolder) {
-    const folderMap = { '': targetFolder }
+window.getDriveFilePreviewHtml = (file) => render('drive-file-preview', {
+    ...file, preview: getFilePreviewType(file.filename), extension: getFileExtension(file.filename).toUpperCase(),
+})
 
-    async function ensureFolder(dirPath) {
-        if (dirPath in folderMap) return folderMap[dirPath]
-        const slashIdx = dirPath.lastIndexOf('/')
-        const parentPath = slashIdx === -1 ? '' : dirPath.slice(0, slashIdx)
-        const name = slashIdx === -1 ? dirPath : dirPath.slice(slashIdx + 1)
-        const parentId = await ensureFolder(parentPath)
-        const folderId = await createDriveFolderRemote(drive_id, name, parentId)
-        folderMap[dirPath] = folderId
-        return folderId
+// Text previews (grid tiles and the viewer): global.drivePreviews[id] =
+// {filepath, text} (text null while loading), painted by the Subscribe blocks
+// of drive-file-preview.html and drive-viewer.html. Blobs are content-addressed:
+// a replaced file has a new filepath, so its preview is fetched again.
+global.drivePreviews = {}
+
+export function drivePreviewTextHtml(id, className) {
+    const file = findDriveItem('file', id)
+    let entry = global.drivePreviews[id]
+    if (file && entry?.filepath !== file.filepath) {
+        const fetched = entry = global.drivePreviews[id] = {filepath: file.filepath, text: null}
+        fetch(`/preview_drive_file?file_id=${id}&max_bytes=5000`)
+            .then(resp => resp.ok ? resp.text() : '')
+            .catch(() => '')
+            .then(text => {
+                if (global.drivePreviews[id] !== fetched) return
+                fetched.text = text
+                updateElement(`global.drivePreviews[${id}]`)
+            })
     }
+    const body = entry?.text == null ? '<span class="drive-preview-loading">…</span>' : escapeHTML(entry.text)
+    return `<pre class="${className}">${body}</pre>`
+}
+window.drivePreviewTextHtml = drivePreviewTextHtml
 
-    for (const { file, dirPath } of fileList) {
-        try {
-            const folderId = await ensureFolder(dirPath)
-            await uploadSingleDriveFile(file, drive_id, folderId)
-        } catch (e) {
-            console.warn("Upload failed for", file.name, e)
-            if (e.message === "quota") break
-        }
-    }
+// ── View preferences ──────────────────────────────────────────────────────────
+
+function setDriveView(view) {
+    global.drivePrefs.view = view
+    savePrefs()
+    paintDrive()
+}
+window.setDriveView = setDriveView
+
+function toggleDriveDetails() {
+    global.drivePrefs.details = !global.drivePrefs.details
+    savePrefs()
+    paintDrive('viewbtns')
+    paintDrive('details')
+}
+window.toggleDriveDetails = toggleDriveDetails
+
+function showDriveDetails(type, id) {
+    global.driveSelection = [{type, id}]
+    global.drivePrefs.details = true
+    savePrefs()
+    paintDrive()
 }
 
-// Upload everything in a drop's dataTransfer into targetFolder (folders walked
-// recursively via the entries API; flat fallback otherwise). No view refresh.
-async function uploadDroppedItems(dataTransfer, drive_id, targetFolder) {
-    const items = dataTransfer.items
-    const entries = []
-    if (items && items.length && items[0].webkitGetAsEntry) {
-        for (const item of items) {
-            const entry = item.webkitGetAsEntry?.()
-            if (entry) entries.push(entry)
-        }
+function sortDriveBy(key) {
+    const prefs = global.drivePrefs
+    if (prefs.sort === key) prefs.dir = -prefs.dir
+    else Object.assign(prefs, {sort: key, dir: key === 'name' ? 1 : -1})
+    savePrefs()
+    paintDrive('body')
+}
+window.sortDriveBy = sortDriveBy
+
+function toggleDriveSortDir() {
+    global.drivePrefs.dir = -global.drivePrefs.dir
+    savePrefs()
+    paintDrive('body')
+}
+window.toggleDriveSortDir = toggleDriveSortDir
+
+function openDriveSortMenu(event) {
+    openDriveMenu(event, Object.entries(SORTS).map(([key, label]) => ({
+        label: _t(label), checked: global.drivePrefs.sort === key,
+        action: () => { if (global.drivePrefs.sort !== key) sortDriveBy(key) },
+    })))
+}
+window.openDriveSortMenu = openDriveSortMenu
+
+function setDriveFilter(name, value) {
+    global.driveFilters[name] = value
+    global.driveSelection = []
+    paintDrive()
+}
+window.setDriveFilter = setDriveFilter
+
+function openDriveFilterMenu(event, name) {
+    const current = global.driveFilters[name]
+    let options = []
+    if (name === 'type') {
+        options = [['folder', _t('Folders')], ...Object.entries(DRIVE_KINDS).map(([kind, k]) => [kind, _t(k.label)])]
+    } else if (name === 'person') {
+        const people = new Set([...global.drive.folders, ...global.drive.files].map(driveItemAuthor).filter(Boolean))
+        options = [...people].sort().map(p => [p, p])
+    } else {
+        options = Object.entries(MODIFIED_FILTERS).map(([key, f]) => [key, _t(f.label)])
     }
-
-    if (entries.length) {
-        const fileList = []
-        for (const entry of entries) await walkDriveEntry(entry, '', fileList)
-        await uploadDriveFileList(fileList, drive_id, targetFolder)
-        return
-    }
-
-    // Fallback (no entries API): flat files only.
-    for (const file of Array.from(dataTransfer.files || [])) {
-        try {
-            await uploadSingleDriveFile(file, drive_id, targetFolder)
-        } catch (e) {
-            if (e.message === "quota") break
-        }
-    }
+    // The chip shows the value: a person's name is its own value, the others map to labels.
+    openDriveMenu(event, options.map(([value, label]) => ({
+        label, checked: current === value, action: () => setDriveFilter(name, current === value ? '' : value),
+    })))
 }
-window.uploadDroppedItems = uploadDroppedItems
+window.openDriveFilterMenu = openDriveFilterMenu
 
-// True when the drag carries OS files (an upload) rather than an internal move.
-function isExternalFileDrag(event) {
-    const types = event.dataTransfer.types
-    if (!types) return false
-    return types.includes('Files') && !types.includes('application/x-drive-move')
+// ── Menus ─────────────────────────────────────────────────────────────────────
+
+// global.driveMenu: the open menu — {items, x, y, anchor} or null; painted
+// by its Subscribe block of server-drive-content.html (drive-menu.html).
+
+export function closeDriveContextMenu() {
+    if (!global.driveMenu) return
+    global.driveMenu = null
+    updateElement('global.driveMenu')
 }
-window.isExternalFileDrag = isExternalFileDrag
+window.closeDriveContextMenu = closeDriveContextMenu
 
-/** Uploads (files, folders, drops), new folders and moves need send-messages in the drive. */
-function canUploadToDrive() {
-    return window.checkChannelRight(global.state.activeChan.id, 'drive', 'send-messages')
-}
+window.driveMenuHtml = () => global.driveMenu ? render('drive-menu', global.driveMenu) : ''
 
-function onDriveUploadDragOver(event) {
-    if (!isExternalFileDrag(event) || !canUploadToDrive()) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'copy'
-    event.currentTarget.classList.add('drive-upload-dragover')
-}
-window.onDriveUploadDragOver = onDriveUploadDragOver
-
-function onDriveUploadDragLeave(event) {
-    if (!event.currentTarget.contains(event.relatedTarget)) {
-        event.currentTarget.classList.remove('drive-upload-dragover')
-    }
-}
-window.onDriveUploadDragLeave = onDriveUploadDragLeave
-
-// Drop on the empty drive area → upload into the folder currently being viewed.
-async function handleDriveExternalDrop(event) {
-    if (!isExternalFileDrag(event)) return  // internal moves are handled elsewhere
+/**
+ * A menu at the pointer (right-click) or under the clicked button.
+ * items: [{label, icon?, danger?, checked?, action}]
+ */
+function openDriveMenu(event, items) {
     event.preventDefault()
     event.stopPropagation()
-    event.currentTarget.classList.remove('drive-upload-dragover')
-    if (!canUploadToDrive()) return
+    // A second click on the button that opened the menu closes it.
+    const anchorEl = event.type === 'contextmenu' ? null : event.currentTarget
+    const reopen = anchorEl && global.driveMenu?.anchor === anchorEl
+    closeDriveContextMenu()
+    if (reopen || !items.length) return
 
-    const drive_id = global.state.activeChan.id
-    await uploadDroppedItems(event.dataTransfer, drive_id, getCurrentDriveFolder())
-    loadDriveContent(drive_id, getCurrentDriveFolder())
-}
-window.handleDriveExternalDrop = handleDriveExternalDrop
+    const anchor = anchorEl?.getBoundingClientRect?.()
+    const menu = global.driveMenu = {items, anchor: anchorEl,
+        x: anchor ? anchor.left : event.clientX, y: anchor ? anchor.bottom + 4 : event.clientY}
+    updateElement('global.driveMenu')
 
-function downloadDriveFile(file_id, filename) {
-    // filename is optional — resolve from loaded state so callers don't have to
-    // pass it through inline HTML (avoids breakage on names with quotes).
-    if (!filename) filename = findDriveFile(file_id)?.filename || 'download'
-    const url = `/download_drive_file?file_id=${file_id}`
-    // Capacitor WebView silently ignores the `download` attribute; use blob fetch instead.
-    if (window.Capacitor?.isNativePlatform?.()) {
-        nativeBlobDownload(url, filename)
-        return
+    // Keep it inside the viewport: its size is only known once painted.
+    const rect = document.querySelector('.drive-context-menu')?.getBoundingClientRect()
+    if (!rect) return
+    const x = rect.right > window.innerWidth ? Math.max(8, window.innerWidth - rect.width - 8) : menu.x
+    const y = rect.bottom > window.innerHeight ? Math.max(8, window.innerHeight - rect.height - 8) : menu.y
+    if (x !== menu.x || y !== menu.y) {
+        Object.assign(menu, {x, y})
+        updateElement('global.driveMenu')
     }
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
 }
-window.downloadDriveFile = downloadDriveFile
 
-function deleteDriveFile(file_id) {
-    if (!confirm(_t('Are you sure you want to delete this file?'))) return
-
-    const drive_id = global.state.activeChan.id
-    const parent_folder = getCurrentDriveFolder()
-
-    const onload = function() {
-        console.log("File deleted:", this.responseText)
-        // Reload drive content
-        loadDriveContent(drive_id, parent_folder)
-    }
-
-    xhr(`delete_drive_file?file_id=${file_id}`, onload, "POST", false)
-}
-window.deleteDriveFile = deleteDriveFile
-
-
-if (!global.driveSelection) global.driveSelection = []
-
-function toggleDriveSelection(type, id, event) {
+function runDriveMenuItem(event, index) {
+    event.preventDefault()
     event.stopPropagation()
+    const item = global.driveMenu?.items[index]
+    closeDriveContextMenu()
+    item?.action()
+}
+window.runDriveMenuItem = runDriveMenuItem
+window.openDriveMenu = openDriveMenu
 
-    const entry = { type, id }
-    const idx = global.driveSelection.findIndex(s => s.type === type && s.id === id)
+function driveItemActions(type, id) {
+    const item = findDriveItem(type, id)
+    if (!item) return []
+    const manage = canManageDriveItem(type, item)
+    const items = [{label: _t('Open'), icon: type === 'folder' ? 'folder' : 'file', action: () => openDriveItem(type, id)}]
+    if (type === 'file') {
+        items.push({label: _t('Download'), icon: 'download', action: () => downloadDriveFile(id)})
+        if (isPhotonEditable(item.filename)) {
+            items.push({label: _t('Edit in Photon'), icon: 'edit', action: () => editInPhoton(id, item.filename)})
+        }
+    }
+    if (manage) items.push({label: _t('Rename'), icon: 'edit', action: () => renameDriveItem(type, id)})
+    if (canUploadToDrive()) items.push({label: _t('Move to…'), icon: 'move', action: () => openDriveMoveDialog([{type, id}])})
+    items.push({label: _t('Copy link'), icon: 'link', action: () => copyDriveLinks([{type, id}])})
+    items.push({label: _t('Details'), icon: 'info', action: () => showDriveDetails(type, id)})
+    if (manage) items.push({label: _t('Delete'), icon: 'trash', danger: true, action: () => deleteDriveItems([{type, id}])})
+    return items
+}
 
-    if (event.ctrlKey || event.metaKey) {
-        // Toggle individual item
-        if (idx !== -1) {
-            global.driveSelection.splice(idx, 1)
-        } else {
-            global.driveSelection.push(entry)
+// Right-click or ⋮ on an item: it becomes the selection unless already part of it.
+function openDriveItemMenu(event, type, id) {
+    // On mobile a long press selects (onDriveTouchStart): no menu on contextmenu,
+    // and the ⋮ menu doesn't start a selection.
+    if (global.state.isMobile && event.type === 'contextmenu') { event.preventDefault(); return }
+    if (!global.state.isMobile && !isDriveSelected(type, id)) {
+        global.driveSelection = [{type, id}]
+        selectionAnchor = {type, id}
+        refreshDriveSelectionUI()
+    }
+    openDriveMenu(event, driveItemActions(type, id))
+}
+window.openDriveItemMenu = openDriveItemMenu
+// Older templates (mobile bundle) call this name.
+window.openDriveContextMenu = openDriveItemMenu
+
+function driveNewItems() {
+    return [
+        {label: _t('New folder'), icon: 'folder', action: createNewDriveFolder},
+        {label: _t('Upload files'), icon: 'file', action: uploadDriveFile},
+        {label: _t('Upload a folder'), icon: 'groupadd', action: uploadDriveFolder},
+    ]
+}
+
+function openDriveNewMenu(event) {
+    openDriveMenu(event, driveNewItems())
+}
+window.openDriveNewMenu = openDriveNewMenu
+
+// ▾ on the current folder (last breadcrumb).
+function openDriveFolderMenu(event) {
+    const drive = global.drive
+    const items = canUploadToDrive() ? driveNewItems() : []
+    const current = drive.folder ? findCurrentFolderRow() : null
+    if (drive.folder) {
+        items.push({label: _t('Copy link'), icon: 'link', action: () => copyDriveLinks([{type: 'folder', id: drive.folder}])})
+        if (current && canManageDriveItem('folder', current)) {
+            items.push({label: _t('Rename'), icon: 'edit', action: () => renameDriveItem('folder', drive.folder, current.foldername)})
         }
     } else {
-        // Replace selection
-        if (idx !== -1 && global.driveSelection.length === 1) {
-            global.driveSelection = []
-        } else {
-            global.driveSelection = [entry]
-        }
+        items.push({label: _t('Copy link'), icon: 'link', action: () => copyDriveLinks([{type: 'drive', id: drive.id}])})
     }
+    openDriveMenu(event, items)
+}
+window.openDriveFolderMenu = openDriveFolderMenu
+
+// The current folder's own row isn't in the listing; rename needs its creator.
+function findCurrentFolderRow() {
+    const drive = global.drive
+    return {id: drive.folder, foldername: drive.path[drive.path.length - 1]?.name, creator: drive.folderCreator}
+}
+
+function openDriveHiddenCrumbs(event) {
+    openDriveMenu(event, (window._driveHiddenCrumbs || []).map(c => ({
+        label: c.name, icon: 'folder', action: () => openDriveFolder(c.id),
+    })))
+}
+window.openDriveHiddenCrumbs = openDriveHiddenCrumbs
+
+// ── Selection ─────────────────────────────────────────────────────────────────
+
+export function isDriveSelected(type, id) {
+    return global.driveSelection.some(s => s.type === type && Number(s.id) === Number(id))
+}
+
+function applyDriveSelectionClasses() {
+    document.querySelectorAll('.drive-item.drive-selected').forEach(el => el.classList.remove('drive-selected'))
+    for (const s of global.driveSelection) {
+        document.querySelectorAll(`.drive-${s.type}-item[data-${s.type}-id="${s.id}"]`)
+            .forEach(el => el.classList.add('drive-selected'))
+    }
+}
+
+export function refreshDriveSelectionUI() {
+    applyDriveSelectionClasses()
+    paintDrive('toolbar')
+    paintDrive('details')
+}
+
+function toggleDriveItem(type, id) {
+    global.driveSelection = isDriveSelected(type, id)
+        ? global.driveSelection.filter(s => !(s.type === type && Number(s.id) === Number(id)))
+        : [...global.driveSelection, {type, id}]
+    selectionAnchor = {type, id}
     refreshDriveSelectionUI()
 }
-window.toggleDriveSelection = toggleDriveSelection
+
+/**
+ * Click: select; Ctrl/Cmd: toggle; Shift: range. On touch screens a tap opens,
+ * a long press starts a selection, then taps add/remove items.
+ */
+function onDriveItemClick(event, type, id) {
+    event.stopPropagation()
+    if (longPressed) { longPressed = false; return }   // the click ending a long press
+    if (global.state.isMobile) {
+        if (global.driveSelection.length) toggleDriveItem(type, id)
+        else openDriveItem(type, id)
+        return
+    }
+    const entry = {type, id}
+    if (event.shiftKey && selectionAnchor) {
+        const order = orderedDriveItems()
+        const key = (s) => order.findIndex(o => o.type === s.type && Number(o.id) === Number(s.id))
+        const [from, to] = [key(selectionAnchor), key(entry)].sort((a, b) => a - b)
+        if (from >= 0) {
+            global.driveSelection = order.slice(from, to + 1)
+            refreshDriveSelectionUI()
+            return
+        }
+    }
+    if (event.ctrlKey || event.metaKey) return toggleDriveItem(type, id)
+    global.driveSelection = [entry]
+    selectionAnchor = entry
+    refreshDriveSelectionUI()
+}
+window.onDriveItemClick = onDriveItemClick
+
+let pressTimer = null
+let longPressed = false
+
+// Long press (touch) on an item: select it (#drive-files-list ontouchstart).
+function onDriveTouchStart(event) {
+    clearTimeout(pressTimer)
+    longPressed = false
+    const el = event.target.closest('.drive-item')
+    if (!el || event.target.closest('.drive-more')) return
+    const type = el.classList.contains('drive-folder-item') ? 'folder' : 'file'
+    const id = Number(el.dataset[type + 'Id'])
+    pressTimer = setTimeout(() => {
+        longPressed = true
+        navigator.vibrate?.(30)
+        toggleDriveItem(type, id)
+    }, 500)
+}
+window.onDriveTouchStart = onDriveTouchStart
+
+function onDriveTouchEnd() {
+    clearTimeout(pressTimer)
+}
+window.onDriveTouchEnd = onDriveTouchEnd
 
 function clearDriveSelection() {
     global.driveSelection = []
+    selectionAnchor = null
     refreshDriveSelectionUI()
 }
 window.clearDriveSelection = clearDriveSelection
 
-function refreshDriveSelectionUI() {
-    document.querySelectorAll('.drive-file-item, .drive-folder-item').forEach(el => {
-        el.classList.remove('drive-selected')
-    })
-    for (const s of global.driveSelection) {
-        const selector = s.type === 'file'
-            ? `.drive-file-item[data-file-id="${s.id}"]`
-            : `.drive-folder-item[data-folder-id="${s.id}"]`
-        const el = document.querySelector(selector)
-        if (el) el.classList.add('drive-selected')
-    }
+// ── Actions ───────────────────────────────────────────────────────────────────
+
+function openDriveItem(type, id) {
+    if (type === 'folder') openDriveFolder(id)
+    else openDriveFile(id)
 }
+window.openDriveItem = openDriveItem
 
-function isDriveSelected(type, id) {
-    return global.driveSelection.some(s => s.type === type && s.id === id)
+async function createNewDriveFolder() {
+    const drive = global.drive
+    const foldername = await uiPrompt(_t("Enter folder name:"), {title: _t('New folder'), confirmLabel: _t('Create'), required: true, maxLength: 255})
+    if (!foldername || global.drive !== drive) return
+
+    const url = `create_drive_folder?drive_id=${drive.id}&foldername=${encodeURIComponent(foldername)}`
+        + (drive.folder ? `&parent_folder=${drive.folder}` : '')
+    xhr(url, function () {
+        if (this.status >= 400) uiAlert(_t('Invalid name'))
+        reloadDrive()
+    }, "POST")
 }
+window.createNewDriveFolder = createNewDriveFolder
 
-function onDriveItemDrag(event, type, id) {
-    // Moving files/folders is a write, like uploads (driveManager _get_drive_write_access)
-    if (!canUploadToDrive()) return event.preventDefault()
-    // If the dragged item is not in the selection, replace selection with it
-    if (!isDriveSelected(type, id)) {
-        global.driveSelection = [{ type, id }]
-        refreshDriveSelectionUI()
-    }
-
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('application/x-drive-move', JSON.stringify(global.driveSelection))
-
-    // Set drag image hint for multi-select
-    if (global.driveSelection.length > 1) {
-        const badge = document.createElement('div')
-        badge.className = 'drive-drag-badge'
-        badge.textContent = global.driveSelection.length + ' items'
-        document.body.appendChild(badge)
-        event.dataTransfer.setDragImage(badge, 0, 0)
-        setTimeout(() => badge.remove(), 0)
-    }
+async function renameDriveItem(type, id, currentName) {
+    currentName = currentName ?? driveItemName(findDriveItem(type, id) || {}) ?? ''
+    const name = await uiPrompt(_t('New name:'), {title: _t('Rename'), value: currentName, confirmLabel: _t('Rename'), required: true, maxLength: 255})
+    if (!name || name === currentName) return
+    xhr(`rename_drive_item?item_type=${type}&item_id=${id}&name=${encodeURIComponent(name)}`, function () {
+        if (this.status >= 400) uiAlert(_t('Invalid name'))
+        reloadDrive()
+    }, "POST")
 }
-window.onDriveItemDrag = onDriveItemDrag
+window.renameDriveItem = renameDriveItem
 
-function onDriveFolderDragOver(event) {
-    const external = isExternalFileDrag(event)
-    const internal = event.dataTransfer.types.includes('application/x-drive-move')
-    if (!external && !internal) return
+async function deleteDriveItems(items) {
+    items = [...items]
+    if (!items.length) return
+    const question = items.length === 1
+        ? (items[0].type === 'folder' ? _t('Are you sure you want to delete this folder and all its contents?') : _t('Are you sure you want to delete this file?'))
+        : _t('Delete the selected items?') + ` (${items.length})`
+    if (!(await uiConfirm(question, {danger: true, confirmLabel: _t('Delete')}))) return
 
-    event.preventDefault()
-    event.stopPropagation()  // don't also trigger the list-level upload highlight
-    event.dataTransfer.dropEffect = external ? 'copy' : 'move'
-
-    event.currentTarget.classList.add('drive-drop-target')
-}
-window.onDriveFolderDragOver = onDriveFolderDragOver
-
-function onDriveFolderDragLeave(event) {
-    const folderEl = event.currentTarget
-    // Only remove if actually leaving (not entering a child)
-    if (!folderEl.contains(event.relatedTarget)) {
-        folderEl.classList.remove('drive-drop-target')
-    }
-}
-window.onDriveFolderDragLeave = onDriveFolderDragLeave
-
-function isDescendantFolder(folderId, targetFolderId) {
-    // Check locally if targetFolderId is a descendant of folderId
-    // by traversing the current driveCurrentFolder stack and known folders
-    const drive_id = global.state.activeChan.id
-
-    // The backend also validates, this is just for UX
-    if (parseInt(folderId) === parseInt(targetFolderId)) return true
-
-    // Check the folder navigation stack — if target is in the current path
-    const stack = global.driveCurrentFolder[drive_id] || []
-    for (const entry of stack) {
-        if (parseInt(entry.id) === parseInt(folderId)) {
-            // folderId is an ancestor of the current view,
-            // and targetFolderId is a child displayed here = it's a descendant
-            return true
-        }
-    }
-
-    return false
-}
-
-async function onDriveFolderDrop(event, targetFolderId) {
-    const external = isExternalFileDrag(event)
-    event.preventDefault()
-    event.stopPropagation()
-    event.currentTarget.classList.remove('drive-drop-target')
-
-    // OS files dropped onto a folder tile → upload into that folder.
-    if (external) {
-        if (!canUploadToDrive()) return
-        const drive_id = global.state.activeChan.id
-        await uploadDroppedItems(event.dataTransfer, drive_id, targetFolderId)
-        loadDriveContent(drive_id, getCurrentDriveFolder())
-        return
-    }
-
-    const raw = event.dataTransfer.getData('application/x-drive-move')
-    if (!raw) return
-
-    const items = JSON.parse(raw)
-    if (!items || items.length === 0) return
-
-    // Filter out the target folder itself and its ancestors (prevent recursion)
-    const validItems = items.filter(item => {
-        if (item.type === 'folder' && isDescendantFolder(item.id, targetFolderId)) return false
-        return true
-    })
-
-    if (validItems.length === 0) return
-
-    moveDriveItems(validItems, targetFolderId)
-}
-window.onDriveFolderDrop = onDriveFolderDrop
-
-function onDriveRootDragOver(event) {
-    const data = event.dataTransfer.types.includes('application/x-drive-move')
-    if (!data) return
-
-    // Don't highlight if we're already at root and not inside a subfolder drop target
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-    event.currentTarget.classList.add('drive-drop-target')
-}
-window.onDriveRootDragOver = onDriveRootDragOver
-
-function onDriveRootDragLeave(event) {
-    if (!event.currentTarget.contains(event.relatedTarget)) {
-        event.currentTarget.classList.remove('drive-drop-target')
-    }
-}
-window.onDriveRootDragLeave = onDriveRootDragLeave
-
-function onDriveRootDrop(event) {
-    event.preventDefault()
-    event.stopPropagation()
-    event.currentTarget.classList.remove('drive-drop-target')
-
-    const raw = event.dataTransfer.getData('application/x-drive-move')
-    if (!raw) return
-
-    const items = JSON.parse(raw)
-    if (!items || items.length === 0) return
-
-    // Moving to root (null parent_folder)
-    moveDriveItems(items, null)
-}
-window.onDriveRootDrop = onDriveRootDrop
-
-function onDriveBreadcrumbDrop(event, targetFolderId) {
-    event.preventDefault()
-    event.stopPropagation()
-    event.currentTarget.classList.remove('drive-drop-target')
-
-    const raw = event.dataTransfer.getData('application/x-drive-move')
-    if (!raw) return
-
-    const items = JSON.parse(raw)
-    if (!items || items.length === 0) return
-
-    const validItems = items.filter(item => {
-        if (item.type === 'folder' && targetFolderId && isDescendantFolder(item.id, targetFolderId)) return false
-        return true
-    })
-
-    if (validItems.length === 0) return
-
-    moveDriveItems(validItems, targetFolderId)
-}
-window.onDriveBreadcrumbDrop = onDriveBreadcrumbDrop
-
-function moveDriveItems(items, targetFolder) {
-    const drive_id = global.state.activeChan.id
-    const parent_folder = getCurrentDriveFolder()
-
-    const onload = function() {
-        const resp = JSON.parse(this.responseText)
-        if (resp.errors && resp.errors.length > 0) {
-            console.warn("Move errors:", resp.errors)
-        }
-        // Reload current view
-        loadDriveContent(drive_id, parent_folder)
-        global.driveSelection = []
-    }
-
-    xhr(`move_drive_items?items=${encodeURIComponent(JSON.stringify(items))}&target_folder=${targetFolder || ''}`, onload, "POST", false)
-}
-window.moveDriveItems = moveDriveItems
-
-
-// Files handed off to the external Photon editor on double-click.
-// Override in dev/staging via window.PHOTON_ORIGIN before this module loads.
-const PHOTON_ORIGIN = window.PHOTON_ORIGIN || 'https://photo.carbonlab.dev'
-const PHOTON_EDITOR_URL = `${PHOTON_ORIGIN}/edit`
-// Native Photon project formats — these open straight in Photon on double-click.
-const PHOTON_PROJECT_EXTENSIONS = ['pto', 'psd']
-// Raster images Photon can open as a layer (svg/ico left out — vector/icon).
-const PHOTON_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'avif']
-
-function isPhotonEditable(filename) {
-    const ext = getFileExtension(filename)
-    return PHOTON_PROJECT_EXTENSIONS.includes(ext) || PHOTON_IMAGE_EXTENSIONS.includes(ext)
-}
-window.isPhotonEditable = isPhotonEditable
-
-// Resolve a drive item's name from loaded state by id. Names are looked up here
-// rather than passed through inline HTML attributes, so names containing quotes
-// (e.g. "folder's images") can't break the onclick/oncontextmenu handlers.
-function findDriveFile(file_id) {
-    return (global.driveFiles[global.state.activeChan.id] || []).find(f => f.id === file_id)
-}
-function findDriveFolder(folder_id) {
-    return (global.driveFolders[global.state.activeChan.id] || []).find(f => f.id === folder_id)
-}
-
-// Open a drive file in the Photon editor (new tab), passing a download URL +
-// file_id so Photon can fetch it and later save the edits back.
-function editInPhoton(file_id, filename) {
-    const src = encodeURIComponent(`${location.origin}/download_drive_file?file_id=${file_id}`)
-    const name = encodeURIComponent(filename)
-    window.open(`${PHOTON_EDITOR_URL}?open=${src}&file_id=${file_id}&name=${name}`, '_blank')
-}
-window.editInPhoton = editInPhoton
-
-// Double-click: native project files (.pto/.psd) open straight in Photon;
-// everything else downloads. Images are edited via the right-click menu.
-function openDriveFile(file_id) {
-    const filename = findDriveFile(file_id)?.filename || ''
-    if (PHOTON_PROJECT_EXTENSIONS.includes(getFileExtension(filename))) {
-        editInPhoton(file_id, filename)
-        return
-    }
-    downloadDriveFile(file_id, filename)
-}
-window.openDriveFile = openDriveFile
-
-// ── Right-click context menu on drive files ───────────────────────────────────
-function closeDriveContextMenu() {
-    if (global._driveCtxEl) { global._driveCtxEl.remove(); global._driveCtxEl = null }
-    if (global._driveCtxClose) {
-        document.removeEventListener('click', global._driveCtxClose)
-        document.removeEventListener('contextmenu', global._driveCtxClose)
-        global._driveCtxClose = null
-    }
-}
-window.closeDriveContextMenu = closeDriveContextMenu
-
-function openDriveContextMenu(event, type, id) {
-    event.preventDefault()
-    event.stopPropagation()
-    closeDriveContextMenu()
-
-    const items = []
-    if (type === 'folder') {
-        items.push({ label: _t('Open'), icon: 'folder', action: () => openDriveFolder(id) })
-        items.push({ label: _t('Delete'), icon: 'trash', danger: true, action: () => deleteDriveFolder(id) })
-    } else {
-        const name = findDriveFile(id)?.filename || ''
-        if (isPhotonEditable(name)) {
-            items.push({ label: _t('Edit in Photon'), icon: 'edit', action: () => editInPhoton(id, name) })
-        }
-        items.push({ label: _t('Download'), icon: 'download', action: () => downloadDriveFile(id, name) })
-        items.push({ label: _t('Delete'), icon: 'trash', danger: true, action: () => deleteDriveFile(id) })
-    }
-
-    const menu = document.createElement('div')
-    menu.className = 'drive-context-menu'
+    let left = items.length
     for (const item of items) {
-        const btn = document.createElement('button')
-        btn.type = 'button'
-        btn.className = 'drive-context-item' + (item.danger ? ' danger' : '')
-        btn.innerHTML = `<img class="icon" src="/static/icons/material/${item.icon}.svg"/><span>${item.label}</span>`
-        btn.onclick = (e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            closeDriveContextMenu()
-            item.action()
-        }
-        menu.appendChild(btn)
+        const url = item.type === 'folder' ? `delete_drive_folder?folder_id=${item.id}` : `delete_drive_file?file_id=${item.id}`
+        xhr(url, () => { if (--left === 0) { global.driveSelection = []; reloadDrive() } }, "POST")
     }
-
-    menu.style.position = 'fixed'
-    menu.style.left = event.clientX + 'px'
-    menu.style.top = event.clientY + 'px'
-    document.body.appendChild(menu)
-
-    // Keep the menu inside the viewport.
-    const rect = menu.getBoundingClientRect()
-    if (rect.right > window.innerWidth) menu.style.left = Math.max(8, window.innerWidth - rect.width - 8) + 'px'
-    if (rect.bottom > window.innerHeight) menu.style.top = Math.max(8, window.innerHeight - rect.height - 8) + 'px'
-
-    global._driveCtxEl = menu
-    global._driveCtxClose = (e) => { if (!menu.contains(e.target)) closeDriveContextMenu() }
-    setTimeout(() => {
-        document.addEventListener('click', global._driveCtxClose)
-        document.addEventListener('contextmenu', global._driveCtxClose)
-    }, 0)
 }
-window.openDriveContextMenu = openDriveContextMenu
+window.deleteDriveItems = deleteDriveItems
 
-// Photon posts back here after saving an edited file to the drive — refresh the
-// current listing so the new/updated file shows immediately.
-if (!window._myceliumDriveSaveListener) {
-    window._myceliumDriveSaveListener = true
-    window.addEventListener('message', (event) => {
-        if (event.origin !== PHOTON_ORIGIN) return
-        if (event.data?.type !== 'mycelium-drive-file-saved') return
-        if (!global.state.activeChan || global.state.activeChan.type !== 'drive') return
-        loadDriveContent(global.state.activeChan.id, getCurrentDriveFolder())
+// Kept for older templates (mobile bundle).
+window.deleteDriveFile = (id) => deleteDriveItems([{type: 'file', id}])
+window.deleteDriveFolder = (id) => deleteDriveItems([{type: 'folder', id}])
+
+function downloadDriveSelection() {
+    for (const s of global.driveSelection) {
+        if (s.type === 'file') downloadDriveFile(s.id)
+    }
+}
+window.downloadDriveSelection = downloadDriveSelection
+
+// A drive link is a channel mention (static/drive-links.mjs): "<#drive:12>",
+// "<#drive:12/d:folder>" or "<#drive:12/f:file>". Pasted in a message, a forum post or
+// a note, it renders as a clickable chip.
+export function driveLinkToken(item) {
+    const drive = global.drive.id
+    if (item.type === 'drive') return `<#drive:${drive}>`
+    return `<#drive:${drive}/${item.type === 'folder' ? 'd' : 'f'}:${item.id}>`
+}
+window.driveLinkToken = driveLinkToken
+
+function copyDriveLinks(items) {
+    const text = items.map(driveLinkToken).join(' ')
+    const done = () => driveToast(items.length > 1 ? _t('Links copied') : _t('Link copied'))
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopyText(text, done))
+    } else {
+        fallbackCopyText(text, done)
+    }
+}
+window.copyDriveLinks = copyDriveLinks
+
+function fallbackCopyText(text, done) {
+    const area = document.createElement('textarea')
+    area.value = text
+    document.body.appendChild(area)
+    area.select()
+    try { document.execCommand('copy'); done() } catch (e) {}
+    area.remove()
+}
+
+function driveToast(message) {
+    document.querySelector('.drive-toast')?.remove()
+    const toast = document.createElement('div')
+    toast.className = 'drive-toast'
+    toast.setAttribute('role', 'status')
+    toast.textContent = message
+    document.body.appendChild(toast)
+    setTimeout(() => toast.remove(), 2000)
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+
+if (!window._myceliumDriveKeys) {
+    window._myceliumDriveKeys = true
+    // A click (or right-click) outside the open menu closes it.
+    const closeOutside = (event) => {
+        if (global.driveMenu && !event.target.closest?.('.drive-context-menu')) closeDriveContextMenu()
+    }
+    document.addEventListener('click', closeOutside)
+    document.addEventListener('contextmenu', closeOutside)
+    document.addEventListener('keydown', (event) => {
+        if (global.state?.activeChan?.type !== 'drive') return
+
+        if (global.driveViewer != null) return   // drive-viewer.mjs has its own keys
+        if (global.driveMove || global.driveMenu) {
+            if (event.key === 'Escape') { closeDriveMoveDialog(); closeDriveContextMenu() }
+            return
+        }
+        if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+
+        const sel = global.driveSelection
+        const single = sel.length === 1 ? sel[0] : null
+        if (event.key === 'Escape' && sel.length) clearDriveSelection()
+        else if (event.key === 'Enter' && single) openDriveItem(single.type, single.id)
+        else if (event.key === 'Delete' && sel.length) {
+            if (sel.every(s => canManageDriveItem(s.type, findDriveItem(s.type, s.id)))) deleteDriveItems(sel)
+        }
+        else if (event.key === 'F2' && single && canManageDriveItem(single.type, findDriveItem(single.type, single.id))) renameDriveItem(single.type, single.id)
+        else if (event.key === 'Backspace' && global.drive.folder) openDriveFolder(global.drive.path[global.drive.path.length - 2]?.id ?? null)
+        else if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
+            global.driveSelection = orderedDriveItems()
+            refreshDriveSelectionUI()
+        }
+        else if ((event.ctrlKey || event.metaKey) && event.key === 'c' && sel.length) copyDriveLinks(sel)
+        else return
+        event.preventDefault()
     })
 }
-
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']
-const TEXT_EXTENSIONS = [
-    'txt', 'md', 'csv', 'json', 'js', 'mjs', 'ts', 'py', 'html', 'htm',
-    'css', 'xml', 'log', 'yml', 'yaml', 'ini', 'toml', 'sh', 'bat',
-    'c', 'cpp', 'h', 'java', 'rs', 'go', 'rb', 'php', 'sql', 'r',
-    'swift', 'kt', 'lua', 'pl', 'conf', 'cfg', 'env', 'gitignore',
-    'dockerfile', 'makefile'
-]
-const VIDEO_EXTENSIONS = ['mp4', 'webm', 'ogg', 'mov']
-const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus']
-
-function getFileExtension(filename) {
-    if (!filename) return ''
-    const parts = filename.split('.')
-    return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
-}
-
-function getFilePreviewType(filename) {
-    const ext = getFileExtension(filename)
-    if (IMAGE_EXTENSIONS.includes(ext)) return 'image'
-    if (TEXT_EXTENSIONS.includes(ext)) return 'text'
-    if (VIDEO_EXTENSIONS.includes(ext)) return 'video'
-    if (AUDIO_EXTENSIONS.includes(ext)) return 'audio'
-    if (ext === 'pdf') return 'pdf'
-    return 'generic'
-}
-window.getFilePreviewType = getFilePreviewType
-
-function getDriveFilePreviewHtml(element) {
-    const type = getFilePreviewType(element.filename)
-    const ext = getFileExtension(element.filename).toUpperCase()
-    const safeFilename = (element.filename || '').replace(/"/g, '&quot;').replace(/</g, '&lt;')
-
-    switch (type) {
-        case 'image':
-            return `<div class="drive-file-preview drive-preview-image">
-                <img src="/static/attachments/${element.filepath}" alt="${safeFilename}" loading="lazy"/>
-            </div>`
-
-        case 'text':
-            return `<div class="drive-file-preview drive-preview-text" data-preview-type="text" data-file-id="${element.id}">
-                <pre class="drive-text-content"><span class="drive-preview-loading">...</span></pre>
-            </div>`
-
-        case 'video':
-            return `<div class="drive-file-preview drive-preview-video">
-                <video src="/static/attachments/${element.filepath}" preload="metadata" muted></video>
-            </div>`
-
-        case 'audio':
-            return `<div class="drive-file-preview drive-preview-audio">
-                <img class="icon" src="/static/icons/material/headset.svg" alt="audio"/>
-                <span class="drive-preview-label">${ext}</span>
-            </div>`
-
-        case 'pdf':
-            return `<div class="drive-file-preview drive-preview-pdf">
-                <embed src="/static/attachments/${element.filepath}#toolbar=0&navpanes=0&scrollbar=0" type="application/pdf" style="pointer-events:none;"/>
-            </div>`
-
-        default:
-            return `<div class="drive-file-preview drive-preview-generic">
-                <img class="icon" src="/static/icons/material/file.svg" alt="file"/>
-                <span class="drive-preview-label">${ext || '?'}</span>
-            </div>`
-    }
-}
-window.getDriveFilePreviewHtml = getDriveFilePreviewHtml
-
-function loadDrivePreviews() {
-    const textPreviews = document.querySelectorAll('.drive-file-preview[data-preview-type="text"]:not([data-loaded])')
-    for (const el of textPreviews) {
-        const fileId = el.dataset.fileId
-        if (!fileId) continue
-
-        el.setAttribute('data-loaded', 'true')
-
-        fetch(`/preview_drive_file?file_id=${fileId}`)
-            .then(resp => {
-                if (!resp.ok) throw new Error('Preview failed')
-                return resp.text()
-            })
-            .then(text => {
-                const pre = el.querySelector('pre')
-                if (pre) {
-                    pre.textContent = text
-                }
-            })
-            .catch(() => {
-                const pre = el.querySelector('pre')
-                if (pre) pre.textContent = ''
-            })
-    }
-}
-window.loadDrivePreviews = loadDrivePreviews
-
-function formatFileSize(bytes) {
-    if (!bytes || bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
-}
-window.formatFileSize = formatFileSize
-
-function formatDate(dateString) {
-    if (!dateString) return 'Unknown'
-    const date = new Date(dateString)
-    const now = new Date()
-    const diff = now - date
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-    if (days === 0) return 'Today'
-    if (days === 1) return 'Yesterday'
-    if (days < 7) return `${days} days ago`
-
-    return date.toLocaleDateString()
-}
-window.formatDate = formatDate

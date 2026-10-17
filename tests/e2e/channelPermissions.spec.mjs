@@ -427,13 +427,12 @@ test.describe('Channel permissions', () => {
         await expect(b.page.locator('#forum-lock-btn')).toBeVisible();
         await expect(b.page.locator('#forum-delete-btn')).toBeVisible();
 
-        // Drive: no upload / new folder while send-messages is denied
+        // Drive: no "New" (upload / new folder) while send-messages is denied
         await b.page.locator(`#channel-drive-${drive}`).click();
-        for (const btn of ['#drive-upload-btn', '#drive-upload-folder-btn', '#drive-new-folder-btn']) {
-            await expect(b.page.locator(btn)).toBeHidden();
-        }
+        await expect(b.page.locator('.drive-toolbar')).toBeVisible();
+        await expect(b.page.locator('#drive-new-btn')).toBeHidden();
         await setPerm(s.owner, drive, 'roleId=everyone', 'send-messages', 'inherit', 'drive');
-        await expect(b.page.locator('#drive-upload-btn')).toBeVisible();
+        await expect(b.page.locator('#drive-new-btn')).toBeVisible();
 
         // Notes: @everyone has no edit-notes → read-only; editable once B is allowed
         await b.page.locator(`#channel-note-${notes}`).click();

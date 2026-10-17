@@ -10,6 +10,7 @@ import {
     getMessageIdByBody,
     reloadAndWaitForApp,
 } from './helpers/messagingHelpers.mjs';
+import { acceptDialog } from './helpers/dialogHelpers.mjs';
 
 const TEST_TIMEOUT = 90000;
 
@@ -57,7 +58,6 @@ test.describe('Forum channels - E2E', () => {
 
     test('Composer: post with an image and a tag, reply, pin, lock and delete', async ({ page }) => {
         const suffix = Date.now();
-        page.on('dialog', (d) => d.accept());
         const { forumId } = await setupForum(page, `e2e_forum_${suffix}`);
         await expect(page.locator(`#channel-forum-${forumId}`)).toBeVisible({ timeout: 10000 });
         const tagId = await addTag(page, forumId, `Tag${suffix}`);
@@ -136,6 +136,7 @@ test.describe('Forum channels - E2E', () => {
         // Delete (with confirmation): back to an empty forum, gone server-side
         await page.evaluate((id) => window.goToForumPost(id), postId);
         await page.locator('.forum-header-actions img[src*="trash"]').click();
+        await acceptDialog(page);
         await expect(page.locator('.forum-empty')).toBeVisible({ timeout: 10000 });
         expect((await forumContent(page, forumId)).posts).toHaveLength(0);
     });
@@ -220,7 +221,6 @@ test.describe('Forum channels - E2E', () => {
 
     test('Forum settings (Overview): name, guidelines, tags, required tag, defaults', async ({ page }) => {
         const suffix = Date.now();
-        page.on('dialog', (d) => d.accept());
         const { forumId } = await setupForum(page, `e2e_forum_settings_${suffix}`);
         await openForum(page, forumId);
         await page.locator('.forum-header-actions img[src*="settings"]').click();
@@ -296,6 +296,7 @@ test.describe('Forum channels - E2E', () => {
         await page.locator('.forum-header-actions img[src*="settings"]').click();
         await page.locator('.forum-settings-tags .forum-tag-chip').click();
         await page.locator('.forum-dialog-delete').click();
+        await acceptDialog(page);
         await expect(page.locator('.forum-settings-tags')).toHaveCount(0);
         saved = await forumContent(page, forumId);
         expect(saved.available_tags).toEqual([]);
@@ -304,7 +305,6 @@ test.describe('Forum channels - E2E', () => {
 
     test('Channel settings act on the right channel (stale panel + forum delete)', async ({ page }) => {
         const suffix = Date.now();
-        page.on('dialog', (d) => d.accept());
         const { forumId } = await setupForum(page, `e2e_forum_chan_${suffix}`);
         const textId = await page.evaluate(() => Number(window.global.state.currentServer.dirs.channels[0].id));
 
@@ -325,6 +325,7 @@ test.describe('Forum channels - E2E', () => {
 
         // Deleting from there deletes the forum (it used to be sent as channel_type=textual → 403)
         await page.locator('#channels-params .item.crit').click();
+        await acceptDialog(page);
         await page.waitForFunction((id) =>
             !(window.global.state.currentServer.dirs.forums || []).some((c) => c.id == id), forumId, { timeout: 10000 });
         const status = await page.evaluate(async (id) => (await fetch('get_forum_content?channel_id=' + id)).status, forumId);
@@ -341,7 +342,6 @@ test.describe('Forum channels - E2E', () => {
         const memberCtx = await browser.newContext();
         const owner = await ownerCtx.newPage();
         const member = await memberCtx.newPage();
-        owner.on('dialog', (d) => d.accept());   // delMsg() confirm
 
         // Wait for each view to render: switching straight from the forum to the post
         // lets the forum template land last and hide the post.
@@ -410,6 +410,7 @@ test.describe('Forum channels - E2E', () => {
         const del = owner.locator(`#message-${replyId} [onclick="delMsg(${replyId})"]`);
         await expect(del).toHaveCount(1);
         await del.dispatchEvent('click');
+        await acceptDialog(owner);   // delMsg() confirm
 
         // The member sees it disappear via the message_deleted WS notif
         await member.waitForFunction(({ postId, replyId }) =>

@@ -1,29 +1,13 @@
-<div class="drive-file-item" data-file-id="${element.id}"
+<div class="drive-file-item drive-item" data-file-id="${element.id}"
      draggable="true"
      ondragstart="onDriveItemDrag(event, 'file', ${element.id})"
      ondblclick="openDriveFile(${element.id})"
-     oncontextmenu="openDriveContextMenu(event, 'file', ${element.id})"
-     onclick="toggleDriveSelection('file', ${element.id}, event)">
-    <div class="file-name">${element.filename}</div>
-    ${getDriveFilePreviewHtml(element)}
-    <div class="file-bottom">
-        <div class="file-meta">
-            <span>${formatFileSize(element.size)}</span>
-            <span> • </span>
-            <span>${element.uploader_name || 'Unknown'}</span>
-            <span> • </span>
-            <span>${formatDate(element.uploaded_at)}</span>
-        </div>
-        <div class="file-actions">
-            <div class="icon-wrapper" onclick="event.stopPropagation(); downloadDriveFile(${element.id})">
-                <img class="icon" src="/static/icons/material/download.svg"/>
-                <span class="tooltip bottom">${_t("Download")}</span>
-            </div>
-            <div class="icon-wrapper" onclick="event.stopPropagation(); deleteDriveFile(${element.id})">
-                <img class="icon" src="/static/icons/material/trash.svg"/>
-                <span class="tooltip bottom">${_t("Delete")}</span>
-            </div>
-        </div>
+     oncontextmenu="openDriveItemMenu(event, 'file', ${element.id})"
+     onclick="onDriveItemClick(event, 'file', ${element.id})">
+    <div class="drive-card-head">
+        ${driveKindBadge(element.filename)}
+        <span class="drive-item-name" title="${escapeHTML(element.filename)}">${escapeHTML(element.filename)}</span>
+        <button type="button" class="drive-more" aria-label="${_t('Actions')}" onclick="openDriveItemMenu(event, 'file', ${element.id})"><img class="icon" src="/static/icons/material/more.svg" alt=""/></button>
     </div>
+    ${getDriveFilePreviewHtml(element)}
 </div>
-

@@ -405,6 +405,10 @@ export async function onMessage(event) {
                 case "server_permissions_changed":
                     window.onServerPermissionsChanged?.(message.content.content.server_id);
                     break;
+                // Drive content changed (driveManager.notify_changed, servers/drive.mjs)
+                case "drive_changed":
+                    window.onDriveChanged?.(message.content.content);
+                    break;
                 case "server_removed":
                     window.onRemovedFromServer?.(message.content.content);
                     break;

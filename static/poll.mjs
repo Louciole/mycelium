@@ -119,7 +119,7 @@ function votePoll(pollId, messageId) {
     const selectedIds = Array.from(checkboxes).map(cb => parseInt(cb.dataset.optionId))
 
     if (selectedIds.length === 0) {
-        alert(_t('Select at least one option'))
+        uiAlert(_t('Select at least one option'))
         return
     }
 

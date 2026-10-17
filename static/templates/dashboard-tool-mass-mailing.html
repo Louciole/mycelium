@@ -37,7 +37,7 @@
         const text = document.getElementById("mailing-text").value;
 
         if (!source || !subject || receivers.length === 0 || (!body && !text)) {
-            alert("Please fill all fields");
+            uiAlert("Please fill all fields");
             return;
         }
 
@@ -48,11 +48,11 @@
         request.setRequestHeader('Content-Type', 'application/json');
         request.onload = function() {
             console.log("request success", request.responseText);
-            alert("Emails sent successfully");
+            uiAlert("Emails sent successfully");
         }
         request.onerror = function() {
             console.log("request failed")
-            alert("Failed to send emails");
+            uiAlert("Failed to send emails");
         };
 
         request.send(JSON.stringify({

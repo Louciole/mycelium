@@ -55,7 +55,7 @@ export async function setupServer(browser, label, n) {
         const ctx = await browser.newContext();
         ctxs.push(ctx);
         const page = await ctx.newPage();
-        page.on('dialog', d => d.accept());
+        page.on('dialog', d => d.accept());   // native dialogs still left (drive); the app's own use dialogHelpers.mjs
         await loginUser(page, `e2e_${label}_${name}_${stamp}`);
         await waitForAppReady(page);
         return page;

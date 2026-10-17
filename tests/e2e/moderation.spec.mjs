@@ -3,6 +3,7 @@ import { loginUser } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import { createServerViaUi, openServerFromSidebarById, openServerSettings, expectServerLoadedWithDefaultChannel } from './helpers/serverHelpers.mjs';
 import { reloadAndWaitForApp } from './helpers/messagingHelpers.mjs';
+import { acceptDialog } from './helpers/dialogHelpers.mjs';
 
 const TEST_TIMEOUT = 120000;
 
@@ -45,21 +46,6 @@ const MOD_ACTION = {
     timeout: '.mod-action[onclick="modTimeout()"]',
 };
 const BANS_TAB = '#server-params .item[onclick*="openModerationSettings"]';
-
-// Auto-answer the confirm()/prompt()/alert() dialogs the moderation UI uses.
-function autoDialogs(page) {
-    page.on('dialog', async (d) => {
-        const msg = d.message();
-        if (d.type() === 'prompt') {
-            let val = 'e2e';
-            if (/minute/i.test(msg)) val = '10';
-            else if (/purge|purger/i.test(msg)) val = '0';
-            await d.accept(val);
-        } else {
-            await d.accept();
-        }
-    });
-}
 
 // Open a specific member's profile card (the member-list surface) and return the
 // #profileInfo locator, where the moderation actions render. All test users share
@@ -113,7 +99,6 @@ test.describe('Server moderation', () => {
         const memberCtx = await browser.newContext();
         const owner = await ownerCtx.newPage();
         const member = await memberCtx.newPage();
-        autoDialogs(owner);
 
         await loginUser(owner, `mod_owner_kick_${Date.now()}`);
         await waitForAppReady(owner);
@@ -132,6 +117,8 @@ test.describe('Server moderation', () => {
 
         const card = await openMemberCard(owner, memberId);
         await card.locator(MOD_ACTION.kick).click();
+        // One dialog: confirmation + optional reason
+        expect((await acceptDialog(owner, 'e2e')).kind).toBe('prompt');
 
         // Member is gone from the owner's live member list.
         await owner.waitForFunction((id) =>
@@ -146,7 +133,6 @@ test.describe('Server moderation', () => {
         const memberCtx = await browser.newContext();
         const owner = await ownerCtx.newPage();
         const member = await memberCtx.newPage();
-        autoDialogs(owner);
 
         await loginUser(owner, `mod_owner_ban_${Date.now()}`);
         await waitForAppReady(owner);
@@ -164,6 +150,8 @@ test.describe('Server moderation', () => {
 
         const card = await openMemberCard(owner, memberId);
         await card.locator(MOD_ACTION.ban).click();
+        await acceptDialog(owner, 'e2e');   // confirmation + reason
+        await acceptDialog(owner, '0');     // purge N days of messages
         await owner.waitForFunction((id) =>
             !window.global?.state?.currentServer?.members?.[id], memberId, { timeout: 10000 });
 
@@ -186,7 +174,6 @@ test.describe('Server moderation', () => {
         const memberCtx = await browser.newContext();
         const owner = await ownerCtx.newPage();
         const member = await memberCtx.newPage();
-        autoDialogs(owner);
 
         await loginUser(owner, `mod_owner_to_${Date.now()}`);
         await waitForAppReady(owner);
@@ -206,6 +193,8 @@ test.describe('Server moderation', () => {
 
         const card = await openMemberCard(owner, memberId);
         await card.locator(MOD_ACTION.timeout).click();
+        await acceptDialog(owner, '10');    // minutes
+        await acceptDialog(owner, 'e2e');   // reason
         // Wait for the timeout to register server-side.
         await owner.waitForTimeout(500);
 

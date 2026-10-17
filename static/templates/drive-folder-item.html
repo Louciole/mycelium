@@ -1,28 +1,13 @@
-<div class="drive-folder-item" data-folder-id="${element.id}"
+<div class="drive-folder-item drive-item" data-folder-id="${element.id}"
      draggable="true"
      ondragstart="onDriveItemDrag(event, 'folder', ${element.id})"
      ondragover="onDriveFolderDragOver(event)"
      ondragleave="onDriveFolderDragLeave(event)"
      ondrop="onDriveFolderDrop(event, ${element.id})"
      ondblclick="openDriveFolder(${element.id})"
-     oncontextmenu="openDriveContextMenu(event, 'folder', ${element.id})"
-     onclick="toggleDriveSelection('folder', ${element.id}, event)">
-    <div class="file-icon">
-        <img class="icon" src="/static/icons/material/folder.svg" alt="folder"/>
-    </div>
-    <div class="file-info">
-        <div class="file-name">${element.foldername}</div>
-        <div class="file-meta">
-            <span>${element.creator_name || 'Unknown'}</span>
-            <span> • </span>
-            <span>${formatDate(element.created_at)}</span>
-        </div>
-    </div>
-    <div class="file-actions">
-        <div class="icon-wrapper" onclick="event.stopPropagation(); deleteDriveFolder(${element.id})">
-            <img class="icon" src="/static/icons/material/trash.svg" alt="delete"/>
-            <span class="tooltip bottom">${_t("Delete")}</span>
-        </div>
-    </div>
+     oncontextmenu="openDriveItemMenu(event, 'folder', ${element.id})"
+     onclick="onDriveItemClick(event, 'folder', ${element.id})">
+    <img class="icon drive-folder-icon" src="/static/icons/material/folder.svg" alt=""/>
+    <span class="drive-item-name" title="${escapeHTML(element.foldername)}">${escapeHTML(element.foldername)}</span>
+    <button type="button" class="drive-more" aria-label="${_t('Actions')}" onclick="openDriveItemMenu(event, 'folder', ${element.id})"><img class="icon" src="/static/icons/material/more.svg" alt=""/></button>
 </div>
-

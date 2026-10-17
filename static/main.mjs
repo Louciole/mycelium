@@ -1,3 +1,4 @@
+import {} from "/static/dialogs.mjs"; // uiAlert / uiConfirm / uiPrompt (in-app alert(), confirm(), prompt())
 import {initNavigation, printWatermark, goTo} from "/static/framework/navigation.mjs"
 import {handleHashRoute} from "/static/navigation.mjs"
 import {initWebSockets} from "./framework/websockets.mjs";
@@ -123,8 +124,14 @@ export function postWS(){
     });
 
     window.addEventListener('cap:deepLinkChannel', (e) => {
-        const { serverId, channelId } = e.detail;
+        const { serverId, channelId, kind, itemId } = e.detail;
         if (!serverId || !channelId) return;
+        if ((kind === 'folder' || kind === 'file') && itemId) {
+            const route = `${serverId}/${channelId}/${kind}/${itemId}`;
+            handleHashRoute(route);
+            window.pushRoute?.(route);   // handleHashRoute never pushes
+            return;
+        }
         // Navigate to the server + channel
         const srv = Object.values(global.servers || {}).find(s => String(s.id) === String(serverId));
         if (srv) {
@@ -543,7 +550,7 @@ function Save(endpoint="change_profile"){
             if (endpoint === "edit_server_property") {
                 const req = xhr(endpoint + "?server_id=".concat(global.state.currentServer.id, "&property=", target, "&value=", encodeURIComponent(global.state["currentForm"][key].value)), undefined, "POST", false)
                 if (req.status === 200) setElement("global.state.currentServer.".concat(target), global.state["currentForm"][key].value)
-                else alert(_t("Impossible d'enregistrer ce changement."))
+                else uiAlert(_t("Impossible d'enregistrer ce changement."))
             }else if (endpoint === "editChannel" && key !== "name-input") {
                 // Other Overview fields each have their own saver (never fall through to the name)
                 const saver = CHANNEL_FIELD_SAVERS[key]
@@ -976,14 +983,15 @@ function getUserStatus(id, customOnly=false){
 window.getUserStatus = getUserStatus
 
 
-function deleteServer(){
-    if (confirm(_t('Voulez-vous vraiment supprimer votre serveur et tous ses contenus associés ? Cette action est irréversible.'))) {
+async function deleteServer(){
+    const serverId = global.state.currentServer.id
+    if (await uiConfirm(_t('Voulez-vous vraiment supprimer votre serveur et tous ses contenus associés ? Cette action est irréversible.'), {danger: true, confirmLabel: _t("Delete")})) {
 
         const onload = function() { // request successful
             console.log("server deleted")
             window.location.href = ("/channels")
         };
-        xhr("delete_server?server_id=".concat(global.state.currentServer.id), onload, "POST", true)
+        xhr("delete_server?server_id=".concat(serverId), onload, "POST", true)
 
     } else {
         console.log("ouf 😖")

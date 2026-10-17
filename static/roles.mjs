@@ -26,7 +26,7 @@ function api(path, onOk, onError) {
         try { body = JSON.parse(this.responseText) } catch (e) {}
         if (this.status === 200) onOk?.(body)
         else if (onError) onError(this.status, this.responseText)
-        else alert(saveErrorMessage(this.responseText))
+        else uiAlert(saveErrorMessage(this.responseText))
     }, "POST")
 }
 
@@ -84,10 +84,10 @@ function createRole() {
 }
 window.createRole = createRole
 
-function deleteRole(roleId) {
+async function deleteRole(roleId) {
     const role = serv().roles[roleId]
     if (!role) return
-    if (!confirm(_t("Supprimer le rôle « {name} » ? Ses membres le perdront. Cette action est irréversible.").replace("{name}", role.name))) return
+    if (!(await uiConfirm(_t("Supprimer le rôle « {name} » ? Ses membres le perdront. Cette action est irréversible.").replace("{name}", role.name), {danger: true, confirmLabel: _t("Delete")}))) return
     api(`edit_server_role?server_id=${sid()}&action=delete&targetId=${role.id}`, () => {
         for (const member of Object.values(serv().members || {})) {
             member.roles = (member.roles || []).filter(id => Number(id) !== Number(role.id))
@@ -127,7 +127,7 @@ window.openRoleMenu = openRoleMenu
 
 function copyRoleId(roleId) {
     // Clipboard can be refused (permissions, insecure context): show the id instead
-    const fallback = () => prompt(_t("Identifiant du rôle"), String(roleId))
+    const fallback = () => uiPrompt(_t("Identifiant du rôle"), {value: String(roleId)})
     if (!navigator.clipboard) return fallback()
     navigator.clipboard.writeText(String(roleId)).catch(fallback)
 }
@@ -297,7 +297,7 @@ function saveRoleName(name) {
         document.getElementById("role-editor-title").textContent = `${_t("MODIFIER LE RÔLE")} — ${resp.name}`
         renderRoleEditorSidebar()
     }, () => {
-        alert(_t("Le nom d'un rôle doit faire entre 1 et 24 caractères."))
+        uiAlert(_t("Le nom d'un rôle doit faire entre 1 et 24 caractères."))
         const input = document.getElementById("roleName")
         if (input) input.value = role.name
     })
@@ -347,7 +347,7 @@ function savePermissions(perms, onFail) {
         renderRolePermissions()
     }, (status, text) => {
         onFail?.()
-        alert(saveErrorMessage(text))
+        uiAlert(saveErrorMessage(text))
     })
 }
 
@@ -360,9 +360,9 @@ function editRolePerm(event, right) {
 }
 window.editRolePerm = editRolePerm
 
-function clearRolePerms() {
+async function clearRolePerms() {
     if (!Object.keys(global.state.currentRole.permissions || {}).length) return
-    if (!confirm(_t("Retirer toutes les permissions de ce rôle ?"))) return
+    if (!(await uiConfirm(_t("Retirer toutes les permissions de ce rôle ?"), {danger: true, confirmLabel: _t("Remove")}))) return
     savePermissions({})
 }
 window.clearRolePerms = clearRolePerms

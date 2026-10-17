@@ -1,71 +1,41 @@
-<div class="selected-info">
-    <div class="title">
-        ${global.state.isMobile?'<img class="icon" src="/static/icons/material/back.svg" onclick="mobileHideContent()" style="margin-right: 0.6rem"/>':''}
-        <img class="icon" src="/static/icons/material/folder.svg" style="margin-right: 0.5rem;">
-        ${Subscribe("global.convs["+global.state.activeChan.id+"].name", ()=>{return global.convs[global.state.activeChan.id].name})}
-    </div>
-    <div>
-        <img class="icon" id="drive-new-folder-btn" ${channelGate(global.state.activeChan.id, 'drive', 'send-messages')} onclick="createNewDriveFolder()" src="/static/icons/material/folder.svg" title="${_t('New folder')}"/>
-        <img class="icon" id="drive-upload-btn" ${channelGate(global.state.activeChan.id, 'drive', 'send-messages')} onclick="uploadDriveFile()" src="/static/icons/material/add.svg" title="${_t('Upload files')}"/>
-        <img class="icon" id="drive-upload-folder-btn" ${channelGate(global.state.activeChan.id, 'drive', 'send-messages')} onclick="uploadDriveFolder()" src="/static/icons/material/groupadd.svg" title="${_t('Upload a folder')}"/>
-        <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg" style="margin-right: 0.8rem;">
-        <img class="icon" src="/static/icons/material/inbox.svg" style="margin-right: 0.8rem;">
-        <img class="icon" src="/static/icons/material/help.svg">
-    </div>
-
-</div>
-
-<div class="inline" style="width: 100%;height: calc(100svh - 3rem);">
-    <div style="display: flex;flex-direction: column;width:100%;height: 100%;padding: 1rem;">
-        <div style="display: flex; align-items: center; margin-bottom: 1rem;">
-            ${Subscribe('global.driveCurrentFolder['.concat(global.state.activeChan.id,']'), ()=>{
-                const currentFolder = global.driveCurrentFolder[global.state.activeChan.id];
-                if (currentFolder && currentFolder.length > 0) {
-                    let breadcrumb = `<div class="drive-breadcrumb-item"
-                        ondragover="onDriveRootDragOver(event)"
-                        ondragleave="onDriveRootDragLeave(event)"
-                        ondrop="onDriveBreadcrumbDrop(event, null)">
-                        <div class="icon-wrapper" onclick="navigateDriveFolderUp()">
-                            <img class="icon" src="/static/icons/material/reply.svg"/>
-                            <span class="tooltip bottom">${_t("Go back")}</span>
-                        </div>
-                    </div>`;
-                    // Show the full folder path as breadcrumb items (each is a drop target)
-                    for (let i = 0; i < currentFolder.length; i++) {
-                        const f = currentFolder[i];
-                        const isLast = i === currentFolder.length - 1;
-                        if (isLast) {
-                            breadcrumb += `<span class="drive-breadcrumb-sep">/</span>
-                                <span class="drive-breadcrumb-current">${f.name}</span>`;
-                        } else {
-                            breadcrumb += `<span class="drive-breadcrumb-sep">/</span>
-                                <span class="drive-breadcrumb-item"
-                                    ondragover="onDriveRootDragOver(event)"
-                                    ondragleave="onDriveRootDragLeave(event)"
-                                    ondrop="onDriveBreadcrumbDrop(event, ${f.id})"
-                                    style="cursor:pointer;">${f.name}</span>`;
-                        }
-                    }
-                    return breadcrumb;
-                }
-                return '<h3>' + _t("Files and folders") + '</h3>';
-            })}
+<div id="drive-view" class="drive-view">
+    <div class="selected-info">
+        <div class="title">
+            ${global.state.isMobile?'<img class="icon" src="/static/icons/material/back.svg" onclick="mobileHideContent()" style="margin-right: 0.6rem"/>':''}
+            <img class="icon" src="/static/icons/material/folder.svg" style="margin-right: 0.5rem;">
+            ${Subscribe("global.convs["+global.state.activeChan.id+"].name", ()=>{return escapeHTML(global.convs[global.state.activeChan.id].name)})}
         </div>
-        <div id="drive-files-list" class=""
-             style="flex: 1; overflow-y: auto;"
+        <div>
+            <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg">
+        </div>
+    </div>
+
+    <div class="drive-top">
+        <nav class="drive-breadcrumb" aria-label="${_t('Path')}">
+            ${Subscribe('global.drive.crumbs', ()=>driveCrumbsHtml(), 'drive-crumbs')}
+        </nav>
+        ${Subscribe('global.drive.viewbtns', ()=>driveViewButtonsHtml(), 'drive-view-btns')}
+    </div>
+    ${Subscribe('global.drive.toolbar', ()=>driveToolbarHtml(), 'drive-toolbar')}
+
+    <div class="drive-main">
+        <div id="drive-files-list" class="drive-scroll"
              ondragover="onDriveUploadDragOver(event)"
              ondragleave="onDriveUploadDragLeave(event)"
              ondrop="handleDriveExternalDrop(event)"
-             onclick="if(event.target === this || event.target.id === 'drive-files-list') clearDriveSelection()">
-            ${Subscribe('global.driveFolders['.concat(global.state.activeChan.id,']'), ()=>{
-                const folders = global.driveFolders[global.state.activeChan.id] || [];
-                const files = global.driveFiles[global.state.activeChan.id] || [];
-                return fillWith('drive-folder-item', folders) + fillWith('drive-file-item', files);
-            },"drive-files-list")}
+             ontouchstart="onDriveTouchStart(event)" ontouchmove="onDriveTouchEnd()" ontouchend="onDriveTouchEnd()" ontouchcancel="onDriveTouchEnd()"
+             onclick="if(!event.target.closest('.drive-item')) clearDriveSelection()">
+            ${Subscribe('global.drive.body', ()=>driveBodyHtml(), 'drive-body')}
         </div>
+        ${Subscribe('global.drive.details', ()=>driveDetailsHtml(), 'drive-details-wrap')}
+        <div id="member-list-wrapper"></div>
     </div>
 </div>
 
 <input type="file" id="drive-file-input" multiple style="display: none;" onchange="handleDriveFileSelect(event)"/>
 <input type="file" id="drive-folder-input" webkitdirectory directory multiple style="display: none;" onchange="handleDriveFolderSelect(event)"/>
 
+<!-- Overlays (fixed): they go away with the drive view -->
+${Subscribe('global.driveMenu', ()=>driveMenuHtml(), 'drive-contents')}
+${Subscribe('global.driveMove', ()=>driveMoveDialogHtml(), 'drive-contents')}
+${Subscribe('global.driveViewer', ()=>driveViewerHtml(), 'drive-contents')}

@@ -1,0 +1,12 @@
+<a class="drive-link-card" href="#" data-drive-card="${escapeHTML(element.ref)}" onclick="openChannelMention(event, this.dataset.driveCard)">
+    ${!element.info ? `<span class="drive-link-thumb"></span><span class="drive-link-info"><span class="drive-link-name">…</span></span>`
+    : !element.info.ok ? `<span class="drive-link-info"><span class="drive-link-name">${_t('inaccessible item')}</span></span>`
+    : `<span class="drive-link-thumb">${element.kind === 'image'
+            ? `<img src="/static/attachments/${escapeHTML(element.info.filepath)}" alt="" loading="lazy"/>`
+            : driveKindBadge(element.info.name, true)}</span>
+        <span class="drive-link-info">
+            <span class="drive-link-name">${escapeHTML(element.info.name)}</span>
+            <span class="drive-link-meta">${formatFileSize(element.info.size)}</span>
+            <span class="drive-link-meta">${escapeHTML(element.where)}</span>
+        </span>`}
+</a>

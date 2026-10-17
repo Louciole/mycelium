@@ -1,0 +1,6 @@
+${element.more ? `<button type="button" class="drive-crumb" onclick="openDriveHiddenCrumbs(event)">…</button><span class="drive-crumb-sep">›</span>`
+: element.current ? `<button type="button" class="drive-crumb current" onclick="openDriveFolderMenu(event)">
+    ${escapeHTML(element.name)}<img class="icon" src="/static/icons/material/down.svg" alt=""/></button>`
+: `<button type="button" class="drive-crumb" data-crumb="${element.id ?? 'null'}" onclick="openDriveFolder(${element.id ?? 'null'})"
+    ondragover="onDriveRootDragOver(event)" ondragleave="onDriveRootDragLeave(event)"
+    ondrop="onDriveBreadcrumbDrop(event, ${element.id ?? 'null'})">${escapeHTML(element.name)}</button><span class="drive-crumb-sep">›</span>`}

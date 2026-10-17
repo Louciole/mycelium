@@ -168,7 +168,7 @@ function dropInList(serverId) {
         // channel where it was if refused.
         const req = xhr(`edit_server_channel?server_id=${serverId}&targetId=${dragged.id}&channel_type=${dragged.type}&field=category&value=${newCatId || ''}&place=${place}`, undefined, "POST", false)
         if (req.status !== 200) {
-            alert(_t("Tu ne peux pas déplacer ce salon dans cette catégorie : cela changerait ses permissions."))
+            uiAlert(_t("Tu ne peux pas déplacer ce salon dans cette catégorie : cela changerait ses permissions."))
             orderServDirs(global.state.currentServer)
             return
         }

@@ -1,0 +1,5 @@
+<div class="drive-view-toggle" role="group" aria-label="${_t('View')}">
+    <button type="button" id="drive-view-list" class="${element.view === 'list' ? 'active' : ''}" aria-pressed="${element.view === 'list'}" title="${_t('List view')}" onclick="setDriveView('list')"><img class="icon" src="/static/icons/material/list.svg" alt="${_t('List view')}"/></button>
+    <button type="button" id="drive-view-grid" class="${element.view === 'grid' ? 'active' : ''}" aria-pressed="${element.view === 'grid'}" title="${_t('Grid view')}" onclick="setDriveView('grid')"><img class="icon" src="/static/icons/material/grid.svg" alt="${_t('Grid view')}"/></button>
+</div>
+<button type="button" id="drive-details-btn" class="drive-round-btn ${element.details ? 'active' : ''}" aria-pressed="${element.details}" title="${_t('Details')}" onclick="toggleDriveDetails()"><img class="icon" src="/static/icons/material/info.svg" alt="${_t('Details')}"/></button>

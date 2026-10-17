@@ -454,7 +454,7 @@ export class DatabaseView {
 
         const targetDbId = col.options.database_id
         if (!targetDbId) {
-            alert('Configure a target database ID in the column menu first.')
+            uiAlert(_t('Configure a target database ID in the column menu first.'))
             return
         }
 
@@ -490,7 +490,7 @@ export class DatabaseView {
         }
 
         if (!targetData) {
-            alert('Target database not found in this channel.')
+            uiAlert(_t('Target database not found in this channel.'))
             return
         }
 

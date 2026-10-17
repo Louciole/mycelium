@@ -406,7 +406,7 @@ function joinDiscoverServer(serverId, button) {
     xhr(`join_community_server?server_id=${serverId}`, function () {
         if (this.status !== 200) {
             if (button) button.disabled = false;
-            alert(_t('Impossible de rejoindre ce serveur. Réessaie plus tard.'));
+            uiAlert(_t('Impossible de rejoindre ce serveur. Réessaie plus tard.'));
             return;
         }
         const server = findDiscoverServer(serverId);
@@ -429,7 +429,7 @@ window.openDiscoverServer = openDiscoverServer;
 function toggleServerFeatured(serverId, featured) {
     xhr(`set_server_featured?server_id=${serverId}&featured=${featured}`, function () {
         if (this.status !== 200) {
-            alert(_t('Impossible de modifier la mise en avant de ce serveur.'));
+            uiAlert(_t('Impossible de modifier la mise en avant de ce serveur.'));
             return;
         }
         loadDiscoverServers();

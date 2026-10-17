@@ -298,6 +298,7 @@ function refreshServerPermissions(serverId) {
     window.updateComposerLock?.()
     applyGates()
     if (global.state.activeChan?.type === 'note') global.state.noteEditor?.applyPermissions?.()
+    if (global.state.activeChan?.type === 'drive') window.repaintDrive?.()   // New button, menus, selection bar
     const list = document.getElementById('member-list')   // plain fillWith render
     if (list) list.outerHTML = window.getTemplate('member-list')
     refreshSettingsPanels(serv)

@@ -1,0 +1,29 @@
+<div id="drive-viewer" class="drive-viewer" role="dialog" aria-modal="true" aria-label="${escapeHTML(element.file.filename)}" data-file-id="${element.file.id}">
+<div class="drive-viewer-bar">
+    <button type="button" class="drive-round-btn" title="${_t('Close')}" onclick="closeDriveViewer()"><img class="icon" src="/static/icons/material/close.svg" alt="${_t('Close')}"/></button>
+    ${driveKindBadge(element.file.filename)}
+    <span class="drive-viewer-name">${escapeHTML(element.file.filename)}</span>
+    <span class="drive-viewer-path">${escapeHTML(element.path)}</span>
+    <span class="drive-viewer-spacer"></span>
+    ${element.photon ? `<button type="button" class="drive-bar-btn" onclick="editInPhoton(${element.file.id}, findDriveFileName(${element.file.id}))"><img class="icon" src="/static/icons/material/edit.svg" alt=""/>${_t('Edit in Photon')}</button>` : ''}
+    <button type="button" class="drive-bar-btn" onclick="copyDriveLinks([{type: 'file', id: ${element.file.id}}])"><img class="icon" src="/static/icons/material/link.svg" alt=""/>${_t('Copy link')}</button>
+    <button type="button" class="drive-round-btn" title="${_t('Download')}" onclick="downloadDriveFile(${element.file.id})"><img class="icon" src="/static/icons/material/download.svg" alt="${_t('Download')}"/></button>
+</div>
+<div class="drive-viewer-stage">
+    ${element.count > 1 ? `<button type="button" class="drive-viewer-nav" title="${_t('Previous file')}" onclick="stepDriveViewer(-1)"><img class="icon" src="/static/icons/material/back.svg" alt="${_t('Previous file')}"/></button>` : ''}
+    <div class="drive-viewer-content">
+        ${element.preview === 'image' ? `<img class="drive-viewer-media" src="/static/attachments/${escapeHTML(element.file.filepath)}" alt="${escapeHTML(element.file.filename)}"/>`
+        : element.preview === 'video' ? `<video class="drive-viewer-media" src="/static/attachments/${escapeHTML(element.file.filepath)}" controls autoplay></video>`
+        : element.preview === 'audio' ? `<audio src="/static/attachments/${escapeHTML(element.file.filepath)}" controls autoplay></audio>`
+        : element.preview === 'pdf' ? `<iframe class="drive-viewer-doc" src="/static/attachments/${escapeHTML(element.file.filepath)}" title="${escapeHTML(element.file.filename)}"></iframe>`
+        : element.preview === 'text' ? Subscribe('global.drivePreviews[' + element.file.id + ']', (id = element.file.id) => drivePreviewTextHtml(id, 'drive-viewer-text'), 'drive-contents', {element: element.file.id})
+        : `<div class="drive-viewer-none">
+            ${driveKindBadge(element.file.filename, true)}
+            <span>${_t('No preview available')}</span>
+            <button type="button" class="drive-new-btn" onclick="downloadDriveFile(${element.file.id})">${_t('Download')}</button>
+        </div>`}
+    </div>
+    ${element.count > 1 ? `<button type="button" class="drive-viewer-nav next" title="${_t('Next file')}" onclick="stepDriveViewer(1)"><img class="icon" src="/static/icons/material/back.svg" alt="${_t('Next file')}"/></button>` : ''}
+</div>
+<div class="drive-viewer-foot">${element.index + 1} / ${element.count}</div>
+</div>

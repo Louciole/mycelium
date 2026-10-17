@@ -4,6 +4,7 @@ import {setElement} from "./framework/vesta.mjs";
 import {closeFM, goTo} from "./framework/navigation.mjs";
 import {xhr} from "./framework/templating.mjs";
 import {} from "./servers/drive.mjs"
+import {} from "./drive-links.mjs"
 let emptyStr = '' //DO NOT REMOVE
 
 // Mounts the conv blocks of a freshly rendered chat view. repaintConv() only covers
@@ -51,6 +52,14 @@ function pushRoute(hash) {
 function replaceRoute(hash) {
     if (_skipRoutePush) return
     history.replaceState(null, '', '/channels' + (hash ? '#' + hash : ''))
+}
+window.pushRoute = pushRoute
+window.replaceRoute = replaceRoute
+
+function withoutRoutePush(fn) {
+    const previous = _skipRoutePush
+    _skipRoutePush = true
+    try { fn() } finally { _skipRoutePush = previous }
 }
 
 export function handleHashRoute(hash) {
@@ -119,10 +128,20 @@ export function handleHashRoute(hash) {
                 global.state.currentTab = serverIcon
             }
 
+            // goTo may run its callback after this function returned: the
+            // navigation must not push a route then either (the caller does).
             const navigateInServer = () => {
-                goTo('sec-selector', 'serverSelector', undefined, false, () => {
+                goTo('sec-selector', 'serverSelector', undefined, false, () => withoutRoutePush(() => {
                     const dirs = global.state.currentServer.dirs
                     if (!dirs) return
+
+                    // Drive links: <server>/<drive>/folder[/<id>] and <server>/<drive>/file/<id>
+                    // (no folder id = the root; the segment says the channel is a drive)
+                    if ((parts[2] === 'folder' || parts[2] === 'file')
+                            && dirs.drives?.some(c => c.id === channelId)) {
+                        goToDriveChannel(channelId, parts[3] ? {[parts[2]]: parseInt(parts[3])} : {})
+                        return
+                    }
 
                     if (parts[2] === 'post' && parts[3]) {
                         const postId = parseInt(parts[3])
@@ -144,7 +163,7 @@ export function handleHashRoute(hash) {
                     } else if (dirs.drives?.some(c => c.id === channelId)) {
                         goToDriveChannel(channelId)
                     }
-                })
+                }))
             }
 
             // column-perso must be loaded before sec-selector can be targeted.
@@ -166,7 +185,8 @@ export function handleHashRoute(hash) {
  */
 function renderMessageBody(text) {
     if (!text) return ''
-    const html = MDToHTML(text)
+    // Channel and drive mentions (drive-links.mjs); a lone file link also gets a card.
+    const html = window.enhanceChannelMentions(MDToHTML(text)) + window.driveLinkCardHtml(text)
 
     // Build name -> file map from all locally loaded servers (deduplicated)
     const emojiMap = {}
@@ -792,12 +812,13 @@ function updatePreview(formID, event, defaultValue, evaluation=undefined){
 }
 window.updatePreview = updatePreview
 
-function makePersonalServer(){
-    if(confirm("Are you sure you want to convert this server into your personal server ? \n This action cannot be undone.")){
-        const request = xhr("/create_personal_server?server_id="+global.state.currentServer.id , undefined, "POST", false);
+async function makePersonalServer(){
+    const serverId = global.state.currentServer.id
+    if(await uiConfirm(_t("Are you sure you want to convert this server into your personal server? This action cannot be undone."), {danger: true})){
+        const request = xhr("/create_personal_server?server_id="+serverId , undefined, "POST", false);
         if (request.status === 200) {
         } else {
-            alert("Failed to create personal server: " + request.statusText);
+            uiAlert(_t("Failed to create personal server:") + " " + request.statusText);
         }
     }
 }
@@ -934,3 +955,4 @@ function openServerParams(){
     else if (checkServRights('manage-expressions')) goTo('setting-server-content', 'server-emoji-settings')
 }
 window.openServerParams = openServerParams
+window.handleHashRoute = handleHashRoute

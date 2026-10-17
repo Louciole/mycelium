@@ -120,7 +120,7 @@ function chanApi(params, onOk) {
         let body = null
         try { body = JSON.parse(this.responseText) } catch (e) {}
         if (this.status === 200) onOk?.(body)
-        else alert(saveErrorMessage(this.responseText))
+        else uiAlert(saveErrorMessage(this.responseText))
         renderChannelPermissions()
     }, "POST")
 }

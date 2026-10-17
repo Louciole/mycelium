@@ -1,0 +1,16 @@
+<div class="drive-row drive-${element._type}-item drive-item" data-${element._type}-id="${element.id}" role="row"
+     draggable="true"
+     ondragstart="onDriveItemDrag(event, '${element._type}', ${element.id})"
+     ${element._type === 'folder' ? `ondragover="onDriveFolderDragOver(event)" ondragleave="onDriveFolderDragLeave(event)" ondrop="onDriveFolderDrop(event, ${element.id})"` : ''}
+     ondblclick="openDriveItem('${element._type}', ${element.id})"
+     oncontextmenu="openDriveItemMenu(event, '${element._type}', ${element.id})"
+     onclick="onDriveItemClick(event, '${element._type}', ${element.id})">
+    <span class="drive-row-name" role="cell">
+        ${element._type === 'folder' ? '<img class="icon drive-folder-icon" src="/static/icons/material/folder.svg" alt=""/>' : driveKindBadge(element.filename)}
+        <span class="drive-item-name" title="${escapeHTML(driveItemName(element))}">${escapeHTML(driveItemName(element))}</span>
+    </span>
+    <span class="drive-row-meta" role="cell">${escapeHTML(driveItemAuthor(element) || '—')}</span>
+    <span class="drive-row-meta" role="cell">${escapeHTML(formatDate(driveItemDate(element)))}</span>
+    <span class="drive-row-meta" role="cell">${element._type === 'file' ? formatFileSize(element.size) : '—'}</span>
+    <button type="button" class="drive-more" aria-label="${_t('Actions')}" onclick="openDriveItemMenu(event, '${element._type}', ${element.id})"><img class="icon" src="/static/icons/material/more.svg" alt=""/></button>
+</div>

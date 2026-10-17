@@ -202,7 +202,7 @@ function openSearchResultAt(i) {
             // same dance convNotif.html and goToHome do.
             global.state.isServer = false
             goTo('sec-selector', 'privateMessage', undefined, false)
-            handleHashRoute('@me/' + item.id)
+            openRoute('@me/' + item.id)
             break
         case 'server': {
             // '/0' opens the server without a channel; then land on the first
@@ -213,28 +213,26 @@ function openSearchResultAt(i) {
             break
         }
         case 'post':
-            handleHashRoute(item.server + '/' + item.forum + '/post/' + item.id)
+            openRoute(item.server + '/' + item.forum + '/post/' + item.id)
             break
         case 'file':
-        case 'folder': {
-            handleHashRoute(item.server + '/' + item.drive_channel)
-            // goToDriveChannel opened the drive at its root; deep-open the
-            // containing folder from the server-provided ancestor path.
-            const stack = (item.path || []).map(f => ({id: f.id, name: f.name}))
-            if (item.kind === 'folder') stack.push({id: item.id, name: item.name})
-            if (stack.length) {
-                if (!global.driveCurrentFolder) global.driveCurrentFolder = {}
-                global.driveCurrentFolder[item.drive_channel] = stack
-                setElement(`global.driveCurrentFolder[${item.drive_channel}]`, stack)
-                loadDriveContent(item.drive_channel, stack[stack.length - 1].id)
-            }
+        case 'folder':
+        {
+            // A folder opens in the drive, a file in the drive's viewer.
+            openRoute(item.server + '/' + item.drive_channel + '/' + item.kind + '/' + item.id)
             break
         }
         default: // textual / vocal / note / forum / drive channels
-            handleHashRoute(item.server + '/' + item.id)
+            openRoute(item.server + '/' + item.id)
     }
 }
 window.openSearchResultAt = openSearchResultAt
+
+// handleHashRoute never touches the history (navigation.mjs): one entry per result.
+function openRoute(route) {
+    handleHashRoute(route)
+    window.pushRoute?.(route)
+}
 
 function openSearchPalette() {
     ensureFrecency()

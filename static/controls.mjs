@@ -98,8 +98,8 @@ function editMsg(msg_id){
 }
 window.editMsg = editMsg
 
-function delMsg(msg_id){
-    if (confirm('Voulez-vous vraiment supprimer ce message ?')) {
+async function delMsg(msg_id){
+    if (await uiConfirm(_t('Voulez-vous vraiment supprimer ce message ?'), {danger: true, confirmLabel: _t("Delete")})) {
 
         const onload = function() { // request successful
             // Other members get a message_deleted WS notif; the deleter doesn't.

@@ -1,0 +1,10 @@
+${element.preview === 'image' ? `<div class="drive-file-preview drive-preview-image"><img src="/static/attachments/${escapeHTML(element.filepath)}" alt="" loading="lazy"/></div>`
+: element.preview === 'text' ? `<div class="drive-file-preview drive-preview-text">${Subscribe('global.drivePreviews[' + element.id + ']', (id = element.id) => drivePreviewTextHtml(id, 'drive-text-content'), 'drive-contents', {element: element.id})}</div>`
+: element.preview === 'video' ? `<div class="drive-file-preview drive-preview-video"><video src="/static/attachments/${escapeHTML(element.filepath)}" preload="metadata" muted></video></div>`
+: element.preview === 'pdf' ? `<div class="drive-file-preview drive-preview-pdf">
+    <embed src="/static/attachments/${escapeHTML(element.filepath)}#toolbar=0&navpanes=0&scrollbar=0" type="application/pdf" style="pointer-events:none;"/>
+</div>`
+: `<div class="drive-file-preview drive-preview-generic">
+    ${driveKindBadge(element.filename, true)}
+    <span class="drive-preview-label">${escapeHTML(element.extension)} · ${formatFileSize(element.size)}</span>
+</div>`}

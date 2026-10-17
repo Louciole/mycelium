@@ -5,6 +5,7 @@ import { openServerSettings } from './helpers/serverHelpers.mjs';
 import {
     api, status, json, enc, setPerms, giveRole, createRole, setupServer, openServer,
 } from './helpers/permissionHelpers.mjs';
+import { acceptDialog } from './helpers/dialogHelpers.mjs';
 
 const TEST_TIMEOUT = 150000;
 
@@ -65,6 +66,7 @@ test.describe('Server settings › Roles', () => {
         expect(Math.abs((menuBox.x + menuBox.width) - (btnBox.x + btnBox.width))).toBeLessThan(2);
         expect(menuBox.width).toBeGreaterThan(150);
         await s.owner.locator('#role-actions-modale.visible .item.crit').click();
+        await acceptDialog(s.owner);
         await expect(row(s.owner, beta)).toHaveCount(0);
         await expect(s.owner.locator('#role-count')).toHaveText(/2$/);
         expect(await memberRoles(s.owner, b.id)).not.toContain(beta);
@@ -183,6 +185,7 @@ test.describe('Server settings › Roles', () => {
 
         // Clear permissions → back to 403
         await s.owner.locator('.perm-clear .link').click();
+        await acceptDialog(s.owner);
         await s.owner.waitForFunction(() => Object.keys(window.global.state.currentServer.default_permissions || {}).length === 0);
         await expect(s.owner.locator('#role-perm-list .permission[data-right="manage-channels"] input')).not.toBeChecked();
         expect(await status(b.page, createChannel)).toBe(403);

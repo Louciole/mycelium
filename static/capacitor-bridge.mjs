@@ -351,11 +351,11 @@ async function setupDeepLinks() {
       window.dispatchEvent(new CustomEvent('cap:navigateToConv', { detail: { convId } }));
     }
 
-    // mycelium://channel/<serverId>/<channelId>
+    // mycelium://channel/<serverId>/<channelId>[/folder|file/<id>] (drive links)
     if (url.hostname === 'channel') {
-      const [, serverId, channelId] = url.pathname.split('/');
+      const [, serverId, channelId, kind, itemId] = url.pathname.split('/');
       window.dispatchEvent(new CustomEvent('cap:deepLinkChannel', {
-        detail: { serverId, channelId },
+        detail: { serverId, channelId, kind, itemId },
       }));
     }
   });

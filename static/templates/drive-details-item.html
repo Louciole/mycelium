@@ -1,0 +1,18 @@
+<aside class="drive-details" data-details-type="${element.type}" data-details-id="${element.item.id}">
+    <div class="drive-details-head"><b>${escapeHTML(driveItemName(element.item))}</b>
+        <button type="button" class="drive-round-btn" title="${_t('Close')}" onclick="toggleDriveDetails()"><img class="icon" src="/static/icons/material/close.svg" alt="${_t('Close')}"/></button>
+    </div>
+    <div class="drive-details-preview">
+        ${element.type === 'folder' ? '<img class="icon big" src="/static/icons/material/folder.svg" alt=""/>'
+        : element.image ? `<img src="/static/attachments/${escapeHTML(element.item.filepath)}" alt=""/>`
+        : driveKindBadge(element.item.filename, true)}
+    </div>
+    <dl>
+        <dt>${_t('Type')}</dt><dd>${element.type === 'file' ? (element.extension || _t('File')) : _t('Folder')}</dd>
+        ${element.type === 'file' ? `<dt>${_t('Size')}</dt><dd>${formatFileSize(element.item.size)}</dd>` : ''}
+        <dt>${_t('Location')}</dt><dd>${fillWith('drive-path-link', element.location)}</dd>
+        <dt>${_t('Owner')}</dt><dd>${escapeHTML(driveItemAuthor(element.item) || '—')}</dd>
+        <dt>${element.type === 'file' ? _t('Added') : _t('Created')}</dt><dd>${escapeHTML(formatDate(driveItemDate(element.item)))}</dd>
+    </dl>
+    <button type="button" class="drive-bar-btn" onclick="copyDriveLinks([{type: '${element.type}', id: ${element.item.id}}])"><img class="icon" src="/static/icons/material/link.svg" alt=""/>${_t('Copy link')}</button>
+</aside>
