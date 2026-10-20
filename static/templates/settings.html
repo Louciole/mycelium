@@ -10,7 +10,7 @@
       ${global.user?.isAdmin ? `<div class="item" onclick="openOpPanel(event)">${_t("Modération plateforme")}</div>` : ''}
       <hr>
       <h3>${_t("PARAMÈTRES DE L'APPLI")}</h3>
-      <div class="item">${_t("Voix & Vidéo")}</div>
+      <div class="item" id="voice-settings-tab" onclick="goTo('setting-content', 'voice-settings',{'category':'currentSettingTab' ,'event': event},true,openVoiceSettings)">${_t("Voix & Vidéo")}</div>
       <div class="item">${_t("Discuter")}</div>
       <div class="item">${_t("Notifications")}</div>
       <div class="item">${_t("Raccourcis clavier")}</div>

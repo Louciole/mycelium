@@ -43,18 +43,7 @@ class CallManager:
             session_data = call_session[0]
             call_id = session_data['id']
 
-            participants = session_data['participants']
-            if isinstance(participants, str):
-                participants = json.loads(participants)
-
-            call = CallSession(
-                call_id,
-                session_data['conversation_id'],
-                participants,
-                session_data['call_type'],
-                session_data['mode'],
-                session_data.get('vocal_channel_id')
-            )
+            call = CallSession.from_row(session_data)
 
             self.active_calls[call_id] = call
             self.conversation_calls[conv_id] = call_id
@@ -62,6 +51,20 @@ class CallManager:
             return call
 
         return None
+
+    def load_active_calls(self):
+        """Bring every call the DB still says is active into memory (after a
+        restart), so the liveness sweep checks their participants too instead of
+        leaving the ones nobody reopens active forever."""
+        for row in self.db.getFilters("call_session", ["active", "=", True]) or []:
+            if row['id'] in self.active_calls:
+                continue
+            call = CallSession.from_row(row)
+            self.active_calls[call.id] = call
+            if call.conversation_id:
+                self.conversation_calls[call.conversation_id] = call.id
+            if call.vocal_channel_id:
+                self.vocal_channel_calls[call.vocal_channel_id] = call.id
 
     def get_call_by_vocal_channel(self, vocal_channel_id):
         call_id = self.vocal_channel_calls.get(vocal_channel_id)
@@ -77,18 +80,7 @@ class CallManager:
             session_data = call_session[0]
             call_id = session_data['id']
 
-            participants = session_data['participants']
-            if isinstance(participants, str):
-                participants = json.loads(participants)
-
-            call = CallSession(
-                call_id,
-                session_data.get('conversation_id'),
-                participants,
-                session_data['call_type'],
-                session_data['mode'],
-                vocal_channel_id
-            )
+            call = CallSession.from_row(session_data)
 
             self.active_calls[call_id] = call
             self.vocal_channel_calls[vocal_channel_id] = call_id
@@ -102,6 +94,9 @@ class CallManager:
             return self.join_call(existing.id, initiator_id)
 
         participants = json.dumps([initiator_id])
+        # Same clock in memory and in the row, so a session reloaded from the DB
+        # (restart) keeps its duration (started_at_ms)
+        started_at = datetime.now()
         # A partial unique index (idx_call_session_active_vocal) guarantees at most
         # one active call per vocal channel. If two users join an empty channel at
         # the same instant, the loser's insert hits ON CONFLICT DO NOTHING and gets
@@ -110,6 +105,7 @@ class CallManager:
             call_id = self.db.insertDict('call_session', {
                 'vocal_channel_id': vocal_channel_id,
                 'participants': participants,
+                'started_at': started_at,
                 'call_type': call_type,
                 'mode': 'p2p',
                 'active': True
@@ -123,7 +119,8 @@ class CallManager:
                 return self.join_call(existing.id, initiator_id)
             return None
 
-        call = CallSession(call_id, None, [initiator_id], call_type, vocal_channel_id=vocal_channel_id)
+        call = CallSession(call_id, None, [initiator_id], call_type, vocal_channel_id=vocal_channel_id,
+                           started_at=started_at)
         self.active_calls[call_id] = call
         self.vocal_channel_calls[vocal_channel_id] = call_id
 
@@ -135,15 +132,17 @@ class CallManager:
             return existing_call
 
         participants = json.dumps([initiator_id])
+        started_at = datetime.now()
         call_id = self.db.insertDict('call_session', {
             'conversation_id': conv_id,
             'participants': participants,
+            'started_at': started_at,
             'call_type': call_type,
             'mode': 'p2p',
             'active': True
         }, getId=True)
 
-        call = CallSession(call_id, conv_id, [initiator_id], call_type)
+        call = CallSession(call_id, conv_id, [initiator_id], call_type, started_at=started_at)
         self.active_calls[call_id] = call
         self.conversation_calls[conv_id] = call_id
 
@@ -156,19 +155,7 @@ class CallManager:
         if not call:
             call_session = self.db.getSomething("call_session", call_id)
             if call_session and call_session.get('active'):
-                # participants is jsonb in PostgreSQL, already deserialized to list
-                participants = call_session['participants']
-                if isinstance(participants, str):
-                    participants = json.loads(participants)
-
-                call = CallSession(
-                    call_id,
-                    call_session.get('conversation_id'),
-                    participants,
-                    call_session['call_type'],
-                    call_session['mode'],
-                    call_session.get('vocal_channel_id')
-                )
+                call = CallSession.from_row(call_session)
                 # Cache in memory
                 self.active_calls[call_id] = call
                 if call.conversation_id:
@@ -206,19 +193,7 @@ class CallManager:
         if not call:
             call_session = self.db.getSomething("call_session", call_id)
             if call_session and call_session.get('active'):
-                # participants is jsonb in PostgreSQL, already deserialized to list
-                participants = call_session['participants']
-                if isinstance(participants, str):
-                    participants = json.loads(participants)
-
-                call = CallSession(
-                    call_id,
-                    call_session.get('conversation_id'),
-                    participants,
-                    call_session['call_type'],
-                    call_session['mode'],
-                    call_session.get('vocal_channel_id')
-                )
+                call = CallSession.from_row(call_session)
                 # Cache in memory
                 self.active_calls[call_id] = call
                 if call.conversation_id:
@@ -230,6 +205,12 @@ class CallManager:
 
         if user_id in call.participants:
             call.participants.remove(user_id)
+            call.voice_states.pop(user_id, None)
+            call.sockets.pop(user_id, None)
+            call.missing_since.pop(user_id, None)
+            call.stuck_reports.pop(user_id, None)
+            for reports in call.stuck_reports.values():
+                reports.pop(user_id, None)
 
             old_mode = call.mode
 
@@ -291,7 +272,17 @@ class CallManager:
 
 
 class CallSession:
-    def __init__(self, call_id, conversation_id, participants, call_type='audio', mode=None, vocal_channel_id=None):
+    @classmethod
+    def from_row(cls, row):
+        """Rebuild a session from its call_session row (multi-worker / restart)."""
+        participants = row['participants']  # jsonb, usually already a list
+        if isinstance(participants, str):
+            participants = json.loads(participants)
+        return cls(row['id'], row.get('conversation_id'), participants, row['call_type'],
+                   row['mode'], row.get('vocal_channel_id'), row.get('started_at'))
+
+    def __init__(self, call_id, conversation_id, participants, call_type='audio', mode=None, vocal_channel_id=None,
+                 started_at=None):
         self.id = call_id
         self.conversation_id = conversation_id
         self.vocal_channel_id = vocal_channel_id
@@ -299,7 +290,19 @@ class CallSession:
         self.call_type = call_type  # 'audio' ou 'video'
         # Use provided mode or calculate based on participants
         self.mode = mode if mode is not None else ('p2p' if len(participants) < CallManager.SFU_THRESHOLD else 'sfu')
-        self.started_at = datetime.now()
+        self.started_at = started_at or datetime.now()
+        # {user_id: {"muted", "deafened", "video", "screen", "screen_audio"}} — what each participant
+        # last announced (voiceState WS message), shown on tiles and in the sidebar.
+        self.voice_states = {}
+        # {user_id: websocket} the participant is in the call from (vocalJoin /
+        # callStart / callJoin), so a WS drop only hangs up the call of the tab that
+        # was in it (Mycelium._cleanup_user_calls). In memory only, never serialized.
+        self.sockets = {}
+        # Liveness (Mycelium._sweep_calls / report_stuck_peer), in memory only:
+        # {user_id: monotonic time first seen without a live socket}
+        self.missing_since = {}
+        # {target_id: {reporter_id: monotonic time}} — "stuck connecting to target"
+        self.stuck_reports = {}
 
         self.streams = {}  # {user_id: stream_info}
 
@@ -313,6 +316,9 @@ class CallSession:
             'call_type': self.call_type,
             'mode': self.mode,
             'active': True,
-            'started_at': self.started_at.isoformat()
+            'started_at': self.started_at.isoformat(),
+            # Epoch ms so clients can run a duration timer without timezone guessing
+            'started_at_ms': int(self.started_at.timestamp() * 1000),
+            'voice_states': self.voice_states,
         }
 

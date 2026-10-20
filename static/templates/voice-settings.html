@@ -1,0 +1,135 @@
+<div id="voice-settings" class="voice-settings">
+<h1>${_t("Voix")}</h1>
+
+<div class="voice-grid">
+    <div class="voice-field">
+        <h3>${_t("Micro")}</h3>
+        ${Subscribe('global.state.mediaDevices', () => fillWith('media-device-dropdown', [{kind: 'audioinput', pref: 'inputDevice', icon: 'mic'}]))}
+    </div>
+    <div class="voice-field">
+        <h3>${_t("Haut-parleur")}</h3>
+        ${Subscribe('global.state.mediaDevices', () => fillWith('media-device-dropdown', [{kind: 'audiooutput', pref: 'outputDevice', icon: 'headset', disabled: !window.canPickOutput}]))}
+    </div>
+    <div class="voice-field">
+        <h3>${_t("Volume du micro")}</h3>
+        <div class="voice-range">
+            <input type="range" id="input-volume" min="0" max="200" step="1" value="${global.state.voiceSettings.inputVolume}"
+                   aria-label="${_t('Volume du micro')}" oninput="setVoicePref('inputVolume', Number(this.value))">
+            ${Subscribe('global.state.voiceSettings.inputVolume', () => `${global.state.voiceSettings.inputVolume}%`, 'voice-range-value')}
+        </div>
+    </div>
+    <div class="voice-field">
+        <h3>${_t("Volume du haut-parleur")}</h3>
+        <div class="voice-range">
+            <input type="range" id="output-volume" min="0" max="100" step="1" value="${global.state.voiceSettings.outputVolume}"
+                   aria-label="${_t('Volume du haut-parleur')}" oninput="setVoicePref('outputVolume', Number(this.value))">
+            ${Subscribe('global.state.voiceSettings.outputVolume', () => `${global.state.voiceSettings.outputVolume}%`, 'voice-range-value')}
+        </div>
+    </div>
+</div>
+
+<div class="mic-test">
+    ${Subscribe('global.state.voiceTest.playback', () => `<div class="btn blue mic-test-btn" id="mic-test-btn" onclick="toggleMicTest()">${global.state.voiceTest.playback ? _t('Arrêter le test') : _t('Test du micro')}</div>`)}
+    <div class="voice-meter" id="mic-test-meter" aria-hidden="true"></div>
+</div>
+${Subscribe('global.state.voiceTest.error', () => global.state.voiceTest.error ? `<p class="voice-error">${escapeHTML(global.state.voiceTest.error)}</p>` : '')}
+${Subscribe('global.state.mediaDevices', () => {
+    const devices = global.state.mediaDevices
+    if (devices && !devices.named) return `<p class="voice-hint">${_t("Lance un test pour afficher le nom de tes appareils.")}</p>`
+    if (!window.canPickOutput) return `<p class="voice-hint">${_t("Ton navigateur ne permet pas de choisir le haut-parleur : le son sort sur celui du système.")}</p>`
+    return ''
+})}
+
+<hr>
+
+<h2>${_t("Profil d'entrée audio")}</h2>
+<div class="voice-profiles" role="radiogroup">
+    <label class="voice-radio">
+        <input type="radio" name="voice-profile" value="isolation" ${global.state.voiceSettings.profile === 'isolation' ? 'checked' : ''} onchange="setVoicePref('profile', this.value)">
+        <span class="radio-mark"></span>
+        <span>
+            <strong>${_t("Isolement de la voix")}</strong>
+            <span class="voice-hint">${_t("Rien que ta voix : l'écho et les bruits de fond sont filtrés, et le micro ne transmet que quand tu parles.")}</span>
+        </span>
+    </label>
+    <label class="voice-radio">
+        <input type="radio" name="voice-profile" value="studio" ${global.state.voiceSettings.profile === 'studio' ? 'checked' : ''} onchange="setVoicePref('profile', this.value)">
+        <span class="radio-mark"></span>
+        <span>
+            <strong>${_t("Studio")}</strong>
+            <span class="voice-hint">${_t("Audio pur : micro ouvert sans aucun traitement.")}</span>
+        </span>
+    </label>
+    <label class="voice-radio">
+        <input type="radio" name="voice-profile" value="custom" ${global.state.voiceSettings.profile === 'custom' ? 'checked' : ''} onchange="setVoicePref('profile', this.value)">
+        <span class="radio-mark"></span>
+        <span>
+            <strong>${_t("Personnalisé")}</strong>
+            <span class="voice-hint">${_t("Mode avancé : tu règles chaque option toi-même.")}</span>
+        </span>
+    </label>
+</div>
+
+${Subscribe('global.state.voiceSettings.profile', () => global.state.voiceSettings.profile === 'studio' ? '' : `
+<div class="voice-option">
+    <div>
+        <strong>${global.state.voiceSettings.profile === 'custom' ? _t("Ajuster automatiquement la sensibilité de la détection de la voix") : _t("Détection de la voix")}</strong>
+        <p class="voice-hint">${_t("Le micro ne transmet que quand le son dépasse le seuil. Parle pour tester : quand la jauge passe au vert, ta voix est transmise.")}</p>
+    </div>
+    ${global.state.voiceSettings.profile === 'custom' ? `
+    <label class="switch">
+        <input type="checkbox" id="auto-sensitivity" ${global.state.voiceSettings.autoSensitivity ? 'checked' : ''} onchange="setVoicePref('autoSensitivity', this.checked)">
+        <span class="slider"></span>
+    </label>` : ''}
+</div>
+${Subscribe('global.state.voiceSettings.autoSensitivity', () => {
+    const manual = global.state.voiceSettings.profile === 'custom' && !global.state.voiceSettings.autoSensitivity
+    return `<div id="voice-sensitivity" class="voice-sensitivity ${manual ? 'manual' : ''}" style="--threshold: ${(global.state.voiceSettings.sensitivity + 100) / 100}">
+        <div class="voice-sensitivity-level"></div>
+        ${manual
+            ? `<input type="range" id="sensitivity-slider" min="-100" max="0" step="1" value="${global.state.voiceSettings.sensitivity}" aria-label="${_t('Seuil de détection de la voix')}" oninput="setVoicePref('sensitivity', Number(this.value))">`
+            : `<div class="voice-sensitivity-marker"></div>`}
+    </div>`
+})}
+${Subscribe('global.state.voiceTest.monitoring', () => global.state.voiceTest.monitoring ? '' : `<p class="voice-hint">${_t("Lance le test du micro pour voir ton niveau sur la jauge.")}</p>`)}
+${global.state.voiceSettings.profile !== 'custom' ? '' : [
+    ['echoCancellation', _t("Annulation de l'écho"), _t("Empêche les autres de s'entendre quand leur voix sort de tes haut-parleurs.")],
+    ['noiseSuppression', _t("Réduction du bruit"), _t("Filtre les bruits de fond constants (ventilateur, souffle) avec le traitement du navigateur.")],
+    ['autoGainControl', _t("Contrôle automatique du gain"), _t("Ajuste le volume de ton micro pour que ta voix garde un niveau régulier.")],
+].map(([key, title, hint]) => `
+<div class="voice-option">
+    <div>
+        <strong>${title}</strong>
+        <p class="voice-hint">${hint}</p>
+    </div>
+    <label class="switch">
+        <input type="checkbox" id="voice-${key}" ${global.state.voiceSettings[key] ? 'checked' : ''} onchange="setVoicePref('${key}', this.checked)">
+        <span class="slider"></span>
+    </label>
+</div>`).join('')}
+`)}
+
+<hr>
+
+<h1>${_t("Caméra")}</h1>
+${Subscribe('global.state.voiceTest.camera', () => `<div class="camera-test ${global.state.voiceTest.camera ? 'on' : ''}">
+    ${global.state.voiceTest.camera
+        ? `<video id="camera-test-video" autoplay muted playsinline></video>
+           <div class="btn camera-test-stop" onclick="toggleCameraTest()">${_t('Arrêter la vidéo')}</div>`
+        : `<div class="btn blue" id="camera-test-btn" onclick="toggleCameraTest()">${_t('Test vidéo')}</div>`}
+</div>`)}
+
+<div class="voice-option">
+    <div>
+        <strong>${_t("Toujours afficher un aperçu de la vidéo")}</strong>
+        <p class="voice-hint">${_t("Ouvre un aperçu chaque fois que tu actives ta caméra dans un appel.")}</p>
+    </div>
+    <label class="switch">
+        <input type="checkbox" id="camera-preview-toggle" ${global.state.voiceSettings.cameraPreview ? 'checked' : ''} onchange="setVoicePref('cameraPreview', this.checked)">
+        <span class="slider"></span>
+    </label>
+</div>
+
+<h3>${_t("Caméra")}</h3>
+${Subscribe('global.state.mediaDevices', () => fillWith('media-device-dropdown', [{kind: 'videoinput', pref: 'cameraDevice', icon: 'videocam'}]))}
+</div>

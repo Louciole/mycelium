@@ -1,8 +1,10 @@
 import fastpysgi
 from vesta import Server, HTTPError, HTTPRedirect
+import asyncio
 import json
 import os
 import datetime
+import time
 
 # Firebase imports for FCM push notifications
 import firebase_admin
@@ -31,6 +33,11 @@ class Mycelium(ForumMixin, Server):
     def __init__(self, *args, **kwargs):
         super().__init__(path=PATH, configFile="/server.ini", noStart=True)
         self.callManager = CallManager(self.db)
+        # websocket -> account, kept until the socket's handler ends. Vesta's
+        # sendNotificationAsync drops a closing socket from self.pool (and its
+        # active_client row) on its own, so the pool can't say whose socket just
+        # closed by the time _cleanup_connection runs.
+        self.ws_accounts = {}
         self.drive = DriveManager(self)
         self._refreshAdminCache()  # Initialize admin cache
 
@@ -208,60 +215,165 @@ class Mycelium(ForumMixin, Server):
                               if entry["connection"] == websocket]:
             self.waiting_clients.pop(connection_id, None)
 
+        uid = self.ws_accounts.pop(websocket, None)
         for client_id in [cid for cid, ws in list(self.pool.items()) if ws == websocket]:
             client = self.db.getSomething("active_client", client_id)
             self.pool.pop(client_id, None)
             self.db.deleteSomething("active_client", client_id)
             self.db.deleteSomething("subscription", client_id, selector="client")
-            if client:
-                await self._cleanup_user_calls(client["userid"])
-                await self.sendStatusUpdatesAsync(client["userid"])
+            uid = uid or (client and client["userid"])
+        # Also when a notification already purged this socket from the pool
+        # (it was closing): the user would otherwise stay in their call forever
+        if uid:
+            # 1000 / 1001: the tab or browser was closed. Anything else (1006: no
+            # close frame at all) is a network drop, a laptop going to sleep, an
+            # app sent to the background… the client reconnects on its own.
+            clean = getattr(websocket, "close_code", None) in (1000, 1001)
+            await self._cleanup_user_calls(uid, websocket, clean)
+            await self.sendStatusUpdatesAsync(uid)
 
-    async def _cleanup_user_calls(self, user_id):
+    async def _cleanup_user_calls(self, user_id, websocket=None, clean=True):
         """A WS dropped without an explicit hang-up — remove the user from any
         active call so the session is properly ended instead of lingering as a
-        zombie (active=true forever). Mirrors the notifications of call_leave."""
-        import ws_handlers as _wsh
+        zombie (active=true forever). Mirrors the notifications of call_leave.
+        Only the calls this socket was in: closing another tab of the user's
+        must not hang up the call running in the first one.
+        After an unclean drop the user gets CALL_GRACE_S to come back on a new
+        socket (callRebind) before the liveness sweep takes them out."""
         for call_id in self.callManager.get_active_call_ids_for_user(user_id):
-            result = self.callManager.leave_call(call_id, user_id)
-            if not result:
+            call = self.callManager.active_calls.get(call_id)
+            bound = call.sockets.get(user_id) if call else None
+            if websocket is not None and bound is not None and bound is not websocket:
                 continue
-            call = result["call"]
-
-            if call.vocal_channel_id:
-                # Vocal channel call — notify remaining participants + server members
-                if not result.get("ended"):
-                    for participant_id in call.participants:
-                        await self.sendNotificationAsync(participant_id, {
-                            "type": "call_participant_left",
-                            "content": {
-                                "call": call.to_dict(),
-                                "user_id": user_id,
-                                "mode_changed": False
-                            }
-                        })
-                await _wsh._broadcast_vocal_leave(self, call, user_id)
-                continue
-
-            if result.get("ended"):
-                members = self.db.getAll("accessconversation", call.conversation_id, "conversation")
-                for member in members:
-                    await self.sendNotificationAsync(member["account"], {
-                        "type": "call_ended",
-                        "content": {"call_id": call_id, "conversation_id": call.conversation_id}
-                    })
+            if clean:
+                await self._remove_from_call(call_id, user_id)
             else:
+                print(f"[calls] {user_id} dropped from call {call_id}: {self.CALL_GRACE_S} s to come back")
+                call.missing_since.setdefault(user_id, time.monotonic())
+
+    async def _remove_from_call(self, call_id, user_id, kicked=False):
+        """Take user_id out of a call and tell everyone concerned, like a hang-up.
+        kicked: the user didn't leave themselves (still connected, see
+        _evaluate_stuck): their own client is told to drop the call too."""
+        import ws_handlers as _wsh
+        result = self.callManager.leave_call(call_id, user_id)
+        if not result:
+            return
+        call = result["call"]
+        if kicked:
+            await self.sendNotificationAsync(user_id, {
+                "type": "call_kicked",
+                "content": {"call_id": call_id, "vocal_channel_id": call.vocal_channel_id,
+                            "reason": "unreachable"}
+            })
+
+        if call.vocal_channel_id:
+            # Vocal channel call — notify remaining participants + server members
+            if not result.get("ended"):
                 for participant_id in call.participants:
                     await self.sendNotificationAsync(participant_id, {
                         "type": "call_participant_left",
                         "content": {
                             "call": call.to_dict(),
                             "user_id": user_id,
-                            "mode_changed": result.get("mode_changed", False)
+                            "mode_changed": False
                         }
                     })
+            await _wsh._broadcast_vocal_leave(self, call, user_id)
+            return
+
+        if result.get("ended"):
+            members = self.db.getAll("accessconversation", call.conversation_id, "conversation")
+            for member in members:
+                await self.sendNotificationAsync(member["account"], {
+                    "type": "call_ended",
+                    "content": {"call_id": call_id, "conversation_id": call.conversation_id}
+                })
+        else:
+            for participant_id in call.participants:
+                await self.sendNotificationAsync(participant_id, {
+                    "type": "call_participant_left",
+                    "content": {
+                        "call": call.to_dict(),
+                        "user_id": user_id,
+                        "mode_changed": result.get("mode_changed", False)
+                    }
+                })
+
+    # ----------------------------- CALL LIVENESS ------------------------------
+    # A participant can stay in a call without anybody on the other end: a socket
+    # that died without its cleanup, a call reloaded from the DB after a restart
+    # (CallSession.from_row) with people who never came back, or a client whose
+    # media can't reach anyone. Nobody must stay "Connecting…" for good.
+
+    CALL_GRACE_S = 30   # time to reconnect (WS) / to get media flowing (WebRTC)
+
+    def _participant_alive(self, call, user_id):
+        """The participant still has the socket they're in the call from (or,
+        when unknown, any socket at all)."""
+        bound = call.sockets.get(user_id)
+        if bound is not None:
+            return bound in self.ws_accounts
+        return user_id in self.ws_accounts.values()
+
+    def _ensure_call_sweeper(self):
+        """Start the liveness sweep in the WS event loop, once."""
+        if getattr(self, "_call_sweeper", None) is None:
+            self._call_sweeper = asyncio.get_running_loop().create_task(self._sweep_calls())
+
+    async def _sweep_calls(self):
+        try:
+            self.callManager.load_active_calls()
+        except Exception as e:
+            print(f"[calls] loading the active calls failed: {e}")
+        while True:
+            await asyncio.sleep(10)
+            try:
+                await self._sweep_calls_once()
+            except Exception as e:
+                print(f"[calls] liveness sweep failed: {e}")
+
+    async def _sweep_calls_once(self):
+        """Remove participants who have had no live socket for CALL_GRACE_S."""
+        now = time.monotonic()
+        for call_id, call in list(self.callManager.active_calls.items()):
+            if not call.participants:   # a leftover row nobody is in
+                self.callManager.end_call(call_id)
+                continue
+            for user_id in list(call.participants):
+                if self._participant_alive(call, user_id):
+                    call.missing_since.pop(user_id, None)
+                elif now - call.missing_since.setdefault(user_id, now) >= self.CALL_GRACE_S:
+                    print(f"[calls] removing {user_id} from call {call_id}: no live socket")
+                    await self._remove_from_call(call_id, user_id)
+
+    async def report_stuck_peer(self, call, reporter, target):
+        """reporter has been stuck "Connecting…" to target for CALL_GRACE_S (no
+        media). Someone is kicked once EVERY other participant reports them and
+        they're either gone or stuck themselves (they report someone): a cut-off
+        client. One participant alone can't kick a healthy one — its media flows,
+        so it reports nobody. Two people who can't reach each other report each
+        other: the one who joined last goes (usually the one with the bad link)."""
+        now = time.monotonic()
+        call.stuck_reports.setdefault(target, {})[reporter] = now
+        fresh = {t: {r for r, at in reports.items() if now - at < 2 * self.CALL_GRACE_S}
+                 for t, reports in call.stuck_reports.items()}
+        reporting = {r for reporters in fresh.values() for r in reporters}
+
+        def cut_off(user_id):
+            others = set(call.participants) - {user_id}
+            return (bool(others) and others <= fresh.get(user_id, set())
+                    and (user_id in reporting or not self._participant_alive(call, user_id)))
+
+        candidates = [u for u in call.participants if cut_off(u)]   # participants: join order
+        if not candidates:
+            return
+        print(f"[calls] kicking {candidates[-1]} from call {call.id}: unreachable by everyone "
+              f"(participants {call.participants}, cut off: {candidates})")
+        await self._remove_from_call(call.id, candidates[-1], kicked=True)
 
     async def _handle_messages(self, websocket):
+        self._ensure_call_sweeper()
         self.clients.append(websocket)
         self.calls = {}
 
@@ -492,6 +604,14 @@ class Mycelium(ForumMixin, Server):
 
 
     def onWSAuth(self,uid):
+        # authWS just put uid's socket in the pool: remember whose it is (checked
+        # against the active_client row: another account may be authenticating
+        # at the same time on another HTTP thread)
+        for client_id, ws in list(self.pool.items()):
+            if ws not in self.ws_accounts:
+                row = self.db.getSomething("active_client", client_id)
+                if row and row["userid"] == uid:
+                    self.ws_accounts[ws] = uid
         self.sendStatusUpdates(uid)
 
 
@@ -702,19 +822,38 @@ class Mycelium(ForumMixin, Server):
     def channelContext(self, uid, serverId):
         """What it takes to evaluate uid's rights in any channel of serverId, loaded
         once (a listing reuses it for every channel). None if uid isn't a member."""
-        server = self.db.getSomething("server", serverId)
-        if not server or not self.db.getFilters("accessserver", ["account", "=", uid, "and", "server", "=", serverId]):
+        if not self.db.getFilters("accessserver", ["account", "=", uid, "and", "server", "=", serverId]):
             return None
-        roles = self.getMemberRoles(serverId, uid)
-        rights = set(server.get("default_permissions") or {})
-        for role in roles:
-            rights |= set(role["permissions"] or {})
+        return self.channelContexts(serverId, [uid]).get(uid)
+
+    def channelContexts(self, serverId, uids):
+        """channelContext of several members at once ({uid: ctx}): the server-wide
+        rows are read once, not once per member (a broadcast to a whole server).
+        Membership is the caller's to check."""
+        server = self.db.getSomething("server", serverId)
+        if not server:
+            return {}
+        wanted = set(uids)
+        server_roles = {role["id"]: role for role in self.db.getAll("role", serverId, "server") or []}
+        held = {}
+        # .get: an attribution can outlive its role on a DB without the FK (db/migrate_roles.sql)
+        for a in self.db.getAll("role_attribution", serverId, "server") or []:
+            if a["account"] in wanted and a["role"] in server_roles:
+                held.setdefault(a["account"], []).append(server_roles[a["role"]])
         overwrites = {}
         for row in self.db.getAll("channel_permission", serverId, "server") or []:
             overwrites.setdefault((row["channel"], row["channel_type"]), []).append(row)
         categories = {c["id"]: c for c in self.db.getAll("server_cat", serverId, "server") or []}
-        return {"uid": uid, "is_owner": server["owner"] == uid, "rights": rights,
-                "role_ids": {r["id"] for r in roles}, "overwrites": overwrites, "categories": categories}
+        default_rights = set(server.get("default_permissions") or {})
+        contexts = {}
+        for uid in wanted:
+            roles = sorted(held.get(uid, []), key=lambda r: (r["position"], r["id"]))
+            rights = set(default_rights)
+            for role in roles:
+                rights |= set(role["permissions"] or {})
+            contexts[uid] = {"uid": uid, "is_owner": server["owner"] == uid, "rights": rights,
+                             "role_ids": {r["id"] for r in roles}, "overwrites": overwrites, "categories": categories}
+        return contexts
 
     @staticmethod
     def permissionLayers(chan, channelType, overwrites, categories):

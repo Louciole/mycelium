@@ -58,7 +58,7 @@ const channelScopes = {
     forum: [...CHANNEL_COMMON, 'send-messages', 'manage-messages'],
     drive: [...CHANNEL_COMMON, 'send-messages', 'manage-files'],
     note: [...CHANNEL_COMMON, 'edit-notes'],
-    vocal: [...CHANNEL_COMMON],
+    vocal: [...CHANNEL_COMMON, 'send-messages', 'manage-messages'],   // its text chat
 }
 // A category's overwrites may set any channel right; each channel keeps its own scope.
 channelScopes.category = [...new Set(Object.values(channelScopes).flat())]
@@ -77,7 +77,11 @@ const channelRightTexts = {
 const channelRightOverrides = {
     forum: {'send-messages': {label: 'Envoyer des messages', description: "Permet de créer des posts et de répondre dans ce forum."}},
     drive: {'send-messages': {label: 'Déposer des fichiers', description: "Permet d'ajouter des fichiers et des dossiers dans ce drive."}},
-    vocal: {'view-channels': {label: 'Voir et rejoindre le salon', description: "Permet de voir ce salon vocal et de rejoindre ses appels. Le refuser à @everyone revient à rendre le salon privé."}},
+    vocal: {
+        'view-channels': {label: 'Voir et rejoindre le salon', description: "Permet de voir ce salon vocal et de rejoindre ses appels. Le refuser à @everyone revient à rendre le salon privé."},
+        'send-messages': {label: 'Envoyer des messages', description: "Permet d'écrire dans le chat de ce salon vocal, qu'on soit dans l'appel ou non."},
+        'manage-messages': {label: 'Gérer les messages', description: "Permet de supprimer les messages des autres membres dans le chat de ce salon vocal."},
+    },
     category: {
         'view-channels': {label: 'Voir les salons', description: "Permet de voir les salons de cette catégorie (sauf si un salon le règle autrement). Le refuser à @everyone revient à rendre la catégorie privée."},
         'manage-channels': {label: 'Gérer les salons', description: "Permet de modifier cette catégorie et ses salons : les renommer, les déplacer, les paramétrer ou les supprimer."},

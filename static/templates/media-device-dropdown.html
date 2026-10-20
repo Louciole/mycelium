@@ -1,0 +1,15 @@
+<div class="dropdown media-device-dropdown ${element.disabled ? 'disabled' : ''}" id="${element.pref}-dropdown">
+    <div class="dropdown-button" ${element.disabled ? '' : 'onclick="toggleDropdown(event)"'}>
+        <img class="icon device-icon" src="/static/icons/material/${element.icon}.svg" alt=""/>
+        <div class="dropdown-text">${escapeHTML(mediaDeviceLabel(element.kind, global.state.voiceSettings[element.pref]))}</div>
+        <div class="icon-wrapper">
+            <img class="icon down" src="/static/icons/material/down.svg" alt=""/>
+            <img class="icon up" src="/static/icons/material/up.svg" alt=""/>
+        </div>
+    </div>
+    <ul class="dropdown-menu">
+        <li class="${global.state.voiceSettings[element.pref] ? '' : 'selected'}" data-id="" onclick="pickMediaDevice('${element.pref}', this.dataset.id)">${_t("Par défaut du système")}</li>
+        ${(global.state.mediaDevices?.[element.kind] || []).map(d => `
+        <li class="${d.deviceId === global.state.voiceSettings[element.pref] ? 'selected' : ''}" data-id="${escapeHTML(d.deviceId)}" onclick="pickMediaDevice('${element.pref}', this.dataset.id)">${escapeHTML(mediaDeviceLabel(element.kind, d.deviceId))}</li>`).join('')}
+    </ul>
+</div>

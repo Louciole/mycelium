@@ -1,0 +1,13 @@
+<div class="ui-dialog-backdrop" id="camera-preview-dialog" onclick="if (event.target === this) closeCameraPreview(false)">
+    <div class="ui-dialog camera-preview" role="dialog" aria-modal="true" aria-labelledby="camera-preview-title">
+        <h2 class="ui-dialog-title" id="camera-preview-title">${_t("Aperçu de la caméra")}</h2>
+        <div class="camera-test on">
+            <video id="camera-preview-video" autoplay muted playsinline></video>
+        </div>
+        ${Subscribe('global.state.mediaDevices', () => fillWith('media-device-dropdown', [{kind: 'videoinput', pref: 'cameraDevice', icon: 'videocam'}]))}
+        <div class="ui-dialog-actions">
+            <button type="button" class="ui-dialog-cancel" onclick="closeCameraPreview(false)">${_t("Annuler")}</button>
+            <button type="button" class="ui-dialog-confirm" onclick="closeCameraPreview(true)">${_t("Activer la caméra")}</button>
+        </div>
+    </div>
+</div>

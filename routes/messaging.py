@@ -8,7 +8,8 @@ import datetime
 import secrets
 
 from vesta import Server, HTTPError
-from message_helpers import notifyChannelMesage, notifyConvMessage, post_system_message, is_system_message, _lookupMessagePlace
+from message_helpers import (notifyChannelMesage, notifyConvMessage, post_system_message, is_system_message,
+                             _lookupMessagePlace, notifyPlaceMembers)
 
 DICE_MAX_COUNT = 20
 DICE_MIN_FACES, DICE_MAX_FACES = 2, 1000
@@ -237,7 +238,8 @@ def edit_message(self, message_id, content):
     if is_system_message(message):
         raise HTTPError(self.response, 403, "system messages can't be edited")
     # A timed-out member can't rewrite their messages either
-    channel, _ = _lookupMessagePlace(self, message["place"])
+    place = _lookupMessagePlace(self, message["place"])
+    channel = place[0]
     if channel:
         self.enforceNotTimedOut(uid, channel["server"])
 
@@ -257,17 +259,7 @@ def edit_message(self, message_id, content):
                 self.db.edit("poll", att["pollId"], "question", content)
 
     notif = {"type": "message_edited", "content": {"id": message, "content": content}}
-    channel = self.db.getSomething("textual_channel", message["place"])
-    if channel:
-        members = self.db.getFilters("accessserver", ["server", "=", channel["server"]])
-        for member in members:
-            if member["account"] != uid:
-                self.sendNotification(member["account"], notif)
-    else:
-        members = self.db.getAll("accessconversation", message["place"], "conversation")
-        for member in members:
-            if member["account"] != uid:
-                self.sendNotification(member["account"], notif)
+    notifyPlaceMembers(self, message["place"], notif, exclude=uid, place=place)
 
 
 @Server.expose
@@ -295,16 +287,7 @@ def delete_message(self, message_id):
                            target_account=message["sender"], metadata={"message_id": message["id"]})
 
     del_notif = {"type": "message_deleted", "content": {"id": messageId}}
-    if channel:
-        members = self.db.getFilters("accessserver", ["server", "=", channel["server"]])
-        for member in members:
-            if member["account"] != uid:
-                self.sendNotification(member["account"], del_notif)
-    else:
-        members = self.db.getAll("accessconversation", message["place"], "conversation")
-        for member in members:
-            if member["account"] != uid:
-                self.sendNotification(member["account"], del_notif)
+    notifyPlaceMembers(self, message["place"], del_notif, exclude=uid, place=(channel, channel_type))
 
 
 @Server.expose
@@ -364,16 +347,7 @@ def toggle_reaction(self, message_id, emoji):
         }
     }
 
-    if channel:
-        members = self.db.getFilters("accessserver", ["server", "=", channel["server"]])
-        for m in members:
-            if m["account"] != uid:
-                self.sendNotification(m["account"], notif_data)
-    else:
-        members = self.db.getAll("accessconversation", message["place"], "conversation")
-        for m in members:
-            if m["account"] != uid:
-                self.sendNotification(m["account"], notif_data)
+    notifyPlaceMembers(self, message["place"], notif_data, exclude=uid, place=(channel, channel_type))
 
     return json.dumps({"success": True, "action": action, "reactions": broadcast_reactions_dict})
 
@@ -423,17 +397,7 @@ def vote_poll(self, poll_id, option_ids):
         "pollId": poll["id"],
         "votes": votes_dict
     }}
-    channel = self.db.getSomething("textual_channel", message["place"])
-    if channel:
-        members = self.db.getFilters("accessserver", ["server", "=", channel["server"]])
-        for m in members:
-            if m["account"] != uid:
-                self.sendNotification(m["account"], notif_data)
-    else:
-        members = self.db.getAll("accessconversation", message["place"], "conversation")
-        for m in members:
-            if m["account"] != uid:
-                self.sendNotification(m["account"], notif_data)
+    notifyPlaceMembers(self, message["place"], notif_data, exclude=uid)
 
     return json.dumps({"success": True, "votes": votes_dict})
 
@@ -465,17 +429,7 @@ def add_poll_option(self, poll_id, text):
         "pollId": poll["id"],
         "option": new_option
     }}
-    channel = self.db.getSomething("textual_channel", message["place"])
-    if channel:
-        members = self.db.getFilters("accessserver", ["server", "=", channel["server"]])
-        for m in members:
-            if m["account"] != uid:
-                self.sendNotification(m["account"], notif_data)
-    else:
-        members = self.db.getAll("accessconversation", message["place"], "conversation")
-        for m in members:
-            if m["account"] != uid:
-                self.sendNotification(m["account"], notif_data)
+    notifyPlaceMembers(self, message["place"], notif_data, exclude=uid)
 
     return json.dumps(new_option)
 
@@ -512,7 +466,7 @@ def get_poll_results(self, poll_id):
 
 def _resolveMessagePlace(self, uid, conv):
     """Resolve a message 'place' id to a server channel for permission checks and notification.
-    Returns (channel, channel_type): channel is a textual_channel or forum_channel dict suitable
+    Returns (channel, channel_type): channel is a textual_channel, forum_channel or vocal_channel dict suitable
     for notifyChannelMesage; channel_type is None for plain conversations (DMs/groups).
     Raises 403 if the user cannot post. Bumps a forum post's last_activity on success."""
     place_id = conv.get("id")
@@ -533,6 +487,15 @@ def _resolveMessagePlace(self, uid, conv):
         self.enforceNotTimedOut(uid, forum["server"])
         self.db.edit("forum_post", post["id"], "last_activity", datetime.datetime.now())
         return forum, "forum"
+
+    chat = self.db.getSomething("vocal_chat", place_id) if place_id else None
+    if chat:
+        # send-messages implies view-channels (no right at all without it)
+        if not self.checkChannelAccess(uid, chat["vocal"], "vocal", "send-messages"):
+            raise HTTPError(self.response, 403, "no permission to send messages in this channel")
+        vocal = self.db.getSomething("vocal_channel", chat["vocal"])
+        self.enforceNotTimedOut(uid, vocal["server"])
+        return vocal, "vocal"
 
     if place_id and not self.db.getFilters("accessconversation", ["conversation", "=", place_id, "and", "account", "=", uid]):
         raise HTTPError(self.response, 403, "no access to this conversation")
@@ -575,9 +538,9 @@ def _getPollConvAccess(self, uid, poll_id):
     if not message:
         raise HTTPError(self.response, 404, "Poll message not found")
     # Check access: either via accessconversation (DMs) or channel access (channels)
-    channel = self.db.getSomething("textual_channel", message["place"])
+    channel, channel_type = _lookupMessagePlace(self, message["place"])
     if channel:
-        self.require_channel_access(uid, message["place"], "textual", "view")
+        self.require_channel_access(uid, channel["id"], channel_type, "view")
     else:
         access = self.db.getFilters("accessconversation", ["conversation", "=", message["place"], "and", "account", "=", uid])
         if not access:

@@ -1,0 +1,17 @@
+<div class="vocal-tile vocal-screen-tile ${vocalFocusClass(element.local ? 'screen-local' : 'screen-' + element.userId)}"
+     id="screen-tile-${element.local ? 'local' : element.userId}"
+     onclick="toggleVocalFocus('${element.local ? 'screen-local' : 'screen-' + parseInt(element.userId, 10)}')"
+     ${element.local ? '' : `oncontextmenu="openVoiceUserMenu(event, ${parseInt(element.userId, 10)}, true)"`}>
+    <video id="screen-video-${element.local ? 'local' : element.userId}" autoplay playsinline muted></video>
+    <span class="vocal-live-badge vocal-screen-badge">${_t('EN DIRECT')}</span>
+    ${element.hasAudio ? `
+    <div class="vocal-screen-audio" data-haptic="light"
+         onclick="event.stopPropagation();global.state.callManager.toggleLocalMute('screen-${parseInt(element.userId, 10)}')"
+         title="${element.muted ? _t('Activer le son du stream') : _t('Couper le son du stream')}">
+        <img class="icon ${element.muted ? 'red' : ''}" src="/static/icons/material/${element.muted ? 'speaker_off' : 'speaker'}.svg" alt=""/>
+    </div>` : ''}
+    <div class="vocal-tile-label">
+        <img class="icon" src="/static/icons/material/screen_share.svg" alt=""/>
+        <span class="vocal-tile-name">${escapeHTML(voiceUser(element.userId).display || 'User')}</span>
+    </div>
+</div>

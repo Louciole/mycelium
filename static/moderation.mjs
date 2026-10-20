@@ -139,7 +139,9 @@ function canManageMessage(message) {
     const dirs = global.state.currentServer.dirs;
     if (dirs?.channels?.some(c => c.id === message.place)) return true;
     const forum = global.convs?.[message.place]?.forum;
-    return forum !== undefined && !!dirs?.forums?.some(c => c.id === forum);
+    if (forum !== undefined) return !!dirs?.forums?.some(c => c.id === forum);
+    const vocal = global.convs?.[message.place]?.vocal;   // a vocal channel's chat
+    return vocal !== undefined && !!dirs?.vocals?.some(c => c.id === vocal);
 }
 window.canManageMessage = canManageMessage;
 
@@ -355,6 +357,7 @@ function composerChannel() {
     const chan = global.state.isServer ? global.state.activeChan : null;
     if (chan?.type === "conv") return [chan.id, "textual"];
     if (chan?.type === "forum") return [chan.id, "forum"];
+    if (chan?.type === "vocal") return [chan.id, "vocal"];   // its chat panel
     return null;
 }
 

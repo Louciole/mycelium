@@ -4,6 +4,12 @@ ${Subscribe('global.state.callManager.callViewState', () => {
     const { callState, hasAnyVideo } = viewState;
 
     if (!callState || callState === 'none') return '';
+    // Only this conversation's call: not a vocal channel connection, nor the
+    // banner of a call ringing in another conversation
+    const convId = Number(global.state.activeConv);
+    const callConv = callManager.currentCall?.conversation_id
+        ?? (callState === 'banner' ? global.convs[convId]?.ongoingCall?.conversation_id : null);
+    if (Number(callConv) !== convId) return '';
 
     const modeClass = hasAnyVideo ? 'call-videomode' : 'call-audiomode';
 

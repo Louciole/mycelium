@@ -1,0 +1,50 @@
+<aside class="vocal-chat" id="vocal-chat" ondragover="if(!global.state.isMobile){event.preventDefault();event.currentTarget.classList.add('dragging')}">
+    <div class="vocal-chat-header">
+        <img class="icon" src="/static/icons/material/message.svg" alt=""/>
+        <h3>${escapeHTML(global.convs[global.state.activeConv]?.name || '')}</h3>
+        <div class="icon-wrapper" id="vocal-chat-close" onclick="closeVocalChat()" title="${_t('Fermer le chat')}">
+            <img class="icon" src="/static/icons/material/closeFilled.svg"/>
+        </div>
+    </div>
+
+    <div class="scrollable bottom-margin">
+        ${Subscribe('global.convs['.concat(global.state.activeConv,'].messages'),()=>fillWith('messageGroup',global.convs[global.state.activeConv].messageGroups||[]), undefined, {"repaint":()=>(repaintConv(sub, value))})}
+        <div class="vocal-chat-welcome">
+            <h3>${_t("Bienvenue dans")} ${escapeHTML(global.convs[global.state.activeConv]?.name || '')}${_t(" !")}</h3>
+            <p>${_t("Les messages de ce chat restent dans le salon, que tu sois dans l'appel ou non.")}</p>
+        </div>
+    </div>
+    <div class="chat-wrapper">
+        ${includeTemplate('chat-reply-box')}
+        <div class="chat-input">
+            <div class="icon-wrapper" onclick="toggleFM('chat-plus-menu')">
+                <img class="icon" src="/static/icons/material/add.svg"/>
+            </div>
+            <div id="chat-plus-menu" class="flying-menu">
+                <div class="item" onclick="triggerFileUpload()"><img class="icon" src="/static/icons/material/paperclip.svg"><p>${_t("Upload a file")}</p></div>
+                <div class="item" onclick="closeFM();openMenu('create-poll')"><img class="icon" src="/static/icons/material/poll.svg"><p>${_t("Create a poll")}</p></div>
+            </div>
+            <input type="file" id="chat-file-upload" multiple style="display:none" onchange="handleChatFileUpload(event)"/>
+            <label style="flex: 1;height: fit-content;">
+                <textarea class="selected" rows="1" placeholder="${_t('Envoyer un message à')} ${escapeHTML(global.convs[global.state.activeConv]?.name || '')}" onkeydown="if(!slashOnKeyDown(event) && !mentionOnKeyDown(event))sendMessage(event)" oninput="resizeHeight(event);slashOnInput(event);mentionOnInput(event);updateSendButton(event.currentTarget)" onblur="saveCursorPosition(event);mentionOnBlur();slashOnBlur()" onpaste="pasteFileMessage(event)"></textarea>
+            </label>
+            ${global.state.isMobile ? `<div class="icon-wrapper send-btn" data-haptic="medium" onclick="sendButtonClick(event)">
+                <img class="icon" src="/static/icons/material/send.svg"/>
+            </div>` : ''}
+            <div class="icon-wrapper" onclick="toggleFM('conv-emoji-board')">
+                <img class="icon" src="/static/icons/material/emoji.svg"/>
+            </div>
+        </div>
+    </div>
+
+    ${includeTemplate('chat-pickers')}
+
+    <div id="upload-wrapper" ondragleave="if(!global.state.isMobile){event.preventDefault();event.currentTarget.parentElement.classList.remove('dragging')}" ondrop="if(!global.state.isMobile)dropFileMessage(event)">
+        <div>
+            <div>
+                <h2>${_t("Uploader vers")} ${escapeHTML(global.convs[global.state.activeConv]?.name || '')}</h2>
+                <p>${_t("Tu peux ajouter des commentaires avant d'envoyer tes fichiers")}</p>
+            </div>
+        </div>
+    </div>
+</aside>

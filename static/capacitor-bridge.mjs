@@ -552,7 +552,12 @@ if (isNative) {
 
 // ─── Navigation helper ────────────────────────────────────────────────────────
 function handleNotificationNavigation(extra = {}) {
-  if (extra.convId) {
+  if (extra.vocalChat && extra.serverId && extra.channelId) {
+    // A vocal channel's chat: its convId is a message place, not a conversation
+    window.dispatchEvent(new CustomEvent('cap:deepLinkChannel', {
+      detail: { serverId: extra.serverId, channelId: extra.channelId, kind: 'chat' },
+    }));
+  } else if (extra.convId) {
     window.dispatchEvent(new CustomEvent('cap:navigateToConv', { detail: { convId: extra.convId } }));
   } else if (extra.serverId && extra.channelId) {
     window.dispatchEvent(new CustomEvent('cap:deepLinkChannel', {

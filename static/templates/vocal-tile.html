@@ -1,0 +1,18 @@
+<div class="call-participant vocal-tile status-${element.local ? 'active' : (element.status || 'active')} ${vocalFocusClass(element.local ? 'local' : element.userId)}"
+     id="participant-${element.local ? 'local' : element.userId}"
+     data-user="${element.userId}"
+     style="--tile-hue: ${(element.userId * 137.508) % 360}"
+     onclick="toggleVocalFocus('${element.local ? 'local' : parseInt(element.userId, 10)}')"
+     ${element.local ? '' : `oncontextmenu="openVoiceUserMenu(event, ${parseInt(element.userId, 10)})"`}>
+    <div class="participant-avatar" id="avatar-${element.local ? 'local' : element.userId}">
+        ${voiceUser(element.userId).pfp
+            ? `<img src="/static/attachments/${escapeHTML(voiceUser(element.userId).pfp)}" alt="" onerror="this.remove()">`
+            : `<span class="vocal-avatar-initial">${escapeHTML(voiceInitial(element.userId))}</span>`}
+    </div>
+    <video id="${element.local ? 'local-video' : 'remote-video-' + element.userId}" autoplay playsinline muted></video>
+    <div class="vocal-tile-label">
+        ${Subscribe(`global.state.voiceStates[${Number(element.userId)}]`, (uid = element.userId) => voiceStateIcons(uid, true), 'vocal-tile-state', {element: `${element.userId}`})}
+        <span class="vocal-tile-name">${escapeHTML(voiceUser(element.userId).display || 'User')}</span>
+    </div>
+    ${element.status === 'connected' && !element.local ? `<div class="participant-status-text">${_t('Connexion')}…</div>` : ''}
+</div>

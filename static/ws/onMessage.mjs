@@ -21,8 +21,23 @@ function authenticateWebSocket(connectionId, onAuthenticated) {
         if (this.status !== 200) return retry(this.status)
         global.state.clientID = JSON.parse(this.responseText)
         onAuthenticated()
+        // A reconnection in the middle of a call: carry the call over to this socket
+        global.state.callManager?.resyncAfterReconnect()
     })
     request.onerror = () => retry("network error")
+}
+
+// Occupant list of a vocal channel, on the server it belongs to (the event can
+// concern a server other than the one on screen).
+function setVocalOccupants(serverId, channelId, participants) {
+    const serv = global.servers?.[serverId]
+        || Object.values(global.servers || {}).find(s => s?.dirs?.vocals?.some(c => c.id === channelId));
+    if (!serv) return;
+    if (!serv.vocalOccupants) serv.vocalOccupants = {};
+    serv.vocalOccupants[channelId] = participants;
+    if (global.state.currentServer?.id === serv.id) {
+        setElement(`global.state.currentServer.vocalOccupants[${channelId}]`, participants);
+    }
 }
 
 function isChannelMuted(channelId) {
@@ -61,7 +76,10 @@ export async function onMessage(event) {
                             window.markChannelRead?.(content.place, content.server)
                         }
                     }else{
-                        if (isChannel) {
+                        if (content.vocal !== undefined) {
+                            // Vocal channel chat: no unread marker in the sidebar yet
+                            // (its @mentions still ping through the "mention" event).
+                        } else if (isChannel) {
                             // Server channel: mark unread (the ping sound fires only on a
                             // targeted "mention" event). Respect a channel or server mute.
                             const serverMuted = global.user?.notif_prefs?.[String(content.server)]?.level === 2
@@ -326,6 +344,23 @@ export async function onMessage(event) {
                     }
                     break;
 
+                case "call_rebound":
+                    global.state.callManager?.handleRebound(message.content.content);
+                    break;
+
+                case "call_kicked": {
+                    // The server took us out: nobody in the call could get our media
+                    // (Mycelium.report_stuck_peer). Drop it here too and say why.
+                    const kcm = global.state.callManager;
+                    const kicked = message.content.content;
+                    if (kcm?.currentCall?.id === kicked.call_id) {
+                        kcm.cleanup();
+                        if (isNative) callEnded();
+                        window.uiAlert?.(_t("Connexion à l'appel impossible : personne ne recevait ton audio. Vérifie ta connexion puis rejoins à nouveau."));
+                    }
+                    break;
+                }
+
                 case "call_mode_switch":
                     const modeCallManager = global.state.callManager;
                     if (modeCallManager && modeCallManager.currentCall &&
@@ -336,31 +371,33 @@ export async function onMessage(event) {
 
                 case "vocal_channel_joined": {
                     const vd = message.content.content;
-                    const servId = global.state.currentServer?.id;
-                    const serv = servId ? global.servers?.[servId] : null;
-                    if (serv) {
-                        if (!serv.vocalOccupants) serv.vocalOccupants = {};
-                        serv.vocalOccupants[vd.channel_id] = vd.participants;
-                        setElement(`global.state.currentServer.vocalOccupants[${vd.channel_id}]`, vd.participants);
-                    }
+                    setVocalOccupants(vd.server_id, vd.channel_id, vd.participants);
+                    global.state.callManager?.mergeVoiceStates(vd.voice_states);
                     break;
                 }
 
                 case "vocal_channel_left": {
                     const vdl = message.content.content;
-                    const srvId2 = global.state.currentServer?.id;
-                    const serv2 = srvId2 ? global.servers?.[srvId2] : null;
-                    if (serv2) {
-                        if (!serv2.vocalOccupants) serv2.vocalOccupants = {};
-                        serv2.vocalOccupants[vdl.channel_id] = vdl.participants;
-                        setElement(`global.state.currentServer.vocalOccupants[${vdl.channel_id}]`, vdl.participants);
+                    setVocalOccupants(vdl.server_id, vdl.channel_id, vdl.participants);
+                    const vcm = global.state.callManager;
+                    if (vdl.user_id !== global.user.id && !vcm?.remoteParticipants?.some(p => p.userId === vdl.user_id)) {
+                        // Not in our call (that path goes through call_participant_left)
+                        vcm?.setVoiceState(vdl.user_id, null);
                     }
                     // If we're watching the vocal channel content and the call ended, clean up
-                    const vcm = global.state.callManager;
+                    // (the same call: after a quick hang-up + rejoin, the old call's
+                    // event can land once we're in the channel's next one)
                     if (vcm && vcm.currentCall?.vocal_channel_id === vdl.channel_id
+                            && (vdl.call_id === undefined || vdl.call_id === vcm.currentCall.id)
                             && !vdl.participants.includes(global.user.id)) {
                         vcm.cleanup();
                     }
+                    break;
+                }
+
+                case "voice_state": {
+                    const vs = message.content.content;
+                    if (vs.user_id !== global.user.id) global.state.callManager?.setVoiceState(vs.user_id, vs.state);
                     break;
                 }
 

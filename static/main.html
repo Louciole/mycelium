@@ -92,6 +92,8 @@
     <audio id="call-ringtone" loop>
         <source src="/static/sounds/call.mp3" type="audio/mpeg">
     </audio>
+    <!-- Remote call audio (CallManager._attachAudio): outside the views so it keeps playing while browsing -->
+    <div id="call-audio-sinks" hidden></div>
     <audio id="outgoing-call-tone" loop>
         <source src="/static/sounds/call.mp3" type="audio/mpeg">
     </audio>

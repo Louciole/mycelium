@@ -49,14 +49,57 @@ def is_system_message(message):
 
 def _lookupMessagePlace(self, place_id):
     """(channel, channel_type) of a message place, WITHOUT any permission check:
-    a textual channel, the forum of a forum post, or (None, None) for a conv."""
-    channel = self.db.getSomething("textual_channel", place_id)
-    if channel:
-        return channel, "textual"
-    post = self.db.getSomething("forum_post", place_id)
-    if post:
-        return self.db.getSomething("forum_channel", post["forum"]), "forum"
+    a textual channel, the forum of a forum post, the vocal channel of a vocal
+    chat, or (None, None) for a conv.
+
+    Every place inherits conversationElement (one id sequence), so one query says
+    which table holds the id (and the forum / vocal channel above it): a DM costs a
+    single SELECT instead of a miss per channel table — typing calls this per keystroke."""
+    try:
+        place_id = int(place_id)
+    except (TypeError, ValueError):
+        return None, None
+    with self.db.pool.connection() as conn:
+        row = conn.execute(
+            "SELECT ce.tableoid::regclass::text AS kind, COALESCE(fp.forum, vc.vocal) AS parent"
+            " FROM conversationElement ce"
+            " LEFT JOIN forum_post fp ON ce.tableoid = 'forum_post'::regclass AND fp.id = ce.id"
+            " LEFT JOIN vocal_chat vc ON ce.tableoid = 'vocal_chat'::regclass AND vc.id = ce.id"
+            " WHERE ce.id = %s LIMIT 1", (place_id,)).fetchone()
+    kind = row["kind"] if row else None
+    if kind == "textual_channel":
+        return self.db.getSomething("textual_channel", place_id), "textual"
+    if kind == "forum_post":
+        return self.db.getSomething("forum_channel", row["parent"]), "forum"
+    if kind == "vocal_chat":
+        return self.db.getSomething("vocal_channel", row["parent"]), "vocal"
     return None, None
+
+
+def notifyPlaceMembers(self, place_id, notif, exclude=None, place=None):
+    """Send a WS notif about a message place to whoever can read it: the members
+    who can view the channel (private channels, overwrites) or the conv's members.
+    `place` is the (channel, channel_type) already resolved by the caller."""
+    channel, channel_type = place if place is not None else _lookupMessagePlace(self, place_id)
+    if channel:
+        accounts = [a for a, rights in self.channelMembersRights(channel, channel_type).items()
+                    if "view-channels" in rights]
+    else:
+        accounts = [m["account"] for m in self.db.getAll("accessconversation", place_id, "conversation") or []]
+    for account in accounts:
+        if account != exclude:
+            self.sendNotification(account, notif)
+
+
+def vocal_chat_place(self, vocal_id):
+    """Message place id of a vocal channel's text chat, created on first use.
+    Access control is the caller's job."""
+    chat = self.db.getSomething("vocal_chat", vocal_id, "vocal")
+    if not chat:
+        # ON CONFLICT DO NOTHING (vesta insertDict): a concurrent first open just re-reads
+        self.db.insertDict("vocal_chat", {"vocal": int(vocal_id)})
+        chat = self.db.getSomething("vocal_chat", vocal_id, "vocal")
+    return chat["id"]
 
 
 def post_system_message(self, actor, place_id, kind, params, body, icon=None, place=None, notify_actor=False):
@@ -90,6 +133,10 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
     if channel:
         server_id = channel["server"]
         mention_targets = set()
+        # Mute / unread / mention rows are keyed by channel id. A vocal channel's id comes
+        # from another sequence than message places (it could equal a text channel's), so
+        # its chat is keyed by its own place id — the id the client reads and clears.
+        key = message["place"] if channel_type == "vocal" else channel["id"]
 
         # Fetch prefs and the member list once; both are reused below.
         prefs_rows = self.db.getFilters("notification_pref", ["server", "=", server_id]) or []
@@ -140,7 +187,7 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
 
         # Fetch channel mutes for this channel
         now = datetime.datetime.now()
-        mute_rows = self.db.getFilters("channel_mute", ["channel", "=", channel["id"]]) or []
+        mute_rows = self.db.getFilters("channel_mute", ["channel", "=", key]) or []
         channel_muted_for = {
             m["account"] for m in mute_rows
             if m["muted_until"] is None or m["muted_until"] > now
@@ -149,13 +196,15 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
         # Prefetch existing unread markers once so the broadcast loop below stays O(1)
         # per member instead of issuing a SELECT per member.
         already_unread = {
-            r["account"] for r in (self.db.getFilters("channel_unread", ["channel", "=", channel["id"]]) or [])
+            r["account"] for r in (self.db.getFilters("channel_unread", ["channel", "=", key]) or [])
         }
 
         # Tag the broadcast with the server id so the frontend can tell a channel message
         # from a DM by the payload, instead of guessing from the rendered DOM (which only
         # exists for the server the user is currently viewing).
         message["server"] = server_id
+        if channel_type == "vocal":
+            message["vocal"] = channel["id"]
 
         # Muted / server-muted members never get offline notifs or a red badge,
         # even when directly @mentioned (matches Discord muting semantics).
@@ -179,9 +228,10 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
             if level == 2:
                 continue  # server muted: no unread tracking or notifications
 
-            # Track unread state for all non-muted members (the "white" unread marker)
-            if member_uid not in already_unread:
-                self.db.insertDict("channel_unread", {"account": member_uid, "channel": channel["id"]})
+            # Track unread state for all non-muted members (the "white" unread marker).
+            # Not for vocal chats yet: the sidebar has no unread marker for them.
+            if channel_type != "vocal" and member_uid not in already_unread:
+                self.db.insertDict("channel_unread", {"account": member_uid, "channel": key})
                 already_unread.add(member_uid)
 
             # "All Messages" level: notify (sound + push) without a persistent red
@@ -201,24 +251,29 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
             "body": message.get("body", "New message"),
             "data": {
                 "type": "message",
-                "convId": str(channel["id"]),
+                "convId": str(key),
                 "serverId": str(server_id),
                 "groupTitle": channel.get("name", "channel"),
                 "avatarUrl": avatar_url,
             }
         }
+        if channel_type == "vocal":
+            # convId (the chat's place) stays the quick-reply target; a tap opens the
+            # vocal channel with its chat (capacitor-bridge handleNotificationNavigation)
+            push_payload["data"]["channelId"] = str(channel["id"])
+            push_payload["data"]["vocalChat"] = "1"
 
         # Real @mentions: persistent offline notif + red badge (badge=True) + sound + push.
         for target_uid in mention_targets:
-            notif = self.db.getFilters("offline_notifs", ["account", "=", target_uid, "and", "conversation", "=", channel["id"]])
+            notif = self.db.getFilters("offline_notifs", ["account", "=", target_uid, "and", "conversation", "=", key])
             if notif:
                 self.db.edit("offline_notifs", notif[0]["id"], "number", notif[0]["number"] + 1)
             else:
-                self.db.insertDict("offline_notifs", {"account": target_uid, "conversation": channel["id"]})
+                self.db.insertDict("offline_notifs", {"account": target_uid, "conversation": key})
 
             self.sendNotification(target_uid, {
                 "type": "mention",
-                "content": {"server_id": server_id, "channel_id": channel["id"], "badge": True}
+                "content": {"server_id": server_id, "channel_id": key, "badge": True}
             })
             self.sendPushNotification(target_uid, push_payload)
 
@@ -226,7 +281,7 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
         for target_uid in notify_only:
             self.sendNotification(target_uid, {
                 "type": "mention",
-                "content": {"server_id": server_id, "channel_id": channel["id"], "badge": False}
+                "content": {"server_id": server_id, "channel_id": key, "badge": False}
             })
             self.sendPushNotification(target_uid, push_payload)
 

@@ -249,7 +249,28 @@ export function loadChan(key){
     for(let element in elements){
         global.convs[key][element] = elements[element]
     }
+    ingestConvMessages(key)
+}
 
+/**
+ * Text chat of a vocal channel: fills global.convs[place] like a text channel and
+ * returns its place id (the conv the composer posts to), or null when refused.
+ */
+export function loadVocalChat(vocalId){
+    if (global.state.offline) {
+        const place = Object.values(global.convs || {}).find(c => c?.vocal === vocalId)?.id
+        return place ?? null
+    }
+    const request = xhr("get_vocal_chat?channel_id="+JSON.stringify(vocalId), function(){}, "GET", false)
+    if (request.status !== 200) return null
+    const elements = JSON.parse(request.responseText)
+    global.convs[elements.id] = elements
+    ingestConvMessages(elements.id)
+    return elements.id
+}
+
+// global.convs[key].messages (array from the server) → dict by id + messageGroups
+function ingestConvMessages(key){
     let prev = null
     global.convs[key].messageGroups = []
 
@@ -1270,10 +1291,13 @@ export function loadServer(id){
         serv["dirs"] = {"channels" : resp.channels, "dashboards" : dashboards , "vocals" : vocals, "drives" : drives, "notes": notes, "forums": forums, "cat" : resp.cat}
 
         const vocalOccupants = {}
+        const voiceStates = {}
         for (const chan of vocals) {
             vocalOccupants[chan.id] = chan.occupants || []
+            Object.assign(voiceStates, chan.voice_states || {})
         }
         serv["vocalOccupants"] = vocalOccupants
+        global.state.callManager?.mergeVoiceStates(voiceStates)
 
         serv["members"] = {}
         let userList = []

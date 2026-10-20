@@ -5,36 +5,6 @@
 <div class="scrollable" id="server-selector" ondrop="dropSnippet(event)" ondragover="allowSnippetDrop(event)">
     ${Subscribe("global.state.currentServer['displayed-dirs']",() => fillWith('server-category',global.state.currentServer["displayed-dirs"] ? global.state.currentServer["displayed-dirs"] : []))}
 </div>
-${Subscribe('global.state.callManager.callViewState', () => {
-    const cm = global.state.callManager
-    if (!cm?.currentCall?.vocal_channel_id || cm.callState !== 'active') return ''
-    const chanId = cm.currentCall.vocal_channel_id
-    const chan = global.state.currentServer?.dirs?.vocals?.find(v => v.id === chanId)
-    return `<div class="voice-status-bar">
-        <div class="voice-status-info" onclick="goToVocalChannel(${chanId})">
-            <span class="voice-status-channel">${chan?.name || 'Voice'}</span>
-            <span class="voice-status-sub">${_t('Connecté')}</span>
-        </div>
-        <div class="voice-status-controls">
-            ${Subscribe('global.state.callManager.isMuted', () => `
-                <div class="icon-wrapper small" data-haptic="light" onclick="mute();event.stopPropagation()">
-                    <img class="icon" src="/static/icons/material/mic.svg"/>
-                    <div class="line red medium ${global.state.callManager?.isMuted ? 'visible' : ''}"></div>
-                </div>
-            `)}
-            ${Subscribe('global.state.callManager.isVideoOff', () => `
-                <div class="icon-wrapper small" data-haptic="light" onclick="toggleVideo();event.stopPropagation()">
-                    <img class="icon" src="/static/icons/material/videocam.svg"/>
-                    <div class="line red medium ${global.state.callManager?.callType !== 'video' || global.state.callManager?.isVideoOff ? 'visible' : ''}"></div>
-                </div>
-            `)}
-            <div class="icon-wrapper small hangup" data-haptic="heavy" onclick="leaveVocalChannel();event.stopPropagation()">
-                <img class="icon" src="/static/icons/material/call.svg"/>
-                <span class="tooltip top">${_t('Déconnecter')}</span>
-            </div>
-        </div>
-    </div>`
-})}
 <div id="server-settings" class="flying-menu">
     <div class="item blue" onclick="createInvitation()"><p>${_t("Inviter des gens")}</p><img class="light-blue icon" src="/static/icons/material/groupadd.svg"></div>
     <hr>
@@ -82,6 +52,7 @@ ${Subscribe('global.state.callManager.callViewState', () => {
                <div class="item" onclick="muteChannel(1440)">${_t("Mute 24h")}</div>`
     })}
 </div>
+<div class="modale role-menu voice-user-menu" id="voice-user-modale">${Subscribe('global.state.voiceMenu', () => global.state.voiceMenu ? includeTemplate('voice-user-menu') : '')}</div>
 <div class="modale" id="edit-cat-modale">
     <div class="item" id="edit-cat-item" onclick="closeFM();openCategorySettings()">${_t("Edit category")}</div>
 </div>

@@ -129,6 +129,9 @@ def get_vocal_channel_state(self, channel_id):
         raise HTTPError(self.response, 404, "Vocal channel not found")
 
     self.require_member(uid, chan["server"])
+    # Who's inside a private channel is only for those who can see it
+    if not self.checkChannelAccess(uid, int(channel_id), "vocal", "view"):
+        raise HTTPError(self.response, 403, "No access to this vocal channel")
 
     call_state = self.callManager.get_call_by_vocal_channel(int(channel_id))
     if call_state:

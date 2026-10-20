@@ -272,6 +272,14 @@ create table if not exists vocal_channel (
 );
 create index if not exists idx_vocal_channel_server on vocal_channel(server);
 
+-- Text chat of a vocal channel: the message `place`. vocal_channel ids come from
+-- their own sequence (they'd collide with conversations/text channels), this row
+-- takes one from conversationElement's — like forum_post. Created on first open.
+create table if not exists vocal_chat (
+    vocal integer NOT NULL UNIQUE REFERENCES vocal_channel(id) ON DELETE CASCADE
+) inherits (conversationElement);
+create index if not exists idx_vocal_chat_id on vocal_chat(id);
+
 create table if not exists notes_channel (
     id bigserial NOT NULL PRIMARY KEY,
     name varchar(255) NOT NULL,

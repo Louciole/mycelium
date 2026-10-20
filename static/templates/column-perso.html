@@ -1,4 +1,51 @@
 <div id="sec-selector"></div>
+<div id="voice-status-slot">${Subscribe('global.state.callManager.callViewState', () => {
+    // Any call we're in — a vocal channel or a DM call — so its controls stay at
+    // hand while browsing elsewhere (the call keeps playing through the audio sinks)
+    const cm = global.state.callManager
+    const call = cm?.currentCall
+    if (!call || (cm.callState !== 'active' && cm.callState !== 'calling')) return ''
+    let title, sub, open, hangup
+    if (call.vocal_channel_id) {
+        if (cm.callState !== 'active') return ''
+        const { chan, server } = voiceChannelInfo(call.vocal_channel_id)
+        title = _t('Voix connectée')
+        sub = escapeHTML(chan?.name || _t('Salon vocal')) + (server ? ' / ' + escapeHTML(server.name || '') : '')
+        open = `goToVocalChannel(${Number(call.vocal_channel_id)})`
+        hangup = 'leaveVocalChannel()'
+    } else {
+        const conv = global.convs?.[call.conversation_id]
+        title = _t('Appel en cours')
+        sub = escapeHTML(conv ? getConvName(conv) : '')
+        open = `openCallConversation(${Number(call.conversation_id)})`
+        hangup = 'leaveCall()'
+    }
+    return `<div class="voice-status-bar">
+        <div class="voice-status-top">
+            <div class="voice-status-info" onclick="${open}">
+                <span class="voice-status-title"><img class="icon" src="/static/icons/material/signal.svg" alt=""/>${title}</span>
+                <span class="voice-status-sub">${sub}</span>
+            </div>
+            <div class="icon-wrapper small voice-status-hangup" id="voice-status-hangup" data-haptic="heavy" onclick="${hangup};event.stopPropagation()">
+                <img class="icon" src="/static/icons/material/call_end.svg"/>
+                <span class="tooltip top">${_t('Se déconnecter')}</span>
+            </div>
+        </div>
+        <div class="voice-status-actions">
+            ${Subscribe('global.state.callManager.isVideoOff', () => {
+                const camOn = global.state.callManager?.callType === 'video' && !global.state.callManager?.isVideoOff
+                return `<div class="voice-status-action ${camOn ? 'on' : ''}" data-haptic="light" onclick="toggleVideo();event.stopPropagation()" title="${camOn ? _t('Couper la caméra') : _t('Activer la caméra')}">
+                    <img class="icon" src="/static/icons/material/videocam.svg"/>
+                </div>`
+            }, 'voice-status-action-slot')}
+            ${navigator.mediaDevices?.getDisplayMedia ? Subscribe('global.state.callManager.isScreenSharing', () => `
+                <div class="voice-status-action ${global.state.callManager?.isScreenSharing ? 'on' : ''}" data-haptic="light" onclick="toggleScreenShare();event.stopPropagation()" title="${global.state.callManager?.isScreenSharing ? _t('Arrêter le partage') : _t('Partager ton écran')}">
+                    <img class="icon" src="/static/icons/material/screen_share.svg"/>
+                </div>
+            `, 'voice-status-action-slot') : ''}
+        </div>
+    </div>`
+})}</div>
 <div id="profile">
   <div id="profil" onclick="toggleFM('profil-menu')">
     <div class="global-user-pfp pfp red" data-target="style" data-content="()=>{return 'background-image:url(/static/attachments/'+global.user?.pfp+');'}" style="background-image:url(/static/attachments/${global.user?.pfp}">

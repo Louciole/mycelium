@@ -18,6 +18,7 @@ import {initTranslations} from "./translations/translation.mjs";
 import {initConnectivity} from "/static/framework/connectivity.mjs";
 import {loadSnapshot, saveSnapshot, configurePersistence} from "/static/framework/persistence.mjs";
 import CallManager from "/static/webrtc.mjs";
+import {} from "/static/voiceSettings.mjs"; // Settings › Voix & Vidéo (devices, volumes, voice detection)
 import {} from "/static/constants.mjs"; // Expose and parseJsonArray globally
 import {} from "/static/mentions.mjs"; // Mention autocomplete system
 import {} from "/static/poll.mjs"; // Poll creation and voting
@@ -96,10 +97,19 @@ export function markReady(){
 }
 window.markReady = markReady
 
-// postWS runs only once the websocket handshake has completed (online).
+// postWS runs once the websocket handshake has completed (online) — again after
+// every reconnection.
+let postWSDone = false
 export function postWS(){
+    // Per connection: the presence subscriptions belong to the new clientID
     const userList = JSON.stringify(Object.keys(global.users).map(cle => parseInt(cle)))
     xhr("subscribe?client_id="+global.state.clientID+"&cat=user&items="+userList,undefined)
+
+    // Once per page. A reconnection (network drop, laptop waking up) used to
+    // replace the CallManager with a blank one: the call in progress was lost to
+    // the UI while its media kept running, and every listener below piled up.
+    if (postWSDone) return
+    postWSDone = true
 
     global.state.callManager = new CallManager();
 
@@ -130,6 +140,13 @@ export function postWS(){
             const route = `${serverId}/${channelId}/${kind}/${itemId}`;
             handleHashRoute(route);
             window.pushRoute?.(route);   // handleHashRoute never pushes
+            return;
+        }
+        if (kind === 'chat') {
+            // A vocal channel's chat (push notification): open the channel, chat shown
+            global.state.vocalChatOpen = true;
+            handleHashRoute(`${serverId}/${channelId}`);
+            window.pushRoute?.(`${serverId}/${channelId}`);
             return;
         }
         // Navigate to the server + channel
@@ -866,6 +883,14 @@ function getConvName(conv,inputable = false){
     }
 }
 window.getConvName = getConvName
+
+// A shared template piece inlined in another template (the chat composer's
+// reply box, pickers…). getTemplate refetches it synchronously on every render;
+// fillWith caches templates, so go through it with a one-item list.
+function includeTemplate(name){
+    return fillWith(name, [null])
+}
+window.includeTemplate = includeTemplate
 
 function getSeparator(element){
     let date

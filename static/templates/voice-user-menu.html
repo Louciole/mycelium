@@ -1,0 +1,10 @@
+<div class="voice-user-menu-title">${escapeHTML(voiceUser(global.state.voiceMenu.userId).display || '')}</div>
+<label class="voice-user-volume">
+    <span>${global.state.voiceMenu.screen ? _t('Volume du stream') : _t('Volume utilisateur')}</span>
+    <input type="range" min="0" max="100" step="1" value="${Number(global.state.voiceMenu.volume)}"
+           oninput="global.state.callManager.setUserVolume('${global.state.voiceMenu.key}', this.value / 100)">
+    ${Subscribe('global.state.voiceMenu.volume', () => `${Number(global.state.voiceMenu?.volume)}%`, 'voice-user-volume-value')}
+</label>
+<div class="item" onclick="toggleVoiceLocalMute('${global.state.voiceMenu.key}')">${global.state.voiceMenu.screen
+    ? (global.state.voiceMenu.localMute ? _t('Activer le son du stream') : _t('Couper le son du stream'))
+    : (global.state.voiceMenu.localMute ? _t('Rétablir le son pour moi') : _t('Rendre muet pour moi'))}</div>

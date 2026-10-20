@@ -1,0 +1,81 @@
+<div id=typing-box>
+    <div class="inline">
+        <div class="circle first"></div>
+        <div class="circle second"></div>
+        <div class="circle third"></div>
+        <div id="typing-name"></div>
+        ${_t("is typing")}...
+    </div>
+</div>
+
+<div id="reaction-picker" class="emoji-board flying-menu">
+    <div class="menu">
+        <div class="inline gap">
+            <div class="cat selected">Émoji</div>
+        </div>
+        <div class="inline">
+            <div class="search">
+                <label style="width: 100%;">
+                    <input type="text" placeholder="${_t('Trouve l\'émoji parfait')}" oninput="searchEmojis(event)">
+                </label>
+                <div class="icon-wrapper">
+                    <img class="icon" src="/static/icons/material/search.svg"/>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="selector">
+        <div class="cat-selector">
+            ${fillWith('scroll-emoji',global.state.emojis)}
+            ${getCustomEmojiScrollHtml()}
+        </div>
+        <div class="scrollable">
+            ${fillWith('emoji-cat-input',global.state.emojis.map(c => ({...c, content: c.content.replace(/currentInput/g, 'reaction')} )))}
+            ${getCustomEmojiCatHtml('reaction')}
+        </div>
+    </div>
+    <div class="descriptor">
+        <div class="inline">
+            <div id="hovered-emoji"></div>
+            <p></p>
+        </div>
+    </div>
+</div>
+
+<div id="conv-emoji-board" class="emoji-board">
+    <div class="menu">
+        <div class="inline gap">
+            <div class="cat">GIF</div>
+            <div class="cat selected">Émoji</div>
+        </div>
+        <div class="inline">
+            <div class="search">
+                <label style="width: 100%;">
+                    <input type="text" placeholder="${_t('Trouve l\'émoji parfait')}" oninput="searchEmojis(event)">
+                </label>
+                <div class="icon-wrapper">
+                    <img class="icon" src="/static/icons/material/search.svg"/>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="selector">
+        <div class="cat-selector">
+            ${fillWith('scroll-emoji',global.state.emojis)}
+            ${getCustomEmojiScrollHtml()}
+        </div>
+        <div class="scrollable">
+            ${fillWith('emoji-cat-input',global.state.emojis)}
+            ${getCustomEmojiCatHtml('currentInput')}
+        </div>
+    </div>
+    <div class="descriptor">
+        <div class="tp-button">
+            <div class="pfp grey"></div>
+        </div>
+        <div class="inline">
+            <div id="hovered-emoji"></div>
+            <p></p>
+        </div>
+    </div>
+</div>

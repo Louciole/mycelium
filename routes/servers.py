@@ -9,7 +9,7 @@ import re
 
 from vesta import Server, HTTPError, HTTPRedirect
 from message_helpers import (_enrichMessagesWithPolls, _enrichMessagesWithReactions,
-                             _enrichMessagesWithConvBlocks)
+                             _enrichMessagesWithConvBlocks, vocal_chat_place)
 from constants import USER_STORAGE_QUOTA, SERVER_STORAGE_QUOTA
 import permissions
 from routes.roles import notify_permissions_changed
@@ -151,6 +151,8 @@ def get_serv_content(self, server_id):
     for chan in content["vocals"]:
         call = self.callManager.get_call_by_vocal_channel(chan["id"])
         chan["occupants"] = call.participants if call else []
+        chan["voice_states"] = call.voice_states if call else {}
+        chan["started_at_ms"] = call.to_dict()["started_at_ms"] if call else None
     content["drives"] = visible(content["drives"], "drive")
     content["notes"] = visible(content["notes"], "note")
     content["forums"] = visible(content["forums"], "forum")
@@ -177,6 +179,22 @@ def get_chan_content(self, channel_id):
 
     content = {"name": chan["name"], "id": channel_id}
     content["messages"] = self.db.getFilters("message", ["place", "=", channel_id, "order by timestamp"])
+    _enrichMessagesWithPolls(self, content["messages"], uid)
+    _enrichMessagesWithReactions(self, content["messages"])
+    _enrichMessagesWithConvBlocks(self, content["messages"])
+    return json.dumps(content, default=str)
+
+
+@Server.expose
+def get_vocal_chat(self, channel_id):
+    """Text chat of a vocal channel: anyone who can view the channel reads it, in
+    the call or not. `id` is the message place to post to (send_message)."""
+    uid = self.getUser()
+    chan = self.require_channel_access(uid, channel_id, "vocal", "view")
+
+    place = vocal_chat_place(self, chan["id"])
+    content = {"id": place, "vocal": chan["id"], "name": chan["name"]}
+    content["messages"] = self.db.getFilters("message", ["place", "=", place, "order by timestamp"])
     _enrichMessagesWithPolls(self, content["messages"], uid)
     _enrichMessagesWithReactions(self, content["messages"])
     _enrichMessagesWithConvBlocks(self, content["messages"])
@@ -381,11 +399,24 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
             # channel_permission is polymorphic (no FK on channel): drop its overwrites
             for row in self.db.getFilters("channel_permission", ["channel", "=", chan["id"], "and", "channel_type", "=", channel_type]) or []:
                 self.db.deleteSomething("channel_permission", row["id"])
+            # Messages go through deleteMessageWithCleanup (attachment files + quota
+            # refund), while their place row still exists to say whose quota it was.
             if channel_type == "forum":
                 for post in self.db.getFilters("forum_post", ["forum", "=", int(targetId)]):
                     for msg in self.db.getFilters("message", ["place", "=", post["id"]]):
-                        self.db.deleteSomething("message", msg["id"])
+                        self.deleteMessageWithCleanup(msg)
                     self.db.deleteSomething("forum_post", post["id"])
+            if channel_type == "vocal":
+                chat = self.db.getSomething("vocal_chat", chan["id"], "vocal")
+                if chat:   # newest first: a reply references an older message
+                    for msg in reversed(self.db.getFilters("message", ["place", "=", chat["id"], "order by id"]) or []):
+                        self.deleteMessageWithCleanup(msg)
+                    # Rows keyed by the chat's place id (no FK on these polymorphic columns)
+                    for table, column in (("offline_notifs", "conversation"), ("channel_mute", "channel"),
+                                          ("channel_unread", "channel")):
+                        for row in self.db.getFilters(table, [column, "=", chat["id"]]) or []:
+                            self.db.deleteSomething(table, row["id"])
+                # the vocal_chat row goes with the channel (ON DELETE CASCADE)
             self.db.deleteSomething(table_name, targetId)
             return json.dumps({"status": "ok"})
         allowed_channel_fields = ("name", "place", "category")

@@ -12,6 +12,7 @@ import datetime
 
 from vesta import Server, HTTPError
 from constants import B62, USER_STORAGE_QUOTA
+from message_helpers import _lookupMessagePlace
 
 # Username rule: >=3 chars, letters/digits/underscore/dash/dot only.
 REGEX_USERNAME = re.compile(r'^(?=.{3,}$)[a-zA-Z0-9_\-\.]*$')
@@ -97,8 +98,9 @@ def get_user_info(self):
             dm_notifs.append(notif)
             continue
         # Otherwise it's a channel mention → feed the per-server badge instead of
-        # rendering a broken standalone bubble. (Forum/other channels just drop here.)
-        ch = self.db.getSomething("textual_channel", notif["conversation"])
+        # rendering a broken standalone bubble: a text channel or a vocal channel's
+        # chat (its mentions are keyed by the chat's place id). Others just drop here.
+        ch, _ = _lookupMessagePlace(self, notif["conversation"])
         if ch:
             sid = str(ch["server"])
             server_mention_counts[sid] = server_mention_counts.get(sid, 0) + notif["number"]

@@ -282,7 +282,9 @@ export async function injectCallingState(page, participantIds = [], callType = '
         const cm = window.global.state.callManager;
         cm.callState = 'calling';
         cm.callType = callType;
-        cm.currentCall = { id: 0 }; // needed so leaveCall() doesn't bail early
+        // id: needed so leaveCall() doesn't bail early; conversation_id: the call
+        // section only shows the open conversation's call (like a real call object)
+        cm.currentCall = { id: 0, conversation_id: window.global.state.activeConv };
         cm.remoteParticipants = participantIds.map(id => ({ userId: id, status: 'calling' }));
 
         // Déclencher les mises à jour réactives

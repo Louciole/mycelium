@@ -1,5 +1,5 @@
 import global from "./framework/global.mjs"
-import {loadChan, loadConv, loadNote, loadServer, lookFor, loadForum, loadForumPost} from "./crud.mjs";
+import {loadChan, loadConv, loadNote, loadServer, lookFor, loadForum, loadForumPost, loadVocalChat} from "./crud.mjs";
 import {setElement} from "./framework/vesta.mjs";
 import {closeFM, goTo} from "./framework/navigation.mjs";
 import {xhr} from "./framework/templating.mjs";
@@ -36,7 +36,7 @@ function restoreLastChannel() {
         const dirs = global.state.currentServer.dirs
         if (!dirs) return false
         if (type === 'channel' && dirs.channels?.some(c => c.id === id)) { goToChannel(id); return true }
-        if (type === 'vocal'   && dirs.vocals?.some(c => c.id === id))   { goToVocalChannel(id); return true }
+        if (type === 'vocal'   && dirs.vocals?.some(c => c.id === id))   { goToVocalChannel(id, false); return true }
         if (type === 'note'    && dirs.notes?.some(c => c.id === id))    { goToNoteChannel(id); return true }
         if (type === 'forum'   && dirs.forums?.some(c => c.id === id))   { goToForumChannel(id); return true }
         if (type === 'drive'   && dirs.drives?.some(c => c.id === id))   { goToDriveChannel(id); return true }
@@ -155,7 +155,7 @@ export function handleHashRoute(hash) {
                     if (dirs.channels?.some(c => c.id === channelId)) {
                         goToChannel(channelId)
                     } else if (dirs.vocals?.some(c => c.id === channelId)) {
-                        goToVocalChannel(channelId)
+                        goToVocalChannel(channelId, false)
                     } else if (dirs.notes?.some(c => c.id === channelId)) {
                         goToNoteChannel(channelId)
                     } else if (dirs.forums?.some(c => c.id === channelId)) {
@@ -311,7 +311,7 @@ function goToConv(convId){
     }
 
     targetElt = document.getElementById("conv".concat(convId))
-    targetElt.classList.add("selected")
+    targetElt?.classList.add("selected")   // the DM list may still be loading (coming from a server)
 
     global.state.isServer = false
     pushRoute('@me/' + convId)
@@ -331,6 +331,14 @@ function goToConv(convId){
     }, 100)
 }
 window.goToConv = goToConv
+
+// The DM a call belongs to, from anywhere (the "voice connected" panel): the
+// @me route puts the DM list back first when a server is on screen.
+function openCallConversation(convId){
+    handleHashRoute('@me/' + convId)
+    pushRoute('@me/' + convId)
+}
+window.openCallConversation = openCallConversation
 
 // Slide the mobile track to the content pane (section 3).
 function mobileDisplayContent(){
@@ -437,30 +445,73 @@ function goToChannel(id){
 }
 window.goToChannel = goToChannel
 
-function goToVocalChannel(id){
-    const cm = global.state.callManager
-    const alreadyInThisChannel = cm?.callState === 'active' && cm?.currentCall?.vocal_channel_id === id
-
-    if (alreadyInThisChannel) {
-        // Open the vocal channel view
-        let targetElt
-        if(global.state.activeChan){
-            targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
-            targetElt?.classList.remove("selected")
-        }
-        global.state.activeChan = {id:id, slug:"-vocal-"+id, type:"vocal"}
-        if (global.state.isMobile) mobileDisplayContent()
-        targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
-        targetElt?.classList.add("selected")
-        pushRoute(global.state.currentServer?.id + '/' + id)
-        goTo('content','server-vocal-content',undefined,false)
+function goToVocalChannel(id, join = true){
+    // From another server or the DMs (the "voice connected" panel): go there first
+    if (!global.state.currentServer?.dirs?.vocals?.some(c => c.id === id)) {
+        const server = Object.values(global.servers || {}).find(s => s?.dirs?.vocals?.some(c => c.id === id))
+        if (server) handleHashRoute(server.id + '/' + id)
         return
     }
 
-    // Not yet in channel — join silently without navigating away
-    if (window.joinVocalChannel) joinVocalChannel(id)
+    const cm = global.state.callManager
+    const alreadyInThisChannel = cm?.callState === 'active' && cm?.currentCall?.vocal_channel_id === id
+    if (join && !alreadyInThisChannel) {
+        window.joinVocalChannel?.(id)
+        return
+    }
+
+    let targetElt
+    if(global.state.activeChan){
+        targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
+        targetElt?.classList.remove("selected")
+    }
+    global.state.activeChan = {id:id, slug:"-vocal-"+id, type:"vocal"}
+    // Its text chat stays open from one vocal channel to the next (like Discord):
+    // while it shows, it is the active conv (composer, live messages, typing).
+    global.state.vocalChat = global.state.vocalChatOpen ? loadVocalChat(id) : null
+    global.state.activeConv = global.state.vocalChat ?? undefined
+    if (global.state.isMobile) mobileDisplayContent()
+    targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
+    targetElt?.classList.add("selected")
+    pushRoute(global.state.currentServer?.id + '/' + id)
+    goTo('content','server-vocal-content',undefined,false)
+    if (global.state.vocalChat) afterVocalChatShown()
+    // The view was just rebuilt: rebind the live streams to its <video> tiles
+    requestAnimationFrame(() => cm?._reattachStreams())
 }
 window.goToVocalChannel = goToVocalChannel
+
+// The chat panel of the open vocal channel (chat-bubble button of the vocal view)
+function openVocalChat(){
+    const chan = global.state.activeChan
+    if (chan?.type !== 'vocal') return
+    const place = loadVocalChat(chan.id)
+    if (!place) return
+    global.state.vocalChatOpen = true
+    global.state.activeConv = place
+    setElement('global.state.vocalChat', place)
+    afterVocalChatShown()
+    if (!global.state.isMobile) document.querySelector('#vocal-chat textarea:not([disabled])')?.focus()
+}
+window.openVocalChat = openVocalChat
+
+function closeVocalChat(){
+    global.state.vocalChatOpen = false
+    global.state.activeConv = undefined
+    setElement('global.state.vocalChat', null)
+}
+window.closeVocalChat = closeVocalChat
+
+function toggleVocalChat(){
+    if (global.state.vocalChat) closeVocalChat()
+    else openVocalChat()
+}
+window.toggleVocalChat = toggleVocalChat
+
+function afterVocalChatShown(){
+    markChannelRead(global.state.vocalChat, global.state.currentServer?.id)   // its pending mentions
+    window.updateComposerLock?.()   // send-messages / timeout (moderation.mjs)
+}
 
 function goToNoteChannel(id){
     let targetElt

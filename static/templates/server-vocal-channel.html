@@ -1,25 +1,17 @@
-<div class="conv vocal-channel-row" id="channel-vocal-${element.id}" data-id="${element.id}" data-type="vocal" data-pos="${element.place}" ${checkServRights('manage-channels') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} oncontextmenu="openChannelMenu(event)" onclick="goToVocalChannel(${element.id})"><img class="icon" src="/static/icons/material/sound.svg"/>${escapeHTML(element.name)}</div>
-${Subscribe(`global.state.currentServer.vocalOccupants[${element.id}]`, (chanId) => {
+<div class="conv vocal-channel-row" id="channel-vocal-${element.id}" data-id="${element.id}" data-type="vocal" data-pos="${element.place}" ${checkServRights('manage-channels') ? 'draggable="true" ondragstart="onSnippetDrag(event)"' : ''} oncontextmenu="openChannelMenu(event)" onclick="goToVocalChannel(${element.id})"><img class="icon" src="/static/icons/material/sound.svg"/><span class="vocal-channel-name">${escapeHTML(element.name)}</span>${Subscribe('global.state.callClock', (chanId = element.id) => {
+    // Ticks every second while connected to a vocal channel (CallManager._startCallClock)
+    const cm = global.state.callManager
+    if (!global.state.callClock || cm?.callState !== 'active' || cm?.currentCall?.vocal_channel_id !== Number(chanId)) return ''
+    const start = cm.currentCall.started_at_ms
+    return start ? `<span class="vocal-call-timer">${formatDuration(global.state.callClock - Number(start))}</span>` : ''
+}, 'vocal-row-meta', {element: `${element.id}`})}</div>
+${Subscribe(`global.state.currentServer.vocalOccupants[${element.id}]`, (chanId = element.id) => {
     const occupants = global.state.currentServer?.vocalOccupants?.[chanId] || []
     if (!occupants.length) return ''
-    return '<div class="vocal-occupants">' + occupants.map(uid => {
-        const u = global.users?.[uid]
-        const pfpStyle = u?.pfp ? `background-image:url(/static/attachments/${u.pfp});background-size:cover;` : ''
-        if (uid === global.user?.id) {
-            return `<div class="vocal-occupant-row" onclick="goToVocalChannel(${chanId});event.stopPropagation()">
-                <div class="pfp-small" style="${pfpStyle}"></div>
-                <span class="vocal-name">${u?.display || ''}</span>
-                ${Subscribe('global.state.callManager.isMuted', () =>
-                    global.state.callManager?.isMuted ? '<img class="icon tiny-icon status-icon" src="/static/icons/material/mic.svg"/>' : ''
-                )}
-                ${Subscribe('global.state.callManager.isDeafened', () =>
-                    global.state.callManager?.isDeafened ? '<img class="icon tiny-icon status-icon" src="/static/icons/material/headset.svg"/>' : ''
-                )}
-            </div>`
-        }
-        return `<div class="vocal-occupant-row" onclick="goToVocalChannel(${chanId});event.stopPropagation()">
-            <div class="pfp-small" style="${pfpStyle}"></div>
-            <span class="vocal-name">${u?.display || ''}</span>
-        </div>`
-    }).join('') + '</div>'
+    return '<div class="vocal-occupants">' + occupants.map(uid => `
+        <div class="vocal-occupant-row" id="vocal-occupant-${uid}" onclick="goToVocalChannel(${Number(chanId)});event.stopPropagation()" oncontextmenu="openVoiceUserMenu(event, ${Number(uid)})">
+            ${voiceAvatar(uid, 'pfp-small')}
+            <span class="vocal-name">${escapeHTML(voiceUser(uid).display || '')}</span>
+            ${Subscribe(`global.state.voiceStates[${Number(uid)}]`, (u = uid) => voiceStateIcons(u), 'vocal-occupant-state', {element: `${uid}`})}
+        </div>`).join('') + '</div>'
 }, undefined, {element: `${element.id}`})}

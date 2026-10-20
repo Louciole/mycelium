@@ -10,6 +10,8 @@ only change is that top-level ``continue`` (skip this message) became ``return``
 """
 import json
 
+from message_helpers import _lookupMessagePlace
+
 
 async def register(self, websocket, data):
     self.waiting_clients[self.currentWaiting] = {"connection": websocket, "uid": data["uid"]}
@@ -36,12 +38,13 @@ async def typing(self, websocket, data):
 
     sender = self.db.getSomething("active_client", data["clientID"])
     sender_uid = sender["userid"]
-    channel = self.db.getSomething("textual_channel", data["conv"])
+    # A text channel, a forum post or a vocal chat: viewers of that channel
+    channel, channel_type = _lookupMessagePlace(self, data["conv"])
     if channel:
         # Sender must be able to view the channel.
-        if not self.checkChannelAccess(sender_uid, data["conv"], "textual", "view"):
+        if not self.checkChannelAccess(sender_uid, channel["id"], channel_type, "view"):
             return
-        rights = self.channelMembersRights(channel, "textual")
+        rights = self.channelMembersRights(channel, channel_type)
         members = [{"account": a} for a, r in rights.items() if "view-channels" in r]
     else:
         # Sender must be a member of the conversation.
@@ -73,6 +76,8 @@ async def call_start(self, websocket, data):
 
         if access:
             call = self.callManager.create_call(conv_id, client["userid"], call_type)
+            if client["userid"] in call.participants:
+                call.sockets[client["userid"]] = websocket   # see Mycelium._cleanup_user_calls
 
             members = self.db.getAll("accessconversation", conv_id, "conversation")
 
@@ -117,6 +122,7 @@ async def call_join(self, websocket, data):
 
         if result:
             call = result['call']
+            call.sockets[client["userid"]] = websocket   # see Mycelium._cleanup_user_calls
             # Notifier tous les participants
             for participant_id in call.participants:
                 await self.sendNotificationAsync(participant_id, {
@@ -253,17 +259,32 @@ async def call_join_legacy(self, websocket, data):
         self.calls["room"] = set()
 
 
+def _vocal_audience(self, chan):
+    """Connected server members allowed to see this vocal channel — who gets its
+    presence and voice-state broadcasts (a private channel must not leak who's
+    inside). Offline members are skipped (nothing to send them) and the rights
+    are computed from one set of server-wide reads (channelContexts)."""
+    online = {c["userid"] for c in self.db.getAll("active_client", self.id, "server") or [] if c["id"] in self.pool}
+    members = [m["account"] for m in self.db.getAll("accessserver", chan["server"], "server") or []
+               if m["account"] in online]
+    if not members:
+        return []
+    contexts = self.channelContexts(chan["server"], members)
+    return [uid for uid in members if "view-channels" in self.channelRights(contexts[uid], chan, "vocal")]
+
+
 async def _broadcast_vocal_leave(self, call, user_id):
-    """Broadcast vocal_channel_left to all online server members."""
+    """Broadcast vocal_channel_left to the members who can see the channel."""
     chan = self.db.getSomething("vocal_channel", call.vocal_channel_id)
     if not chan:
         return
-    server_members = self.db.getAll("accessserver", chan["server"], "server")
-    for member in server_members:
-        await self.sendNotificationAsync(member["account"], {
+    for account in _vocal_audience(self, chan):
+        await self.sendNotificationAsync(account, {
             "type": "vocal_channel_left",
             "content": {
+                "call_id": call.id,   # a rejoin may already be in the channel's next call
                 "channel_id": call.vocal_channel_id,
+                "server_id": chan["server"],
                 "user_id": user_id,
                 "participants": call.participants
             }
@@ -283,17 +304,23 @@ async def vocal_join(self, websocket, data):
     if not chan:
         return
 
+    # Presence is only broadcast for a call the sender really is in (joined
+    # through /join_vocal_channel, which checks the channel rights).
     call = self.callManager.active_calls.get(int(call_id)) if call_id else None
-    participants = call.participants if call else [client["userid"]]
+    if not call or call.vocal_channel_id != chan["id"] or client["userid"] not in call.participants:
+        return
+    call.sockets[client["userid"]] = websocket   # see Mycelium._cleanup_user_calls
 
-    server_members = self.db.getAll("accessserver", chan["server"], "server")
-    for member in server_members:
-        await self.sendNotificationAsync(member["account"], {
+    for account in _vocal_audience(self, chan):
+        await self.sendNotificationAsync(account, {
             "type": "vocal_channel_joined",
             "content": {
-                "channel_id": int(channel_id),
+                "channel_id": chan["id"],
+                "server_id": chan["server"],
                 "user_id": client["userid"],
-                "participants": participants
+                "participants": call.participants,
+                "voice_states": call.voice_states,
+                "started_at_ms": call.to_dict()["started_at_ms"]
             }
         })
 
@@ -316,22 +343,31 @@ async def vocal_leave(self, websocket, data):
         return
 
     client = self.db.getSomething("active_client", data["clientID"])
-    call_id = data.get("call_id")
-    channel_id = data.get("channel_id")
+    try:
+        call_id = int(data.get("call_id"))
+        channel_id = int(data["channel_id"]) if data.get("channel_id") else None
+    except (TypeError, ValueError):
+        return
 
-    result = self.callManager.leave_call(int(call_id), client["userid"])
+    live = self.callManager.active_calls.get(call_id)
+    if live and (client["userid"] not in live.participants or not live.vocal_channel_id):
+        return  # not in that call, or a DM call (callLeave): nothing to do here
+
+    result = self.callManager.leave_call(call_id, client["userid"])
     if not result:
         # Call was already ended elsewhere (e.g. a WS drop via on_disconnect).
-        # Still broadcast an empty participants list so sidebars update.
-        if channel_id:
-            chan = self.db.getSomething("vocal_channel", int(channel_id))
+        # Still broadcast an empty participants list so sidebars update — only
+        # when the channel really has no call anymore.
+        if channel_id and not self.callManager.get_call_by_vocal_channel(channel_id):
+            chan = self.db.getSomething("vocal_channel", channel_id)
             if chan:
-                members = self.db.getAll("accessserver", chan["server"], "server")
-                for m in members:
-                    await self.sendNotificationAsync(m["account"], {
+                for account in _vocal_audience(self, chan):
+                    await self.sendNotificationAsync(account, {
                         "type": "vocal_channel_left",
                         "content": {
+                            "call_id": call_id,
                             "channel_id": int(channel_id),
+                            "server_id": chan["server"],
                             "user_id": client["userid"],
                             "participants": []
                         }
@@ -356,6 +392,86 @@ async def vocal_leave(self, websocket, data):
     await _broadcast_vocal_leave(self, call, client["userid"])
 
 
+async def voice_state(self, websocket, data):
+    """A participant toggled mic / headset / camera / screen share: remember it on
+    the call and relay it — to the channel's audience for a vocal channel (sidebar
+    icons), to the other participants for a DM call (tile icons)."""
+    if not self.checkWSAuth(websocket, data["clientID"]):
+        return
+
+    client = self.db.getSomething("active_client", data["clientID"])
+    try:
+        call = self.callManager.active_calls.get(int(data.get("call_id")))
+    except (TypeError, ValueError):
+        return
+    uid = client["userid"]
+    if not call or uid not in call.participants:
+        return
+
+    state = {key: bool(data.get(key)) for key in ("muted", "deafened", "video", "screen", "screen_audio")}
+    if call.voice_states.get(uid) == state:
+        return  # nothing changed: no fan-out (also blunts a client spamming it)
+    call.voice_states[uid] = state
+
+    if call.vocal_channel_id:
+        chan = self.db.getSomething("vocal_channel", call.vocal_channel_id)
+        recipients = _vocal_audience(self, chan) if chan else call.participants
+    else:
+        recipients = call.participants
+    for account in recipients:
+        await self.sendNotificationAsync(account, {
+            "type": "voice_state",
+            "content": {
+                "call_id": call.id,
+                "vocal_channel_id": call.vocal_channel_id,
+                "user_id": uid,
+                "state": state
+            }
+        })
+
+
+async def call_rebind(self, websocket, data):
+    """The client reconnected its WebSocket while in a call: carry on from this
+    socket (it's the one a later drop hangs up). Answers whether the server still
+    has the user in that call — if not (the grace ran out), the client rejoins
+    or drops the call (webrtc.mjs resyncAfterReconnect)."""
+    if not self.checkWSAuth(websocket, data["clientID"]):
+        return
+    client = self.db.getSomething("active_client", data["clientID"])
+    uid = client["userid"]
+    try:
+        call_id = int(data.get("call_id"))
+    except (TypeError, ValueError):
+        return
+    call = self.callManager.active_calls.get(call_id)
+    in_call = bool(call and uid in call.participants)
+    if in_call:
+        call.sockets[uid] = websocket
+        call.missing_since.pop(uid, None)
+    # Only to this tab (same envelope as sendNotificationAsync)
+    await websocket.send(json.dumps({"type": "notif", "content": {
+        "type": "call_rebound",
+        "content": {"call_id": call_id, "in_call": in_call, "call": call.to_dict() if in_call else None}
+    }}, default=str))
+
+
+async def call_peer_stuck(self, websocket, data):
+    """The sender has had no media from `user_id` for 30 s (their tile still
+    says "Connecting…"). Mycelium.report_stuck_peer decides whether to kick."""
+    if not self.checkWSAuth(websocket, data["clientID"]):
+        return
+    client = self.db.getSomething("active_client", data["clientID"])
+    try:
+        call = self.callManager.active_calls.get(int(data.get("call_id")))
+        target = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return
+    reporter = client["userid"]
+    if not call or reporter == target or reporter not in call.participants or target not in call.participants:
+        return
+    await self.report_stuck_peer(call, reporter, target)
+
+
 # Maps an incoming ``data["type"]`` to its handler. Several signaling types share
 # one handler. Unknown types fall through to the default branch in the dispatch loop.
 HANDLERS = {
@@ -373,4 +489,7 @@ HANDLERS = {
     "callJoin_legacy": call_join_legacy,
     "vocalJoin": vocal_join,
     "vocalLeave": vocal_leave,
+    "voiceState": voice_state,
+    "callPeerStuck": call_peer_stuck,
+    "callRebind": call_rebind,
 }

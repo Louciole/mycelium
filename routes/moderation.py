@@ -11,7 +11,7 @@ import json
 import datetime
 
 from vesta import Server, HTTPError
-from message_helpers import _lookupMessagePlace
+from message_helpers import _lookupMessagePlace, notifyPlaceMembers
 
 REPORT_REASON_MAX = 1000
 REPORT_OPEN_MAX = 20                 # open reports per reporter
@@ -491,20 +491,13 @@ def platform_delete_message(self, message_id, reason):
 
     sender = message["sender"]
     place = message["place"]
-    channel = self.db.getSomething("textual_channel", place)
+    channel, channel_type = _lookupMessagePlace(self, place)
 
     # Same cleanup path as delete_message, but no sender/permission check.
     self.deleteMessageWithCleanup(message)
 
     del_notif = {"type": "message_deleted", "content": {"id": int(message_id)}}
-    if channel:
-        members = self.db.getFilters("accessserver", ["server", "=", channel["server"]]) or []
-        for m in members:
-            self.sendNotification(m["account"], del_notif)
-    else:
-        members = self.db.getAll("accessconversation", place, "conversation") or []
-        for m in members:
-            self.sendNotification(m["account"], del_notif)
+    notifyPlaceMembers(self, place, del_notif, place=(channel, channel_type))
 
     self.logPlatform(uid, "delete_message", target_account=sender,
                      target_server=channel["server"] if channel else None,

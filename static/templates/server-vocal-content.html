@@ -1,58 +1,109 @@
 <div class="vocal-channel-view">
-    ${Subscribe('global.state.callManager.callViewState', () => {
-        const cm = global.state.callManager
-        const callState = cm?.callState
-        const chanId = global.state.activeChan?.id
-
-        if (callState !== 'active' || cm?.currentCall?.vocal_channel_id !== chanId) {
-            // Not yet connected — show a joining indicator
-            return `<div class="vocal-joining">
-                <img class="icon" src="/static/icons/material/sound.svg" style="width:80px;height:80px;opacity:0.2"/>
-                <p style="color:var(--text-secondary);margin-top:1.5rem">${_t('Connexion au salon vocal...')}</p>
-            </div>`
-        }
-
-        return `
-        <div class="vocal-participants-grid">
-            <div id="remote-audio-container"></div>
-            <div class="call-participant call-participant-local status-active vocal-tile"
-                 id="participant-local"
-                 title="${global.user?.display || ''}"
-                 style="background:hsl(${(global.user?.id * 137.508) % 360},45%,25%)">
-                <div class="participant-avatar" id="avatar-local">
-                    <img src="/static/attachments/${global.user?.pfp}" alt="${global.user?.display || ''}"
-                         onerror="this.style.display='none'">
+    <div class="vocal-main">
+        <div class="vocal-header">
+            ${global.state.isMobile?'<img class="icon" src="/static/icons/material/back.svg" onclick="mobileHideContent()" style="margin-right: 0.6rem"/>':''}
+            <img class="icon" src="/static/icons/material/sound.svg" alt=""/>
+            <h2>${escapeHTML(global.state.currentServer?.dirs?.vocals?.find(v => v.id === global.state.activeChan?.id)?.name || _t('Salon vocal'))}</h2>
+            ${Subscribe(`global.state.currentServer.vocalOccupants[${global.state.activeChan?.id}]`, (chanId = global.state.activeChan?.id) => {
+                const n = (global.state.currentServer?.vocalOccupants?.[chanId] || []).length
+                return n ? `<span class="vocal-header-count">${n} ${n > 1 ? _t('participants') : _t('participant')}</span>` : ''
+            }, 'vocal-header-meta', {element: `${global.state.activeChan?.id}`})}
+            ${Subscribe('global.state.vocalChat', () => `
+                <div class="icon-wrapper vocal-chat-toggle ${global.state.vocalChat ? 'on' : ''}" id="vocal-chat-btn" onclick="toggleVocalChat()" title="${_t('Afficher le chat')}">
+                    <img class="icon" src="/static/icons/material/message.svg" alt=""/>
+                    <span class="tooltip bottom">${global.state.vocalChat ? _t('Masquer le chat') : _t('Afficher le chat')}</span>
                 </div>
-                <video id="local-video" autoplay playsinline muted></video>
-                <div class="participant-name-label">${global.user?.display || ''}</div>
-            </div>
-            ${Subscribe('global.state.callManager.remoteParticipants', () =>
-                fillWith('call-participant', global.state.callManager?.remoteParticipants || [])
-            )}
+            `, 'vocal-header-actions')}
         </div>
-        <div class="vocal-controls">
-            ${Subscribe('global.state.callManager.isMuted', () => `
-                <div class="icon-wrapper ${global.state.callManager?.isMuted ? 'active' : ''}" data-haptic="light" onclick="mute()" title="${_t('Micro')}">
-                    <img class="icon" src="/static/icons/material/mic.svg"/>
-                    <span class="tooltip top">${_t('Micro')}</span>
+        ${Subscribe('global.state.callManager.callViewState', () => {
+            const cm = global.state.callManager
+            const chanId = global.state.activeChan?.id
+            const connected = cm?.callState === 'active' && cm?.currentCall?.vocal_channel_id === chanId
+
+            if (!connected) {
+                if (cm?.joiningChannel === chanId) {
+                    return `<div class="vocal-lobby">
+                        <div class="spinner"></div>
+                        <p>${_t('Connexion au salon vocal...')}</p>
+                    </div>`
+                }
+                // Not in this channel: who's inside + a join button (like Discord's preview)
+                return `<div class="vocal-lobby">
+                    ${Subscribe(`global.state.currentServer.vocalOccupants[${chanId}]`, (id = chanId) => {
+                        const occupants = global.state.currentServer?.vocalOccupants?.[id] || []
+                        if (!occupants.length) return `<p class="vocal-lobby-empty">${_t("Personne n'est dans ce salon pour l'instant.")}</p>`
+                        return `<div class="vocal-lobby-avatars">${occupants.slice(0, 8).map(uid => voiceAvatar(uid, 'vocal-lobby-avatar')).join('')}</div>
+                            <p>${occupants.slice(0, 3).map(uid => escapeHTML(voiceUser(uid).display || '')).join(', ')}${occupants.length > 3 ? ' +' + (occupants.length - 3) : ''}</p>`
+                    }, 'vocal-lobby-occupants', {element: `${chanId}`})}
+                    <div class="btn green vocal-join-btn" data-haptic="medium" onclick="joinVocalChannel(${parseInt(chanId, 10)})">${_t('Rejoindre le salon vocal')}</div>
+                </div>`
+            }
+
+            return `
+            <div class="vocal-stage ${cm.hasAnyVideo ? 'has-video' : ''}">
+                <!-- focus-mode: one tile big (.focused), the others in a strip below; a click on any tile goes back -->
+                <div class="vocal-participants-grid ${cm.focusedKey() ? 'focus-mode' : ''}">
+                    ${Subscribe('global.state.callManager.screenShares', () =>
+                        fillWith('vocal-screen-tile', global.state.callManager?.screenShares || [])
+                    , 'vocal-screen-tiles')}
+                    ${fillWith('vocal-tile', [{ userId: global.user?.id, local: true }])}
+                    ${Subscribe('global.state.callManager.remoteParticipants', () => {
+                        const list = global.state.callManager?.remoteParticipants || []
+                        return fillWith('vocal-tile', list) + (list.length ? '' : `
+                            <div class="vocal-invite-tile">
+                                <img class="icon" src="/static/icons/material/groupadd.svg" alt=""/>
+                                <p>${_t('Tu es seul·e ici pour le moment.')}</p>
+                                <div class="btn grey2" onclick="createInvitation()">${_t('Inviter dans le salon vocal')}</div>
+                            </div>`)
+                    }, 'vocal-remote-tiles')}
                 </div>
-            `)}
-            ${Subscribe('global.state.callManager.isDeafened', () => `
-                <div class="icon-wrapper ${global.state.callManager?.isDeafened ? 'active' : ''}" data-haptic="light" onclick="deafen()" title="${_t('Son')}">
-                    <img class="icon" src="/static/icons/material/headset.svg"/>
-                    <span class="tooltip top">${_t('Son')}</span>
-                </div>
-            `)}
-            ${Subscribe('global.state.callManager.isVideoOff', () => `
-                <div class="icon-wrapper ${global.state.callManager?.callType !== 'video' || global.state.callManager?.isVideoOff ? 'active' : ''}" data-haptic="light" onclick="toggleVideo()" title="${_t('Caméra')}">
-                    <img class="icon" src="/static/icons/material/videocam.svg"/>
-                    <span class="tooltip top">${_t('Caméra')}</span>
-                </div>
-            `)}
-            <div class="icon-wrapper hangup" data-haptic="heavy" onclick="leaveVocalChannel()" title="${_t('Se déconnecter')}">
-                <img class="icon" src="/static/icons/material/call.svg"/>
-                <span class="tooltip top">${_t('Se déconnecter')}</span>
             </div>
-        </div>`
-    })}
+            <div class="vocal-controls">
+                <div class="vocal-controls-side">
+                    <div class="icon-wrapper vocal-ctrl" onclick="createInvitation()" title="${_t('Inviter dans le salon vocal')}">
+                        <img class="icon" src="/static/icons/material/groupadd.svg"/>
+                        <span class="tooltip top">${_t('Inviter')}</span>
+                    </div>
+                </div>
+                <div class="vocal-controls-main">
+                    ${Subscribe('global.state.callManager.isMuted', () => `
+                        <div class="icon-wrapper vocal-ctrl ${global.state.callManager?.isMuted ? 'off' : ''}" id="vocal-mute-btn" data-haptic="light" onclick="mute()" title="${_t('Micro')}">
+                            <img class="icon" src="/static/icons/material/${global.state.callManager?.isMuted ? 'mic_off' : 'mic'}.svg"/>
+                            <span class="tooltip top">${global.state.callManager?.isMuted ? _t('Réactiver le micro') : _t('Couper le micro')}</span>
+                        </div>
+                    `)}
+                    ${Subscribe('global.state.callManager.isDeafened', () => `
+                        <div class="icon-wrapper vocal-ctrl ${global.state.callManager?.isDeafened ? 'off' : ''}" id="vocal-deafen-btn" data-haptic="light" onclick="deafen()" title="${_t('Son')}">
+                            <img class="icon" src="/static/icons/material/${global.state.callManager?.isDeafened ? 'headset_off' : 'headset'}.svg"/>
+                            <span class="tooltip top">${global.state.callManager?.isDeafened ? _t('Rétablir le son') : _t('Mettre en sourdine')}</span>
+                        </div>
+                    `)}
+                    ${Subscribe('global.state.callManager.isVideoOff', () => {
+                        const camOn = global.state.callManager?.callType === 'video' && !global.state.callManager?.isVideoOff
+                        return `<div class="icon-wrapper vocal-ctrl ${camOn ? 'on' : ''}" id="vocal-video-btn" data-haptic="light" onclick="toggleVideo()" title="${_t('Caméra')}">
+                            <img class="icon" src="/static/icons/material/videocam.svg"/>
+                            <span class="tooltip top">${camOn ? _t('Couper la caméra') : _t('Activer la caméra')}</span>
+                        </div>`
+                    })}
+                    ${navigator.mediaDevices?.getDisplayMedia ? Subscribe('global.state.callManager.isScreenSharing', () => `
+                        <div class="icon-wrapper vocal-ctrl ${global.state.callManager?.isScreenSharing ? 'on' : ''}" id="vocal-screen-btn" data-haptic="light" onclick="toggleScreenShare()" title="${_t('Partager ton écran')}">
+                            <img class="icon" src="/static/icons/material/screen_share.svg"/>
+                            <span class="tooltip top">${global.state.callManager?.isScreenSharing ? _t('Arrêter le partage') : _t('Partager ton écran')}</span>
+                        </div>
+                    `) : ''}
+                    <div class="icon-wrapper vocal-ctrl hangup" id="vocal-hangup-btn" data-haptic="heavy" onclick="leaveVocalChannel()" title="${_t('Se déconnecter')}">
+                        <img class="icon" src="/static/icons/material/call_end.svg"/>
+                        <span class="tooltip top">${_t('Se déconnecter')}</span>
+                    </div>
+                </div>
+                <div class="vocal-controls-side end">
+                    <div class="icon-wrapper vocal-ctrl" onclick="enterCallFullscreen('.vocal-channel-view')" title="${_t('Plein écran')}">
+                        <img class="icon" src="/static/icons/material/fullscreen.svg"/>
+                        <span class="tooltip top">${_t('Plein écran')}</span>
+                    </div>
+                </div>
+            </div>`
+        }, 'vocal-body')}
+    </div>
+    ${Subscribe('global.state.vocalChat', () => global.state.vocalChat ? getTemplate('vocal-chat') : '', 'vocal-chat-slot')}
 </div>

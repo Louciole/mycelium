@@ -9,7 +9,7 @@ The frontend mirror with labels and descriptions lives in static/access.mjs
 # Grantable on any server. "server-admin" implies every one of them.
 SERVER_PERMISSIONS = {
     "view-channels",       # base: see channels (a channel overwrite can deny/allow it)
-    "send-messages",       # base: write in text/forum channels, upload to drives
+    "send-messages",       # base: write in text/forum channels and vocal chats, upload to drives
     "manage-server",       # server profile / community settings (edit_server_property)
     "manage-roles",        # roles below one's own; at channel level: that channel's permissions
     "manage-channels",     # channels, categories, forum settings & tags
@@ -41,7 +41,7 @@ CHANNEL_PERMISSIONS = {
     "forum": _CHANNEL_COMMON | {"send-messages", "manage-messages"},
     "drive": _CHANNEL_COMMON | {"send-messages", "manage-files"},
     "note": _CHANNEL_COMMON | {"edit-notes"},
-    "vocal": set(_CHANNEL_COMMON),
+    "vocal": _CHANNEL_COMMON | {"send-messages", "manage-messages"},  # its text chat
 }
 CHANNEL_PERMISSIONS["category"] = set().union(*CHANNEL_PERMISSIONS.values())
 # Older call sites / stored overwrites used "view".
