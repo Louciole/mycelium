@@ -1,0 +1,15 @@
+${(() => {
+    // A channel follows its category (if any), a category the server
+    const category = element.kind === 'category'
+    const target = category ? 'category' : element.type
+    const own = category ? categoryOwnLevel(element.id) : channelOwnLevel(element.id, element.type)
+    const inherited = category ? serverLevel() : channelDefaultLevel(element.id, element.type)
+    const inCategory = !category && findChannel(element.id, element.type)?.category
+    const item = (level, label, hint) => `<button type="button" role="menuitemradio" aria-checked="${own === level}" class="ctx-item"
+            onclick="closeChannelMenu(event); setNotifLevel('${target}', ${element.id}, '${level ?? 'inherit'}')">
+        <span class="ctx-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><span class="ctx-radio${own === level ? ' on' : ''}"></span>
+    </button>`
+    return item(null, inCategory ? _t('Utiliser la valeur par défaut de la catégorie') : _t('Utiliser la valeur par défaut du serveur'), levelLabel(inherited))
+        + '<div class="ctx-sep" role="separator"></div>'
+        + [0, 1, 2].map(level => item(level, levelLabel(level))).join('')
+})()}

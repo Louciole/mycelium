@@ -195,9 +195,9 @@ export class DatabaseView {
         return ''
     }
 
-    /** Computed databases, or edit-notes denied in the notes channel (access.mjs). */
+    /** Computed databases, or the notes channel not editable (edit-notes denied, timed out: access.mjs). */
     _readOnly() {
-        return !!this.database.read_only || !window.checkChannelRight(this.channelId, 'note', 'edit-notes')
+        return !!this.database.read_only || !window.canEditNotes(this.channelId)
     }
 
     // ─── Rendering ────────────────────────────────────────────────────

@@ -120,3 +120,9 @@ p{
     height: 100%;
     object-fit: cover;
 }
+
+/* The channel an invitation leads to (invitation-snippet.html) */
+.invite-channel {
+    margin: 0;
+    color: var(--text2);
+}

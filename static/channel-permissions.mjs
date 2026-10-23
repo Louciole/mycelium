@@ -355,7 +355,7 @@ window.renderChannelPermissions = renderChannelPermissions
 const TYPE_BY_PREFIX = {conv: "textual", vocal: "vocal", drive: "drive", note: "note", forum: "forum"}
 
 /** "textual" | "vocal" | … of a channel element of the sidebar (id "channel-<prefix>-<id>"). */
-function channelTypeOf(el) {
+export function channelTypeOf(el) {
     return TYPE_BY_PREFIX[(el?.id || "").split("-")[1]] || "textual"
 }
 
@@ -372,27 +372,4 @@ function canManageCategory() {
 }
 window.canManageCategory = canManageCategory
 
-/** Right-click on a category: "Edit category" only if it has a tab you can use. */
-function openCategoryMenu(event) {
-    const id = Number(event.currentTarget.dataset.id)
-    const item = document.getElementById("edit-cat-item")
-    if (item) {
-        const usable = checkChannelRight(id, "category", "manage-channels") || checkChannelRight(id, "category", "manage-roles")
-        item.style.display = usable ? "" : "none"
-    }
-    window.toggleModale("edit-cat-modale", event)
-}
-window.openCategoryMenu = openCategoryMenu
-
-/** Right-click on a channel: "Edit channel" only if it has a tab you can use. */
-function openChannelMenu(event) {
-    const el = event.currentTarget
-    const id = Number(el.dataset.id), type = channelTypeOf(el)
-    const item = document.getElementById("edit-channel-item")
-    if (item) {
-        const usable = checkChannelRight(id, type, "manage-channels") || checkChannelRight(id, type, "manage-roles")
-        item.style.display = usable ? "" : "none"
-    }
-    window.toggleModale("edit-channel-modale", event)
-}
-window.openChannelMenu = openChannelMenu
+// Right-click on a channel or a category: channel-menu.mjs

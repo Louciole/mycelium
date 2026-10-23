@@ -184,7 +184,9 @@ create table if not exists invitation (
     id bigserial NOT NULL PRIMARY KEY,
     server integer not null references server(id) ON DELETE CASCADE,
     link varchar(8) NOT NULL,
-    expiration TIMESTAMP
+    expiration TIMESTAMP,
+    channel integer,
+    channel_type varchar(10)
 );
 
 create table if not exists role (
@@ -221,13 +223,19 @@ create table if not exists channel_unread (
     UNIQUE(account, channel)
 );
 
--- muted_until NULL = indefinitely muted
-create table if not exists channel_mute (
+-- A member's notification settings for one channel or one category (right-click menu).
+-- target: a channel's message place (text or forum channel, a vocal channel's chat),
+-- or a category id when is_category. muted with muted_until NULL = until unmuted.
+-- level NULL = inherit (the category's, then the server's notification_pref).
+create table if not exists notification_override (
     id bigserial NOT NULL PRIMARY KEY,
     account integer NOT NULL,
-    channel integer NOT NULL,
+    target integer NOT NULL,
+    is_category boolean NOT NULL DEFAULT false,
+    muted boolean NOT NULL DEFAULT false,
     muted_until TIMESTAMP,
-    UNIQUE(account, channel)
+    level integer,
+    UNIQUE(account, target, is_category)
 );
 
 -- level: 0=all messages, 1=mentions only (default), 2=nothing
@@ -244,7 +252,7 @@ create table if not exists notification_pref (
 -- These tables are looked up by channel/server on every channel message; the
 -- UNIQUE(account, ...) constraints lead with account so they don't cover it.
 create index if not exists idx_channel_unread_channel on channel_unread(channel);
-create index if not exists idx_channel_mute_channel on channel_mute(channel);
+create index if not exists idx_notification_override_target on notification_override(target, is_category);
 create index if not exists idx_notification_pref_server on notification_pref(server);
 
 create table if not exists op_servs (
@@ -300,8 +308,44 @@ create table if not exists note_block (
     uuid varchar(36) NOT NULL UNIQUE,
     row_group varchar(36),
     column_index integer DEFAULT 0,
-    sub_position float DEFAULT 0.1
+    sub_position float DEFAULT 0.1,
+    -- Collaborative notes (routes/notes_sync.py): the note itself is the op log below; these
+    -- rows are a copy for search, the MCP server and get_note_content, written back by clients
+    pos_key varchar(200) COLLATE "C",   -- fractional keys: compared byte by byte, like JS
+    sub_key varchar(200) COLLATE "C",
+    deleted boolean NOT NULL DEFAULT false,
+    proj_seq bigint NOT NULL DEFAULT 0
 );
+
+-- Collaborative notes: every operation (CRDT, static/crdt/) in the order the server stored it
+create table if not exists note_head (
+    channel integer NOT NULL PRIMARY KEY references notes_channel(id) ON DELETE CASCADE,
+    seq bigint NOT NULL DEFAULT 0,
+    max_clock bigint NOT NULL DEFAULT 0,
+    compacted_seq bigint NOT NULL DEFAULT 0   -- operations up to here are compacted (routes/note_compaction.py)
+);
+
+create table if not exists note_client (
+    channel integer NOT NULL references notes_channel(id) ON DELETE CASCADE,
+    client_id bigint NOT NULL,
+    account integer NOT NULL,
+    max_clock bigint NOT NULL DEFAULT 0,
+    PRIMARY KEY (channel, client_id)
+);
+
+create table if not exists note_op (
+    channel integer NOT NULL references notes_channel(id) ON DELETE CASCADE,
+    seq bigint NOT NULL,
+    client_id bigint NOT NULL,
+    clock bigint NOT NULL,
+    account integer,
+    obj varchar(36) NOT NULL,
+    op jsonb NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (channel, seq),
+    UNIQUE (channel, client_id, clock)
+);
+create index if not exists idx_note_op_obj on note_op(channel, obj, seq);
 
 create table if not exists note_database (
     id bigserial NOT NULL PRIMARY KEY,

@@ -312,7 +312,7 @@ test.describe('Forum channels - E2E', () => {
         // channel's settings and then the forum's kept the text channel (and its type).
         const openChannelSettings = async (selector) => {
             await page.locator(selector).click({ button: 'right' });
-            await page.locator('#edit-channel-modale .item').first().click();
+            await page.locator('#edit-channel-item').click();
             await expect(page.locator('#channels-params')).toBeVisible({ timeout: 5000 });
         };
         await openChannelSettings(`#channel-conv-${textId}`);

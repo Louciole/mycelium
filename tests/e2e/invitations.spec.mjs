@@ -3,6 +3,7 @@ import { loginUser } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import { createServerViaUi, openServerFromSidebarById, getServerIds } from './helpers/serverHelpers.mjs';
 import { disconnectViaUi, reloadAndWaitForApp } from './helpers/messagingHelpers.mjs';
+import { api, setupServer, status } from './helpers/permissionHelpers.mjs';
 
 const SERVER_URL = 'http://localhost:808';
 const TEST_TIMEOUT = 120000;
@@ -11,7 +12,7 @@ const TEST_TIMEOUT = 120000;
 
 /**
  * Generates an invite link via the server settings menu.
- * Returns the invite code stored in window.global.state.currentInvitationId.
+ * Returns the invite code, the end of the link shown in the invitation modal.
  */
 async function generateInviteViaUi(page) {
     // Open the server context menu (click on the server name bar)
@@ -24,10 +25,10 @@ async function generateInviteViaUi(page) {
     // Wait for the invitation modal with the link
     await page.locator('#server-invitation').waitFor({ state: 'visible', timeout: 10000 });
 
-    // Read the code from frontend state (already stored by createInvitation())
+    // The link shown in the modal ends with the code
     const code = await page.waitForFunction(() => {
-        const id = window.global?.state?.currentInvitationId;
-        return id ? String(id).replace(/"/g, '').trim() : null;
+        const link = document.getElementById('invitation-link')?.value;
+        return link ? link.split('/').pop() : null;
     }, { timeout: 10000 });
 
     const inviteCode = await code.jsonValue();
@@ -101,10 +102,10 @@ test.describe('Invitations — E2E', () => {
         // The invitation page shows the server name and a "Rejoindre" link/button
         await expect(page.locator('h2')).toContainText(serverName, { timeout: 10000 });
 
-        // Click "Rejoindre" — this is an <a href="/join_server?..."> wrapping a .btn
+        // "Rejoindre" joins, then the page goes to the server (invitation.mjs joinInvitation)
         await Promise.all([
-            page.waitForURL('**/channels**', { timeout: 15000 }),
-            page.locator('a[href*="join_server"] .btn').click(),
+            page.waitForURL(`**/channels#${serverId}`, { timeout: 15000 }),
+            page.locator('#join-invite-btn').click(),
         ]);
 
         await waitForAppReady(page);
@@ -147,5 +148,18 @@ test.describe('Invitations — E2E', () => {
 
         const afterDelete = await getServerIds(page);
         expect(afterDelete).not.toContain(serverId);
+    });
+
+    test('A banned member who clicks "Rejoindre" is told the invitation is invalid', async ({ browser }) => {
+        const s = await setupServer(browser, 'inv_banned', 1);
+        const [b] = s.members;
+        const code = (await api(s.owner, `/create_invitation?server_id=${s.serverId}`)).text.replace(/"/g, '').trim();
+        await api(s.owner, `/ban_member?server_id=${s.serverId}&account_id=${b.id}`);
+
+        await b.page.goto(`${SERVER_URL}/${code}`);
+        await b.page.locator('#join-invite-btn').click();
+        await expect(b.page.locator('h2')).toHaveText('Invitation invalide', { timeout: 10000 });
+        expect(await status(b.page, `/get_serv_content?server_id=${s.serverId}`)).toBe(403);   // not a member
+        await s.close();
     });
 });

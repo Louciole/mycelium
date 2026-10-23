@@ -2,20 +2,22 @@
      ondragover="global.state.noteEditor.onDragOver('${element.uuid}', event)"
      ondrop="global.state.noteEditor.onDrop('${element.uuid}', event)">
     <div class="controls">
-        <div class="add" onclick="global.state.noteEditor.createBlock({position: ${element.position}})">+</div>
-        <div class="drag" draggable="true"
+        <div class="add" title="${_t('Ajouter un bloc en dessous')}" onclick="global.state.noteEditor.addBlockAfter('${element.uuid}')">
+            <img src="/static/icons/material/add.svg" alt=""/>
+        </div>
+        <div class="drag" draggable="true" title="${_t('Glisser pour déplacer · cliquer pour le menu')}"
+             onclick="global.state.noteEditor.openBlockMenu('${element.uuid}', event)"
              ondragstart="global.state.noteEditor.onDragStart('${element.uuid}', event)"
              ondragend="global.state.noteEditor.onDragEnd('${element.uuid}', event)">
-            <img src="/static/icons/material/handle.svg"/>
-        </div>
-        <div class="delete" onclick="global.state.noteEditor.deleteBlock('${element.uuid}')">
-            <img src="/static/icons/material/trash.svg"/>
+            <img src="/static/icons/material/handle.svg" alt=""/>
         </div>
     </div>
-    <span class="content editable-block ${element.type!=='text'?'note-'+element.type:''}" contenteditable="${checkChannelRight(global.state.activeChan.id, 'note', 'edit-notes') ? 'true' : 'false'}"
+    <span class="content editable-block ${element.type!=='text'?'note-'+element.type:''}" contenteditable="${canEditNotes(global.state.activeChan.id) ? 'true' : 'false'}"
           spellcheck="false"
-          data-placeholder="Press '/' for commands"
+          data-placeholder="${global.state.noteEditor.placeholderFor(element.type)}"
           oninput="global.state.noteEditor.onInput('${element.uuid}', event)"
+          oncompositionstart="global.state.noteEditor.onCompositionStart('${element.uuid}')"
+          oncompositionend="global.state.noteEditor.onCompositionEnd('${element.uuid}', event)"
           onkeydown="global.state.noteEditor.onKeyDown('${element.uuid}', event)"
           onblur="global.state.noteEditor.onBlur('${element.uuid}', event)"
           onfocus="global.state.noteEditor.onFocus('${element.uuid}', event)">${MDToRender(element.content)}</span>

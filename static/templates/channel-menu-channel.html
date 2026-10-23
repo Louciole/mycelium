@@ -1,0 +1,48 @@
+${[
+    element.type === 'textual' ? `<button type="button" role="menuitem" class="ctx-item" id="channel-menu-read" ${isChannelUnread(element.id) ? '' : 'disabled'}
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); markChannelRead(${element.id})">
+        <span class="ctx-label">${_t('Marquer comme lu')}</span>
+    </button>` : '',
+
+    `<button type="button" role="menuitem" class="ctx-item" id="channel-menu-invite"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); inviteToChannel(${element.id}, '${element.type}')">
+        <span class="ctx-label">${_t('Inviter dans le salon')}</span>
+    </button>
+    <button type="button" role="menuitem" class="ctx-item" id="channel-menu-link"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); copyChannelLink(${element.id}, '${element.type}')">
+        <span class="ctx-label">${_t('Copier le lien')}</span>
+    </button>`,
+
+    NOTIF_TYPES.includes(element.type) ? `${channelOwnMute(element.id, element.type)
+        ? `<button type="button" role="menuitem" class="ctx-item" id="channel-menu-unmute"
+                onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); unmuteTarget('${element.type}', ${element.id})">
+            <span class="ctx-label">${_t('Réactiver le salon')}<small>${escapeHTML(muteHint(channelOwnMute(element.id, element.type)))}</small></span>
+        </button>`
+        : `<button type="button" role="menuitem" aria-haspopup="menu" class="ctx-item${element.sub?.name === 'mute' ? ' open' : ''}" id="channel-menu-mute"
+                onmouseenter="hoverChannelMenu(event, 'mute')" onclick="openChannelSubmenu(event, 'mute')">
+            <span class="ctx-label">${_t('Rendre le salon muet')}</span>${includeTemplate('ctx-chevron')}
+        </button>`}
+    <button type="button" role="menuitem" aria-haspopup="menu" class="ctx-item${element.sub?.name === 'notif' ? ' open' : ''}" id="channel-menu-notif"
+            onmouseenter="hoverChannelMenu(event, 'notif')" onclick="openChannelSubmenu(event, 'notif')">
+        <span class="ctx-label">${_t('Paramètres de notification')}<small>${levelLabel(channelLevel(element.id, element.type))}</small></span>${includeTemplate('ctx-chevron')}
+    </button>` : '',
+
+    moveDestinations(element.id, element.type).length ? `<button type="button" role="menuitem" aria-haspopup="menu" class="ctx-item${element.sub?.name === 'move' ? ' open' : ''}" id="channel-menu-move"
+            onmouseenter="hoverChannelMenu(event, 'move')" onclick="openChannelSubmenu(event, 'move')">
+        <span class="ctx-label">${_t('Déplacer vers…')}</span>${includeTemplate('ctx-chevron')}
+    </button>` : '',
+
+    // Settings: the Overview tab needs manage-channels, Permissions manage-roles (channels-params.html)
+    (checkChannelRight(element.id, element.type, 'manage-channels') || checkChannelRight(element.id, element.type, 'manage-roles') ? `<button type="button" role="menuitem" class="ctx-item" id="edit-channel-item"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); openChannelSettings()">
+        <span class="ctx-label">${_t('Modifier le salon')}</span>
+    </button>` : '')
+    + (canDuplicateChannel(element.id, element.type) ? `<button type="button" role="menuitem" class="ctx-item" id="channel-menu-duplicate"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); duplicateChannel(${element.id}, '${element.type}')">
+        <span class="ctx-label">${_t('Dupliquer le salon')}</span>
+    </button>` : '')
+    + (checkChannelRight(element.id, element.type, 'manage-channels') ? `<button type="button" role="menuitem" class="ctx-item danger" id="channel-menu-delete"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); deleteChannel(${element.id}, '${element.type}')">
+        <span class="ctx-label">${_t('Supprimer le salon')}</span>
+    </button>` : ''),
+].filter(Boolean).join('<div class="ctx-sep" role="separator"></div>')}

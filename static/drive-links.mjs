@@ -1,6 +1,7 @@
 import global from "./framework/global.mjs"
 import {xhr} from "./framework/templating.mjs"
 import {updateElement} from "./framework/vesta.mjs"
+import {channelRoute} from "./routes.mjs"
 
 // ─── Channel mentions and drive links ────────────────────────────────────────
 // "<#id>" mentions a textual channel or a forum (their ids share one sequence).
@@ -180,8 +181,8 @@ function openChannelMention(event, ref) {
         window.goToDriveChannel(id, target)
         return
     }
-    // "/folder" with no id = the root: the route names the drive, not just an id
-    const route = info.server + '/' + info.drive + (kind ? `/${kind === 'd' ? 'folder' : 'file'}/${itemId}` : '/folder')
+    const route = kind ? channelRoute(info.server, 'drive', info.drive, kind === 'd' ? 'folder' : 'file', itemId)
+        : channelRoute(info.server, 'drive', info.drive)
     window.handleHashRoute?.(route)
     window.pushRoute?.(route)
 }

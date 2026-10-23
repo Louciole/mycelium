@@ -450,7 +450,7 @@ test.describe('Vocal channels', () => {
             await joinFromSidebar(s.owner, chan);
             await openServer(m, s.serverId);   // reload: occupants only come from get_serv_content
             await expect(m.locator(`#vocal-occupant-${s.ownerId}`)).toBeVisible();
-            await m.goto(`http://localhost:808/channels#${s.serverId}/${chan}`);
+            await m.goto(`http://localhost:808/channels#${s.serverId}/vocal/${chan}`);
             await m.reload();
             await expect(m.locator('.vocal-lobby .vocal-lobby-avatar')).toHaveCount(1, { timeout: 15000 });
             await expect(m.locator('.vocal-header-count')).toHaveText(/^1 /);

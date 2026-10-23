@@ -12,7 +12,7 @@ import datetime
 
 from vesta import Server, HTTPError
 from constants import B62, USER_STORAGE_QUOTA
-from message_helpers import _lookupMessagePlace
+from message_helpers import _lookupMessagePlace, vocal_chat_place
 
 # Username rule: >=3 chars, letters/digits/underscore/dash/dot only.
 REGEX_USERNAME = re.compile(r'^(?=.{3,}$)[a-zA-Z0-9_\-\.]*$')
@@ -117,8 +117,7 @@ def get_user_info(self):
     user["server_unread"] = server_unread
     prefs = self.db.getAll("notification_pref", uid, "account")
     user["notif_prefs"] = {str(p["server"]): {"level": p["level"], "suppress_everyone": p["suppress_everyone"]} for p in prefs} if prefs else {}
-    mutes = self.db.getAll("channel_mute", uid, "account")
-    user["channel_mutes"] = [{"channel": m["channel"], "muted_until": str(m["muted_until"]) if m["muted_until"] else None} for m in mutes] if mutes else []
+    user["notif_overrides"] = [_override_row(r) for r in self.db.getAll("notification_override", uid, "account") or []]
     # Active server timeouts ({server_id: expires_at}) so the composer lock
     # survives a reload (static/moderation.mjs → updateComposerLock).
     user["server_timeouts"] = {}
@@ -153,6 +152,65 @@ def set_server_notif_pref(self, server_id, level=None, suppress_everyone=None):
             row["suppress_everyone"] = suppress_everyone == "true"
         self.db.insertDict("notification_pref", row)
     return json.dumps({"ok": True})
+
+
+def _override_row(row):
+    """A notification_override row as the client keeps it (global.user.notif_overrides)."""
+    return {"target": row["target"], "category": row["is_category"], "muted": row["muted"],
+            "muted_until": str(row["muted_until"]) if row["muted_until"] else None, "level": row["level"]}
+
+
+def _override_target(self, uid, target_id, target_type):
+    """(target, is_category) of a category or a channel the member can see. A channel is
+    keyed by its message place, the id notifyChannelMesage reads: text and forum channels
+    are their own place, a vocal channel has its chat's; notes and drives have none."""
+    if target_type == "category":
+        cat = self.db.getSomething("server_cat", target_id)
+        if not cat:
+            raise HTTPError(self.response, 404, "category not found")
+        self.require_member(uid, cat["server"])
+        return cat["id"], True
+    if target_type not in ("textual", "forum", "vocal"):
+        raise HTTPError(self.response, 400, "this channel has no notifications")
+    chan = self.require_channel_access(uid, target_id, target_type, "view")
+    return (vocal_chat_place(self, chan["id"]) if target_type == "vocal" else chan["id"]), False
+
+
+@Server.expose
+def set_notification_override(self, target_id, target_type, muted=None, minutes=None, level=None):
+    """A member's settings for a channel or a category: muted ("true" for `minutes`, or
+    until unmuted / "false") and its notification level ("inherit", 0 all messages,
+    1 mentions only, 2 nothing). A row back to "not muted, inherit" is deleted."""
+    uid = self.getUser()
+    target, is_category = _override_target(self, uid, target_id, target_type)
+    key = {"account": uid, "target": target, "is_category": is_category}
+    with self.db.pool.connection() as conn:
+        row = conn.execute("SELECT * FROM notification_override WHERE account = %(account)s "
+                           "AND target = %(target)s AND is_category = %(is_category)s", key).fetchone()
+    values = {"muted": row["muted"], "muted_until": row["muted_until"], "level": row["level"]} if row         else {"muted": False, "muted_until": None, "level": None}
+    if muted is not None:
+        values["muted"] = muted == "true"
+        values["muted_until"] = None
+        if values["muted"] and minutes:
+            if not str(minutes).isdigit() or int(minutes) <= 0:
+                raise HTTPError(self.response, 400, "invalid duration")
+            values["muted_until"] = datetime.datetime.now() + datetime.timedelta(minutes=int(minutes))
+    if level is not None:
+        if level not in ("inherit", "0", "1", "2"):
+            raise HTTPError(self.response, 400, "invalid level")
+        values["level"] = None if level == "inherit" else int(level)
+
+    with self.db.pool.connection() as conn:
+        if not values["muted"] and values["level"] is None:
+            conn.execute("DELETE FROM notification_override WHERE account = %(account)s "
+                         "AND target = %(target)s AND is_category = %(is_category)s", key)
+            return json.dumps(_override_row({**key, **values}))
+        row = conn.execute(
+            "INSERT INTO notification_override (account, target, is_category, muted, muted_until, level) "
+            "VALUES (%(account)s, %(target)s, %(is_category)s, %(muted)s, %(muted_until)s, %(level)s) "
+            "ON CONFLICT (account, target, is_category) DO UPDATE SET muted = EXCLUDED.muted, "
+            "muted_until = EXCLUDED.muted_until, level = EXCLUDED.level RETURNING *", {**key, **values}).fetchone()
+    return json.dumps(_override_row(row))
 
 
 # --------------------------- friends & blocks ------------------------------

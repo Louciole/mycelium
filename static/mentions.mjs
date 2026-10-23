@@ -346,6 +346,7 @@ function selectNoteCandidate(index) {
     const blockId = blockContainerEl?.dataset.blockId
     if (blockId && global.state.noteEditor?.blocks[blockId]) {
         global.state.noteEditor.blocks[blockId].content = newRawContent
+        global.state.noteEditor.saveBlock(blockId)   // an edit like any other (notes CRDT)
         activeBlockEl.innerHTML = window.MDToPreview(newRawContent)
 
         // Find the inserted span: it's the (N+1)-th .mention-channel where N is

@@ -298,35 +298,9 @@ function ingestConvMessages(key){
 }
 
 export function loadNote(key){
-    const onload = function() {
-        import("./workspaces/notes.mjs").then(()=>{
-            global.state.noteEditor = new NoteEditor()
-            goTo('content','server-note-content',undefined,false)
-        })
-    };
-
-    // Offline: render the snapshotted note (if any) without fetching.
-    if (global.state.offline) {
-        if (global.notes[key]) onload()
-        return
-    }
-
-    const request = xhr("get_note_content?channel_id="+JSON.stringify(key), onload, "GET",false)
-    const elements = JSON.parse(request.responseText)
-
-    global.notes[key] = {}
-    for(let element in elements){
-        global.notes[key][element] = elements[element]
-    }
-
-    // Convert array to dict
-    const blocksArray = global.notes[key].blocks || []
-    global.notes[key].blocks = {}
-
-    for(let block of blocksArray){
-        global.notes[key].blocks[block.uuid] = block
-
-    }
+    // A note is a CRDT kept in this tab and in IndexedDB (workspaces/noteSync.mjs): offline,
+    // its cached copy opens; online, it catches up with the server first.
+    import("./workspaces/notes.mjs").then(module => module.openNote(key))
 }
 
 /** Fetches a forum's metadata + posts into global.forums (no navigation). */
@@ -1392,11 +1366,22 @@ function sidebarOrder(serv){
     return ordered
 }
 
-function createInvitation(){
-    xhr("create_invitation?server_id="+global.state.currentServer.id,function(){
-        global.state.currentInvitationId = this.responseText
+/** An invitation link to the open server, or to one of its channels ({id, type}). */
+function createInvitation(channel = null){
+    const serv = global.state.currentServer
+    const params = new URLSearchParams({server_id: serv.id})
+    if (channel) {
+        params.set('channel_id', channel.id)
+        params.set('channel_type', channel.type)
+    }
+    xhr(`create_invitation?${params}`, function(){
+        if (this.status !== 200) return
+        setElement('global.state.invitation', {
+            link: window.location.origin + '/' + this.responseText.replace(/"/g, ''),
+            channel: channel ? findChannel(channel.id, channel.type)?.name : null,
+        })
         openMenu('server-invitation')
-    })
+    }, "POST")
 }
 window.createInvitation = createInvitation
 
@@ -1553,19 +1538,20 @@ function openChannelSettings(){
 }
 window.openChannelSettings = openChannelSettings
 
-async function deleteChannel(){
-    const id = global.state.modaltarget?.dataset?.id
-    const type = global.state.editingChannelType || 'textual'
+/** From the channel's settings (the channel they are open on) or its right-click menu. */
+async function deleteChannel(id = global.state.modaltarget?.dataset?.id, type = global.state.editingChannelType || 'textual'){
     if (!id) return
     if (!(await uiConfirm(_t("Delete this channel? This action cannot be undone."), {danger: true, confirmLabel: _t("Delete")}))) return
     const onload = function(){
+        if (this.status !== 200) return
         const arrMap = {textual: 'channels', vocal: 'vocals', drive: 'drives', note: 'notes', forum: 'forums'}
         const arr = global.state.currentServer.dirs[arrMap[type]]
         if (arr) {
             const idx = arr.findIndex(c => c.id == id)
             if (idx > -1) arr.splice(idx, 1)
         }
-        closeMenu('#channels-params')
+        // Not rendered when deleted from the right-click menu before any settings were opened
+        if (document.getElementById('channels-params')) closeMenu('#channels-params')
         orderServDirs(global.state.currentServer)
     }
     xhr(`edit_server_channel?server_id=${global.state.currentServer.id}&action=delete&targetId=${id}&channel_type=${type}`, onload)
@@ -1937,36 +1923,6 @@ async function leaveServer(){
     xhr("leave_server?server_id=".concat(serverId), onload, "POST")
 }
 window.leaveServer = leaveServer
-
-function muteChannel(minutes){
-    const chanId = parseInt(global.state.modaltarget?.dataset?.id)
-    if (!chanId) return
-    const url = minutes !== null ? `mute_channel?channel_id=${chanId}&minutes=${minutes}` : `mute_channel?channel_id=${chanId}`
-    const onload = function() {
-        const resp = JSON.parse(this.responseText)
-        if (!global.user.channel_mutes) global.user.channel_mutes = []
-        global.user.channel_mutes = global.user.channel_mutes.filter(m => m.channel !== chanId)
-        global.user.channel_mutes.push({ channel: chanId, muted_until: resp.muted_until })
-        setElement('global.user.channel_mutes', global.user.channel_mutes)
-        // Remove unread marker on muted channel
-        document.getElementById('channel-conv-' + chanId)?.classList.remove('unread')
-        closeFM()
-    }
-    xhr(url, onload, "POST")
-}
-window.muteChannel = muteChannel
-
-function unmuteChannel(){
-    const chanId = parseInt(global.state.modaltarget?.dataset?.id)
-    if (!chanId) return
-    const onload = function() {
-        global.user.channel_mutes = (global.user.channel_mutes || []).filter(m => m.channel !== chanId)
-        setElement('global.user.channel_mutes', global.user.channel_mutes)
-        closeFM()
-    }
-    xhr(`unmute_channel?channel_id=${chanId}`, onload, "POST")
-}
-window.unmuteChannel = unmuteChannel
 
 function setServerNotifPref(opts){
     const serverId = global.state.currentServer?.id

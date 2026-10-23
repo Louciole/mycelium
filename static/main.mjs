@@ -8,6 +8,10 @@ import {MDToHTML} from "/static/markdown/utils.mjs"; // DO NOT REMOVE
 import {} from "/static/admin.mjs"; // DO NOT REMOVE
 import {} from "/static/access.mjs"; // DO NOT REMOVE
 import {} from "/static/avatar.mjs"; // DO NOT REMOVE
+// Before the boot below: profile-info.html (mounted once at startup) calls getFactionBadgeHtml.
+// Its own <script> tag in main.html may run after this module's first await, and the
+// profile card was then never mounted (no profile on any avatar click until a reload).
+import {} from "/static/misc.mjs";
 import {} from "/static/imageEditor.mjs"; // Image crop/resize editor
 import {} from "/static/search.mjs"; // Ctrl+K global search palette
 import { initDrag } from "./drag.mjs";
@@ -17,6 +21,7 @@ import {xhr} from "./framework/templating.mjs";
 import {initTranslations} from "./translations/translation.mjs";
 import {initConnectivity} from "/static/framework/connectivity.mjs";
 import {loadSnapshot, saveSnapshot, configurePersistence} from "/static/framework/persistence.mjs";
+import {clearNotesCache} from "/static/workspaces/noteSync.mjs";
 import CallManager from "/static/webrtc.mjs";
 import {} from "/static/voiceSettings.mjs"; // Settings › Voix & Vidéo (devices, volumes, voice detection)
 import {} from "/static/constants.mjs"; // Expose and parseJsonArray globally
@@ -29,6 +34,7 @@ import {} from "/static/forum.mjs"; // Forum channels: posts, tags, layouts
 import {} from "/static/moderation.mjs"; // Kick/ban/timeout, reports, Moderation tab, op panel
 import {} from "/static/roles.mjs"; // Server settings › Roles (list, editor, hierarchy)
 import {} from "/static/channel-permissions.mjs"; // Channel settings › Permissions (overwrites)
+import {} from "/static/channel-menu.mjs"; // Right-click menu of a sidebar channel
 // Capacitor bridge — only activates when running inside a native shell
 import { hideSplash, registerPushNotifications } from "/static/capacitor-bridge.mjs";
 
@@ -104,6 +110,8 @@ export function postWS(){
     // Per connection: the presence subscriptions belong to the new clientID
     const userList = JSON.stringify(Object.keys(global.users).map(cle => parseInt(cle)))
     xhr("subscribe?client_id="+global.state.clientID+"&cat=user&items="+userList,undefined)
+    // The open note follows the new socket, and what was typed meanwhile is sent (notes CRDT)
+    window.onNotesSocketReady?.()
 
     // Once per page. A reconnection (network drop, laptop waking up) used to
     // replace the CallManager with a blank one: the call in progress was lost to
@@ -133,30 +141,12 @@ export function postWS(){
         if (token) window.location.href = `/static/invitation.html?token=${token}`;
     });
 
+    // A channel's route (mycelium://channel/<route>, a channel notification)
     window.addEventListener('cap:deepLinkChannel', (e) => {
-        const { serverId, channelId, kind, itemId } = e.detail;
-        if (!serverId || !channelId) return;
-        if ((kind === 'folder' || kind === 'file') && itemId) {
-            const route = `${serverId}/${channelId}/${kind}/${itemId}`;
-            handleHashRoute(route);
-            window.pushRoute?.(route);   // handleHashRoute never pushes
-            return;
-        }
-        if (kind === 'chat') {
-            // A vocal channel's chat (push notification): open the channel, chat shown
-            global.state.vocalChatOpen = true;
-            handleHashRoute(`${serverId}/${channelId}`);
-            window.pushRoute?.(`${serverId}/${channelId}`);
-            return;
-        }
-        // Navigate to the server + channel
-        const srv = Object.values(global.servers || {}).find(s => String(s.id) === String(serverId));
-        if (srv) {
-            global.state.isServer = true;
-            global.state.currentServer = srv;
-            global.state.activeConv = parseInt(channelId);
-            goTo('content', 'conv', undefined, true);
-        }
+        const { route } = e.detail;
+        if (!route) return;
+        handleHashRoute(route);
+        window.pushRoute?.(route);   // handleHashRoute never pushes
     });
 
     // Quick reply from notification action
@@ -1034,10 +1024,17 @@ printWatermark("Mycelium@carbonlab.dev", "https://github.com/Louciole/mycelium")
 // Must run AFTER initNavigation() (which sets window.global).
 // App-specific config for the generic framework persistence engine: which
 // global subtrees to snapshot, and the IndexedDB name.
+// Notes have their own cache (workspaces/noteSync.mjs: the op log, appended, per account)
 configurePersistence({
-    keys: ['user', 'users', 'servers', 'convs', 'privateConvs', 'notes', 'forums'],
+    keys: ['user', 'users', 'servers', 'convs', 'privateConvs', 'forums'],
     dbName: 'mycelium',
 })
+// Logout (and account deletion) wipe the snapshot: the notes' cache goes with it
+const clearFrameworkSnapshot = window.clearSnapshot
+window.clearSnapshot = async () => {
+    await clearNotesCache().catch(() => {})
+    return clearFrameworkSnapshot?.()
+}
 initConnectivity({ bannerText: 'Hors-ligne — données enregistrées' })
 // Snapshot the navigable state when the app is hidden/closed (covers mobile
 // backgrounding). Bounded: one record, overwritten.

@@ -2,14 +2,32 @@
     <div class="title">
         ${global.state.isMobile?'<img class="icon" src="/static/icons/material/back.svg" onclick="mobileHideContent()" style="margin-right: 0.6rem"/>':''}
         <img class="icon" src="/static/icons/material/note.svg"/>
-        ${Subscribe("global.notes[global.state.activeChan.id].name", ()=>{return global.notes[global.state.activeChan.id].name})}
+        ${Subscribe("global.notes[global.state.activeChan.id].name", ()=>{return escapeHTML(global.notes[global.state.activeChan.id].name)})}
+    </div>
+    ${Subscribe('global.state.noteCursors', () => global.state.noteCursors?.people.length ? fillWith('note-people', [global.state.noteCursors]) : '', 'note-people-host')}
+    ${Subscribe('global.state.noteSaveFailed', () => global.state.noteSaveFailed ? getTemplate('note-save-status') : '')}
+    <div>
+        <img class="icon" onclick="toggleMenu('member-list',true,'member-list-wrapper')" src="/static/icons/material/group.svg">
     </div>
 </div>
 
-
-<div class="scrollable" style="width: 100%;height: calc(100svh - 3rem);flex-direction: column;">
-    <div class="editor ${checkChannelRight(global.state.activeChan.id, 'note', 'edit-notes') ? '' : 'read-only'}" id="note-editor">
-        ${Subscribe('global.notes['+global.state.activeChan.id+'].blocks', () => fillWith('note-row', global.state.noteEditor.getRenderableRows()))}
+<!-- The page, and the member list beside it (as in a text channel) -->
+<div class="inline" style="width: 100%;height: calc(100svh - 3rem);">
+    <div class="scrollable note-page" style="width: 100%;height: 100%;flex-direction: column;">
+        <div class="note-page-header">
+            <h1 class="note-page-title" id="note-page-title" spellcheck="false"
+                contenteditable="${checkChannelRight(global.state.activeChan.id, 'note', 'manage-channels') ? 'true' : 'false'}"
+                data-placeholder="${_t('Sans titre')}"
+                onkeydown="global.state.noteEditor.onTitleKeyDown(event)"
+                onblur="global.state.noteEditor.onTitleBlur(event)">${escapeHTML(global.notes[global.state.activeChan.id].name)}</h1>
+        </div>
+        <div class="editor ${canEditNotes(global.state.activeChan.id) ? '' : 'read-only'}" id="note-editor">
+            ${Subscribe('global.notes['+global.state.activeChan.id+'].blocks', () => fillWith('note-row', global.state.noteEditor.getRenderableRows()))}
+        </div>
+        <div class="note-page-tail" onclick="global.state.noteEditor.focusEnd()"></div>
+        ${Subscribe('global.state.noteCursors', () => global.state.noteCursors ? fillWith('note-cursors', [global.state.noteCursors]) : '', 'note-cursors-host')}
     </div>
+    <div id="member-list-wrapper"></div>
 </div>
 ${Subscribe('global.state.slashMenu', () => getTemplate('slash-menu'))}
+${Subscribe('global.state.noteBlockMenu', () => global.state.noteBlockMenu ? fillWith('note-block-menu', [global.state.noteBlockMenu]) : '')}

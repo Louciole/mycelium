@@ -161,6 +161,17 @@ function checkChannelRight(channelId, channelType, right) {
 }
 window.checkChannelRight = checkChannelRight
 
+/**
+ * The user may change this notes channel (its text, sheets, databases): edit-notes in it, and
+ * not timed out on the current server (moderation.mjs: a timed-out member still reads notes).
+ * The same as require_note_edit (routes/workspaces.py).
+ */
+function canEditNotes(channelId) {
+    const server = global.state.currentServer?.id
+    return checkChannelRight(channelId, 'note', 'edit-notes') && !(server && window.isTimedOut?.(server))
+}
+window.canEditNotes = canEditNotes
+
 const ACTIVE_TYPES = {conv: 'textual', forum: 'forum', drive: 'drive', note: 'note', vocal: 'vocal'}
 
 /**

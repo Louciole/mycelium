@@ -12,112 +12,33 @@ from vesta import Server, HTTPError
 import metrics
 
 
-@Server.expose
-def save_block(self, channel, block, op="edit"):
-    uid = self.getUser()
-
-    chan_info = self.db.getSomething("notes_channel", channel)
-    if not chan_info:
-        raise HTTPError(self.response, 404)
-
-    self.require_channel_access(uid, chan_info["id"], "note", "edit-notes")
-
-    block = _load_json_dict(self, block)
-    if op == "create":
-        fields = _clean_block_fields(self, block)
-        if not isinstance(block.get("uuid"), str) or not _UUID_RE.match(block["uuid"]) or "type" not in fields:
-            raise HTTPError(self.response, 400)
-        if self.db.getSomething("note_block", block["uuid"], "uuid"):
-            raise HTTPError(self.response, 400)
-        _check_parent_block(self, fields.get("parent_block"), channel)
-        fields["uuid"] = block["uuid"]
-        fields["channel"] = chan_info["id"]
-        block_id = self.db.insertDict("note_block", fields, getId=True)
-
-        # Auto-create note_database for database-type blocks
-        if block.get("type") == "database" and block.get("uuid"):
-            existing = self.db.getSomething("note_database", block["uuid"], "block_uuid")
-            if not existing:
-                db_id = self.db.insertDict("note_database", {
-                    "block_uuid": block["uuid"],
-                    "channel": channel,
-                    "name": "Untitled Database",
-                    "view_type": "table"
-                }, getId=True)
-                self.db.insertDict("note_database_column", {
-                    "database_id": db_id,
-                    "name": "Name",
-                    "type": "text",
-                    "position": 0.1
-                })
-                self.db.insertDict("note_database_row", {
-                    "database_id": db_id,
-                    "position": 0.1
-                })
-        if block.get("type") == "spreadsheet" and block.get("uuid"):
-            existing = self.db.getSomething("note_spreadsheet", block["uuid"], "block_uuid")
-            if not existing:
-                self.db.insertDict("note_spreadsheet", {
-                    "block_uuid": block["uuid"],
-                    "channel": channel,
-                    "rows": 3,
-                    "cols": 2
-                })
-
-        return str(block_id)
-    elif op == "delete":
-        block_info = self.db.getSomething("note_block", str(block.get("uuid")), "uuid")
-        if not block_info or int(block_info["channel"]) != int(channel):
-            raise HTTPError(self.response, 404)
-        self.db.deleteSomething("note_block", block_info["id"])
-    elif op == "edit":
-        block_info = self.db.getSomething("note_block", str(block.get("uuid")), "uuid")
-
-        if not block_info or int(block_info["channel"]) != int(channel):
-            raise HTTPError(self.response, 404)
-
-        # The client sends the whole stored row back (id, channel, uuid included):
-        # only the editable columns are considered, unchanged ones are skipped.
-        changes = {key: value for key, value in _clean_block_fields(self, block).items()
-                   if value != block_info.get(key)}
-        if changes.get("parent_block") is not None:
-            if int(changes["parent_block"]) == int(block_info["id"]):
-                raise HTTPError(self.response, 400)
-            _check_parent_block(self, changes["parent_block"], channel)
-
-        for key, value in changes.items():
-            self.db.edit("note_block", block_info["uuid"], key, value, "uuid")
-
-        # Auto-create note_database when block type changes to "database"
-        if block.get("type") == "database" and block_info.get("type") != "database":
-            existing = self.db.getSomething("note_database", block["uuid"], "block_uuid")
-            if not existing:
-                db_id = self.db.insertDict("note_database", {
-                    "block_uuid": block["uuid"],
-                    "channel": channel,
-                    "name": "Untitled Database",
-                    "view_type": "table"
-                }, getId=True)
-                self.db.insertDict("note_database_column", {
-                    "database_id": db_id,
-                    "name": "Name",
-                    "type": "text",
-                    "position": 0.1
-                })
-                self.db.insertDict("note_database_row", {
-                    "database_id": db_id,
-                    "position": 0.1
-                })
-        # Auto-create note_spreadsheet when block type changes to "spreadsheet"
-        if block.get("type") == "spreadsheet" and block_info.get("type") != "spreadsheet":
-            existing = self.db.getSomething("note_spreadsheet", block["uuid"], "block_uuid")
-            if not existing:
-                self.db.insertDict("note_spreadsheet", {
-                    "block_uuid": block["uuid"],
-                    "channel": channel,
-                    "rows": 3,
-                    "cols": 2
-                })
+def ensure_block_resources(self, channel, uuid, block_type):
+    """The tables a database or spreadsheet block reads (its note_block row must exist).
+    Created once; called when a block becomes one (routes/notes_sync.py)."""
+    if block_type == "database" and not self.db.getSomething("note_database", uuid, "block_uuid"):
+        db_id = self.db.insertDict("note_database", {
+            "block_uuid": uuid,
+            "channel": int(channel),
+            "name": "Untitled Database",
+            "view_type": "table"
+        }, getId=True)
+        self.db.insertDict("note_database_column", {
+            "database_id": db_id,
+            "name": "Name",
+            "type": "text",
+            "position": 0.1
+        })
+        self.db.insertDict("note_database_row", {
+            "database_id": db_id,
+            "position": 0.1
+        })
+    elif block_type == "spreadsheet" and not self.db.getSomething("note_spreadsheet", uuid, "block_uuid"):
+        self.db.insertDict("note_spreadsheet", {
+            "block_uuid": uuid,
+            "channel": int(channel),
+            "rows": 3,
+            "cols": 2
+        })
 
 
 @Server.expose
@@ -231,17 +152,9 @@ def get_spreadsheet_content(self, block_uuid, channel=None, conv_id=None):
         ref = self._sheet_ref(c["col_idx"], c["row_idx"])
         if c["value"] not in (None, ""):
             cells[ref] = c["value"]
-        tc = c.get("text_color")
-        bc = c.get("bg_color")
-        al = c.get("align")
-        dc = c.get("decimals")
-        if tc or bc or al or dc is not None:
-            cell_formats[ref] = {
-                "color": tc or "",
-                "bg": bc or "",
-                "align": al or "",
-                "decimals": dc if dc is not None else "",
-            }
+        fmt = _cell_format(c)
+        if fmt:
+            cell_formats[ref] = fmt
     col_widths = self._get_sheet_col_widths(sheet_id)
 
     result = {
@@ -277,8 +190,52 @@ def get_spreadsheet_snapshot(self, channel, block_uuid):
     }, default=str)
 
 
+def _cell_format(cell):
+    """A cell row's formatting as clients hold it (None: no formatting)."""
+    tc, bc, al, dc = cell.get("text_color"), cell.get("bg_color"), cell.get("align"), cell.get("decimals")
+    if not (tc or bc or al or dc is not None):
+        return None
+    return {"color": tc or "", "bg": bc or "", "align": al or "", "decimals": dc if dc is not None else ""}
+
+
+def _announce_sheet(self, uid, sheet_info, client_id, read):
+    """Tell the viewers of a notes channel what an edit of one of its sheets changed (a sheet's
+    content is not in the note's CRDT: routes/notes_sync.py relays this to the note's room).
+
+    `read(conn)` gives the change as the database holds it now, read with the sheet's row
+    locked: announcements reach the tabs in the order of their reads, so the last one a tab
+    gets about a cell is what is stored, whatever order concurrent edits were written in.
+    `client_id`: the editing tab's socket (it ignores its own while its edits are on their
+    way), only when it is this user's."""
+    if sheet_info.get("channel") is None:
+        return   # a conversation's sheet: no room
+    from routes.notes_sync import notify_sheet   # (notes_sync imports this module)
+    client_id = str(client_id or "")
+    client = self.db.getSomething("active_client", int(client_id)) if client_id.isascii() and client_id.isdigit() and len(client_id) < 19 else None
+    try:
+        with self.db.pool.connection() as conn, conn.transaction():
+            conn.execute("SELECT id FROM note_spreadsheet WHERE id = %s FOR UPDATE", (sheet_info["id"],))
+            notify_sheet(conn, int(sheet_info["channel"]), sheet_info["block_uuid"], read(conn),
+                         int(client_id) if client and client["userid"] == uid else None)
+    except Exception as e:
+        # The edit is stored anyway: the other tabs miss it until they read the sheet again
+        # (reopening the note, or their socket coming back)
+        print("[sheets] could not announce a change:", repr(e))
+
+
+def _announce_cell(self, uid, sheet_info, client_id, row_idx, col_idx):
+    def read(conn):
+        cell = conn.execute(
+            "SELECT value, text_color, bg_color, align, decimals FROM note_spreadsheet_cell"
+            " WHERE spreadsheet_id = %s AND row_idx = %s AND col_idx = %s",
+            (sheet_info["id"], row_idx, col_idx)).fetchone()
+        return {"kind": "cell", "ref": self._sheet_ref(col_idx, row_idx), "value": (cell or {}).get("value") or "",
+                "format": _cell_format(cell) if cell else None}
+    _announce_sheet(self, uid, sheet_info, client_id, read)
+
+
 @Server.expose
-def save_spreadsheet_cell(self, spreadsheet_id, cell_id, value, channel=None, conv_id=None):
+def save_spreadsheet_cell(self, spreadsheet_id, cell_id, value, channel=None, conv_id=None, client_id=None):
     uid = self.getUser()
     sheet_info = _get_sheet_info(self, uid, spreadsheet_id, channel=channel, conv_id=conv_id)
 
@@ -317,11 +274,12 @@ def save_spreadsheet_cell(self, spreadsheet_id, cell_id, value, channel=None, co
                 "col_idx": col_idx,
                 "value": value
             })
+    _announce_cell(self, uid, sheet_info, client_id, row_idx, col_idx)
 
 
 @Server.expose
 def save_spreadsheet_cell_format(self, spreadsheet_id, cell_id, text_color=None, bg_color=None,
-                                 align=None, decimals=None, channel=None, conv_id=None):
+                                 align=None, decimals=None, channel=None, conv_id=None, client_id=None):
     uid = self.getUser()
     sheet_info = _get_sheet_info(self, uid, spreadsheet_id, channel=channel, conv_id=conv_id)
 
@@ -373,10 +331,11 @@ def save_spreadsheet_cell_format(self, spreadsheet_id, cell_id, text_color=None,
             "align": al_val,
             "decimals": dc_val,
         })
+    _announce_cell(self, uid, sheet_info, client_id, row_idx, col_idx)
 
 
 @Server.expose
-def save_spreadsheet(self, spreadsheet_id, data, channel=None, conv_id=None):
+def save_spreadsheet(self, spreadsheet_id, data, channel=None, conv_id=None, client_id=None):
     uid = self.getUser()
 
     try:
@@ -408,10 +367,11 @@ def save_spreadsheet(self, spreadsheet_id, data, channel=None, conv_id=None):
 
         if value != int(sheet_info.get(key)):
             self.db.edit("note_spreadsheet", spreadsheet_id, key, value)
+    _announce_sheet(self, uid, sheet_info, client_id, lambda conn: {"kind": "reload"})
 
 
 @Server.expose
-def save_spreadsheet_col_width(self, spreadsheet_id, col_idx, width, channel=None, conv_id=None):
+def save_spreadsheet_col_width(self, spreadsheet_id, col_idx, width, channel=None, conv_id=None, client_id=None):
     uid = self.getUser()
     sheet_info = _get_sheet_info(self, uid, spreadsheet_id, channel=channel, conv_id=conv_id)
 
@@ -434,11 +394,17 @@ def save_spreadsheet_col_width(self, spreadsheet_id, col_idx, width, channel=Non
             "col_idx": col_idx,
             "width_px": width,
         })
+
+    def read(conn):
+        col = conn.execute("SELECT width_px FROM note_spreadsheet_col WHERE spreadsheet_id = %s AND col_idx = %s",
+                           (sheet_info["id"], col_idx)).fetchone()
+        return {"kind": "width", "col": col_idx, "width": col["width_px"] if col else None}
+    _announce_sheet(self, uid, sheet_info, client_id, read)
     return json.dumps({"ok": True})
 
 
 @Server.expose
-def save_spreadsheet_structure(self, spreadsheet_id, op, ref, channel=None, conv_id=None):
+def save_spreadsheet_structure(self, spreadsheet_id, op, ref, channel=None, conv_id=None, client_id=None):
     uid = self.getUser()
     sheet_info = _get_sheet_info(self, uid, spreadsheet_id, channel=channel, conv_id=conv_id)
 
@@ -576,6 +542,9 @@ def save_spreadsheet_structure(self, spreadsheet_id, op, ref, channel=None, conv
 
     self.db.edit("note_spreadsheet", spreadsheet_id, "rows", rows)
     self.db.edit("note_spreadsheet", spreadsheet_id, "cols", cols)
+    # Cells moved: viewers read the sheet again (the op says where, for a cell being typed in)
+    _announce_sheet(self, uid, sheet_info, client_id, lambda conn: {
+        "kind": "structure", "op": op, "ref": self._sheet_ref(parsed["col"], parsed["row"])})
     return json.dumps({"rows": rows, "cols": cols, "col_widths": self._get_sheet_col_widths(spreadsheet_id)})
 
 
@@ -823,6 +792,8 @@ _DATABASE_VIEWS = ("table", "gallery")
 
 
 def _load_json_dict(self, raw):
+    if isinstance(raw, dict):   # already parsed: a JSON request body
+        return raw
     try:
         value = json.loads(raw)
     except (ValueError, TypeError):
@@ -900,15 +871,18 @@ def _clean_database_fields(self, database, db_id):
     return fields
 
 
+def require_note_edit(self, uid, channel):
+    """The notes channel `uid` may change (its text, sheets, databases): "edit-notes" in it
+    (implies view-channels), and not timed out on its server (a timed-out member still reads
+    it). Returns the channel row; raises 404, or 403 (the timeout's body: timed_out)."""
+    chan = self.require_channel_access(uid, channel, "note", "edit-notes")
+    self.enforceNotTimedOut(uid, chan["server"])
+    return chan
+
+
 def _checkDatabaseAccess(self, uid, channel):
-    """Check that user has edit access to a notes channel. Returns server_id or raises."""
-    chan_info = self.db.getSomething("notes_channel", channel)
-    if not chan_info:
-        raise HTTPError(self.response, 404)
-    # "edit-notes" in this channel (implies view-channels)
-    if not self.checkChannelAccess(uid, chan_info["id"], "note", "edit-notes"):
-        raise HTTPError(self.response, 403)
-    return chan_info["server"]
+    """Check that user may edit a notes channel's content. Returns server_id or raises."""
+    return require_note_edit(self, uid, channel)["server"]
 
 
 def _checkConvAccess(self, uid, conv_id):

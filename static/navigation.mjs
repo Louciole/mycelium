@@ -3,6 +3,8 @@ import {loadChan, loadConv, loadNote, loadServer, lookFor, loadForum, loadForumP
 import {setElement} from "./framework/vesta.mjs";
 import {closeFM, goTo} from "./framework/navigation.mjs";
 import {xhr} from "./framework/templating.mjs";
+import {channelRoute} from "./routes.mjs";
+import {NOTIF_TYPES, isChannelMuted, nextMuteEnd} from "./notif-overrides.mjs";
 import {} from "./servers/drive.mjs"
 import {} from "./drive-links.mjs"
 let emptyStr = '' //DO NOT REMOVE
@@ -104,75 +106,63 @@ export function handleHashRoute(hash) {
             return
         }
 
-        const parts = hash.split('/')
-        if (parts.length >= 2) {
-            const serverId = parseInt(parts[0])
-            const channelId = parseInt(parts[1])
-            if (isNaN(serverId) || isNaN(channelId)) return
+        // <server>[/<type>/<id>[/…]] (routes.mjs channelRoute)
+        const [serverPart, type, idPart, kind, sub] = hash.split('/')
+        const serverId = parseInt(serverPart)
+        const channelId = parseInt(idPart)
+        if (isNaN(serverId)) return
+        const server = lookFor(serverId, global.servers)
+        if (!server) return
 
-            const server = lookFor(serverId, global.servers)
-            if (!server) return
+        global.state.currentServer = server
+        global.state.activeConv = undefined
+        global.state.isServer = true
+        loadServer(serverId)
 
-            global.state.currentServer = server
-            global.state.activeConv = undefined
-            global.state.isServer = true
-            loadServer(serverId)
+        // Select the server icon in the main selector (best-effort: icons may
+        // not be in the DOM yet if loadServers hasn't completed).
+        const prevTab = global.state.currentTab
+        if (prevTab) prevTab.classList.remove('selected')
+        const serverIcon = document.getElementById('server-item-' + serverId)
+        if (serverIcon) {
+            serverIcon.classList.add('selected')
+            global.state.currentTab = serverIcon
+        }
 
-            // Select the server icon in the main selector (best-effort: icons may
-            // not be in the DOM yet if loadServers hasn't completed).
-            const prevTab = global.state.currentTab
-            if (prevTab) prevTab.classList.remove('selected')
-            const serverIcon = document.getElementById('server-item-' + serverId)
-            if (serverIcon) {
-                serverIcon.classList.add('selected')
-                global.state.currentTab = serverIcon
-            }
-
-            // goTo may run its callback after this function returned: the
-            // navigation must not push a route then either (the caller does).
-            const navigateInServer = () => {
-                goTo('sec-selector', 'serverSelector', undefined, false, () => withoutRoutePush(() => {
-                    const dirs = global.state.currentServer.dirs
-                    if (!dirs) return
-
-                    // Drive links: <server>/<drive>/folder[/<id>] and <server>/<drive>/file/<id>
-                    // (no folder id = the root; the segment says the channel is a drive)
-                    if ((parts[2] === 'folder' || parts[2] === 'file')
-                            && dirs.drives?.some(c => c.id === channelId)) {
-                        goToDriveChannel(channelId, parts[3] ? {[parts[2]]: parseInt(parts[3])} : {})
-                        return
+        // goTo may run its callback after this function returned: the
+        // navigation must not push a route then either (the caller does).
+        const navigateInServer = () => {
+            goTo('sec-selector', 'serverSelector', undefined, false, () => withoutRoutePush(() => {
+                if (!global.state.currentServer.dirs) return
+                // Just the server, or a channel it doesn't (or no longer) show: like a click on the server
+                if (!findChannel(channelId, type)) {
+                    if (!restoreLastChannel()) {
+                        const first = window.firstTextChannel(global.state.currentServer)
+                        if (first) goToChannel(first.id)
                     }
+                } else if (type === 'drive') {
+                    // .../folder[/<id>] (no id: the root), .../file/<id>
+                    goToDriveChannel(channelId, (kind === 'folder' || kind === 'file') && sub ? {[kind]: parseInt(sub)} : {})
+                } else if (type === 'forum') {
+                    goToForumChannel(channelId)
+                    if (kind === 'post' && !isNaN(parseInt(sub))) setTimeout(() => goToForumPost(parseInt(sub)), 100)
+                } else if (type === 'vocal') {
+                    if (kind === 'chat') global.state.vocalChatOpen = true   // a tap on its chat's notification
+                    goToVocalChannel(channelId, false)
+                } else if (type === 'note') {
+                    goToNoteChannel(channelId)
+                } else if (type === 'textual') {
+                    goToChannel(channelId)
+                }
+            }))
+        }
 
-                    if (parts[2] === 'post' && parts[3]) {
-                        const postId = parseInt(parts[3])
-                        if (!isNaN(postId)) {
-                            goToForumChannel(channelId)
-                            setTimeout(() => goToForumPost(postId), 100)
-                        }
-                        return
-                    }
-
-                    if (dirs.channels?.some(c => c.id === channelId)) {
-                        goToChannel(channelId)
-                    } else if (dirs.vocals?.some(c => c.id === channelId)) {
-                        goToVocalChannel(channelId, false)
-                    } else if (dirs.notes?.some(c => c.id === channelId)) {
-                        goToNoteChannel(channelId)
-                    } else if (dirs.forums?.some(c => c.id === channelId)) {
-                        goToForumChannel(channelId)
-                    } else if (dirs.drives?.some(c => c.id === channelId)) {
-                        goToDriveChannel(channelId)
-                    }
-                }))
-            }
-
-            // column-perso must be loaded before sec-selector can be targeted.
-            // It may not exist yet if loadConvs hasn't fired (e.g. slow network).
-            if (document.getElementById('sec-selector')) {
-                navigateInServer()
-            } else {
-                goTo('sec-column', 'column-perso', undefined, false, navigateInServer)
-            }
+        // column-perso must be loaded before sec-selector can be targeted.
+        // It may not exist yet if loadConvs hasn't fired (e.g. slow network).
+        if (document.getElementById('sec-selector')) {
+            navigateInServer()
+        } else {
+            goTo('sec-column', 'column-perso', undefined, false, navigateInServer)
         }
     } finally {
         _skipRoutePush = false
@@ -354,24 +344,31 @@ function mobileHideContent(){
 }
 window.mobileHideContent = mobileHideContent
 
+// Sidebar element id prefix of the channel types that have notification settings
+const SIDEBAR_PREFIX = {textual: 'channel-conv-', forum: 'channel-forum-', vocal: 'channel-vocal-'}
+const DIR_OF = {textual: 'channels', forum: 'forums', vocal: 'vocals'}
+
+/** Unread (text channels) and muted (by themselves or their category: dimmed) markers
+ *  of the open server's sidebar, from global.user — after any repaint of the list. */
+let _muteExpiryTimer
 function applyChannelUnreads() {
-    const now = Date.now()
-    const unreads = global.user?.channel_unreads || []
-    const mutes = global.user?.channel_mutes || []
-    const mutedIds = new Set(
-        mutes
-            .filter(m => !m.muted_until || new Date(m.muted_until).getTime() > now)
-            .map(m => m.channel)
-    )
-    for (const u of unreads) {
-        if (mutedIds.has(u.channel)) continue
-        const elt = document.getElementById('channel-conv-' + u.channel)
-        if (elt) elt.classList.add('unread')
+    const serv = global.state.currentServer
+    document.querySelectorAll('#server-selector .conv.muted').forEach(elt => elt.classList.remove('muted'))
+    for (const u of global.user?.channel_unreads || []) {
+        if (!isChannelMuted(u.channel, 'textual')) document.getElementById('channel-conv-' + u.channel)?.classList.add('unread')
     }
-    for (const id of mutedIds) {
-        const elt = document.getElementById('channel-conv-' + id)
-        if (elt) { elt.classList.add('muted'); elt.classList.remove('unread') }
+    for (const type of NOTIF_TYPES) {
+        for (const chan of serv?.dirs?.[DIR_OF[type]] || []) {
+            if (!isChannelMuted(chan.id, type)) continue
+            const elt = document.getElementById(SIDEBAR_PREFIX[type] + chan.id)
+            elt?.classList.add('muted')
+            elt?.classList.remove('unread')
+        }
     }
+    // Again when the next timed mute ends
+    clearTimeout(_muteExpiryTimer)
+    const next = nextMuteEnd()
+    if (Number.isFinite(next)) _muteExpiryTimer = setTimeout(applyChannelUnreads, Math.min(next - Date.now() + 500, 2 ** 31 - 1))
 }
 window.applyChannelUnreads = applyChannelUnreads
 
@@ -439,7 +436,7 @@ function goToChannel(id){
     targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
     targetElt.classList.add("selected")
 
-    pushRoute(global.state.currentServer?.id + '/' + id)
+    pushRoute(channelRoute(global.state.currentServer?.id, 'textual', id))
     goTo('content','server-channel',undefined,false,mountContentBlocks)
     window.updateComposerLock?.()   // timed-out banner (moderation.mjs)
 }
@@ -449,7 +446,7 @@ function goToVocalChannel(id, join = true){
     // From another server or the DMs (the "voice connected" panel): go there first
     if (!global.state.currentServer?.dirs?.vocals?.some(c => c.id === id)) {
         const server = Object.values(global.servers || {}).find(s => s?.dirs?.vocals?.some(c => c.id === id))
-        if (server) handleHashRoute(server.id + '/' + id)
+        if (server) handleHashRoute(channelRoute(server.id, 'vocal', id))
         return
     }
 
@@ -473,7 +470,7 @@ function goToVocalChannel(id, join = true){
     if (global.state.isMobile) mobileDisplayContent()
     targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
     targetElt?.classList.add("selected")
-    pushRoute(global.state.currentServer?.id + '/' + id)
+    pushRoute(channelRoute(global.state.currentServer?.id, 'vocal', id))
     goTo('content','server-vocal-content',undefined,false)
     if (global.state.vocalChat) afterVocalChatShown()
     // The view was just rebuilt: rebind the live streams to its <video> tiles
@@ -533,7 +530,7 @@ function goToNoteChannel(id){
     targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
     targetElt.classList.add("selected")
 
-    pushRoute(global.state.currentServer?.id + '/' + id)
+    pushRoute(channelRoute(global.state.currentServer?.id, 'note', id))
 }
 window.goToNoteChannel = goToNoteChannel
 
@@ -556,13 +553,13 @@ function goToForumChannel(id){
     targetElt = document.getElementById("channel".concat(global.state.activeChan.slug))
     targetElt?.classList.add("selected")
 
-    pushRoute(global.state.currentServer?.id + '/' + id)
+    pushRoute(channelRoute(global.state.currentServer?.id, 'forum', id))
 }
 window.goToForumChannel = goToForumChannel
 
 function goToForumPost(postId){
     loadForumPost(postId)
-    pushRoute(global.state.currentServer?.id + '/' + global.state.activeChan?.id + '/post/' + postId)
+    pushRoute(channelRoute(global.state.currentServer?.id, 'forum', global.state.activeChan?.id, 'post', postId))
     if (global.state.isMobile) {
         mobileDisplayContent()
     }
@@ -575,7 +572,7 @@ function backToForum(){
         // Refetch: replies sent in the post changed its reply count / last activity.
         // Replace the post's history entry rather than stacking forum/post/forum/post...
         loadForum(forumId)
-        replaceRoute(global.state.currentServer?.id + '/' + forumId)
+        replaceRoute(channelRoute(global.state.currentServer?.id, 'forum', forumId))
     }
 }
 window.backToForum = backToForum

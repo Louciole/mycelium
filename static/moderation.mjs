@@ -330,6 +330,10 @@ function applyTimeoutState(serverId, expiresAt) {
     if (expiresAt) global.user.server_timeouts[String(serverId)] = expiresAt;
     else delete global.user.server_timeouts[String(serverId)];
     updateComposerLock();
+    // A note of that server turns read-only, or editable again (access.mjs canEditNotes)
+    if (global.state.activeChan?.type === "note" && Number(global.state.currentServer?.id) === Number(serverId)) {
+        global.state.noteEditor?.applyPermissions?.();
+    }
 }
 window.applyTimeoutState = applyTimeoutState;
 

@@ -1,5 +1,6 @@
 import global from "../framework/global.mjs";
 import {updateElement} from "../framework/vesta.mjs";
+import {channelRoute} from "../routes.mjs";
 import {driveName, findDriveItem, getFileExtension, getFilePreviewType} from "./drive-files.mjs";
 import {driveRoute, reloadDrive, visibleDriveItems} from "./drive.mjs";
 
@@ -54,7 +55,7 @@ function findDriveFile(file_id) {
 export function openDriveViewer(fileId) {
     if (!findDriveFile(fileId)) return
     global.driveViewer = Number(fileId)
-    window.replaceRoute?.(global.drive.server + '/' + global.drive.id + '/file/' + fileId)
+    window.replaceRoute?.(channelRoute(global.drive.server, 'drive', global.drive.id, 'file', fileId))
     updateElement('global.driveViewer')
 }
 window.openDriveViewer = openDriveViewer

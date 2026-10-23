@@ -37,25 +37,9 @@
         `
     })}
 </div>
-<div class="modale" id="edit-channel-modale">
-    <div class="item" id="edit-channel-item" onclick="closeFM();openChannelSettings()">${_t("Edit channel")}</div>
-    ${Subscribe('global.user.channel_mutes', () => {
-        const chanId = parseInt(global.state.modaltarget?.dataset?.id)
-        const mute = global.user?.channel_mutes?.find(m => m.channel === chanId)
-        const isMuted = !!mute
-        return isMuted
-            ? `<div class="item" onclick="unmuteChannel()">${_t("Unmute channel")}</div>`
-            : `<div class="item" onclick="muteChannel(null)">${_t("Mute channel")}</div>
-               <div class="item" onclick="muteChannel(15)">${_t("Mute 15 min")}</div>
-               <div class="item" onclick="muteChannel(60)">${_t("Mute 1h")}</div>
-               <div class="item" onclick="muteChannel(480)">${_t("Mute 8h")}</div>
-               <div class="item" onclick="muteChannel(1440)">${_t("Mute 24h")}</div>`
-    })}
-</div>
+${Subscribe('global.state.channelMenu', () => channelMenuHtml(), 'drive-contents')}
+${Subscribe('global.state.toast', () => global.state.toast ? includeTemplate('toast') : '', 'drive-contents')}
 <div class="modale role-menu voice-user-menu" id="voice-user-modale">${Subscribe('global.state.voiceMenu', () => global.state.voiceMenu ? includeTemplate('voice-user-menu') : '')}</div>
-<div class="modale" id="edit-cat-modale">
-    <div class="item" id="edit-cat-item" onclick="closeFM();openCategorySettings()">${_t("Edit category")}</div>
-</div>
 <section class="menu-wrapper" id="create-channel" style="display:none" onclick="event.target === event.currentTarget && (event.currentTarget.style.display='none')">
     <div class="menu" onclick="event.stopPropagation()">
         <div class="close" onclick="document.getElementById('create-channel').style.display='none'">+</div>

@@ -168,6 +168,33 @@ export function shiftColumnWidthsMap(widths, insertCol, deleteCol, nextCols, def
     return next
 }
 
+/**
+ * What a structure operation of the cell menu does at `at` ({col, row}):
+ * {insertCol, insertRow, deleteCol, deleteRow} (null: not that one), null for an unknown op.
+ * The same as save_spreadsheet_structure (routes/workspaces.py).
+ */
+export function structureShift(op, at) {
+    const shift = {insertCol: null, insertRow: null, deleteCol: null, deleteRow: null}
+    if (op === 'add-col-left') shift.insertCol = at.col
+    else if (op === 'add-col-right') shift.insertCol = at.col + 1
+    else if (op === 'add-row-top') shift.insertRow = at.row
+    else if (op === 'add-row-bottom') shift.insertRow = at.row + 1
+    else if (op === 'delete-col') shift.deleteCol = at.col
+    else if (op === 'delete-row') shift.deleteRow = at.row
+    else return null
+    return shift
+}
+
+/** Where the cell at (col, row) goes with a structureShift: [col, row], null if deleted. */
+export function shiftCell(col, row, {insertCol, insertRow, deleteCol, deleteRow}) {
+    if (insertCol !== null && col >= insertCol) col += 1
+    if (insertRow !== null && row >= insertRow) row += 1
+    if (col === deleteCol || row === deleteRow) return null
+    if (deleteCol !== null && col > deleteCol) col -= 1
+    if (deleteRow !== null && row > deleteRow) row -= 1
+    return [col, row]
+}
+
 export function insertReferenceAtSelection(text, ref, selectionStart, selectionEnd) {
     const current = String(text ?? '')
     const start = Math.max(0, Math.min(current.length, selectionStart ?? current.length))
@@ -289,6 +316,9 @@ export class SpreadsheetView {
         this.resizeStartWidth = this.defaultColWidth
         this.externalEvalCache = {}
         this._viewEl = null
+        // Requests on their way (writes, reads): changes others make meanwhile wait for them (_settled)
+        this._inFlight = 0
+        this._stale = false
 
         this.load()
     }
@@ -298,34 +328,152 @@ export class SpreadsheetView {
     }
 
     load() {
-        const url = "get_spreadsheet_content?" + this.placeParam + "&block_uuid=" + this.blockUuid
         const container = this.containerEl.querySelector('.spreadsheet-view') || this.containerEl
         container.innerHTML = '<div class="sheet-loading">Loading…</div>'
-        xhr(
-            url,
-            (event) => {
-                const req = event.target
-                if (req.status !== 200) {
-                    container.innerHTML = '<div class="sheet-error">Failed to load spreadsheet</div>'
-                    return
-                }
-                const data = JSON.parse(req.responseText)
-                this.id = data.id
-                this.rows = data.rows || 3
-                this.cols = data.cols || 2
-                this.cells = data.cells || {}
-                this.cellFormats = data.cell_formats || {}
-                this.colWidths = data.col_widths || {}
-                this._normalizeColumnWidths()
-                this._updateOwnSnapshotCache()
-                this.evaluateAll()
-                container.innerHTML = this.render()
-                this._viewEl = container
-                // Let sibling sheets that cross-reference this one refresh now that we're loaded.
-                this._notifyDependentViews()
-            },
-            "GET"
-        )
+        this._fetch((data) => {
+            this.id = data.id
+            this._setData(data)
+            container.innerHTML = this.render()
+            this._viewEl = container
+            // Let sibling sheets that cross-reference this one refresh now that we're loaded.
+            this._notifyDependentViews()
+        }, () => {
+            container.innerHTML = '<div class="sheet-error">Failed to load spreadsheet</div>'
+        })
+    }
+
+    // ─── Live changes ─────────────────────────────────────────────────
+    //
+    // A sheet of a notes channel is not in the note's CRDT: its content stays in its own tables,
+    // and every change saved there is announced to the note's viewers (note_sheet, this tab's
+    // own included), in the order the server read them (routes/workspaces.py _announce_sheet).
+    // Applied in that order they leave every tab on what is stored. A tab with requests on
+    // their way doesn't apply what others did (it may be older than its own edits): it reads
+    // the sheet again once they are all answered.
+
+    /** The sheet as stored, read from the server (counted as on its way, like a write). */
+    _fetch(onData, onError = () => {}) {
+        this._inFlight++
+        const req = xhr("get_spreadsheet_content?" + this.placeParam + "&block_uuid=" + this.blockUuid, () => {
+            if (req.status !== 200) return onError()
+            onData(JSON.parse(req.responseText))
+        }, "GET")
+        req.addEventListener('loadend', () => this._settled())
+    }
+
+    /** A change sent to the server; refused, the sheet is read again to drop it. */
+    _write(endpoint, params, onload = () => {}) {
+        this._inFlight++
+        let url = "/" + endpoint + "?" + this.placeParam + "&spreadsheet_id=" + this.id
+            + "&client_id=" + encodeURIComponent(global.state.clientID ?? '')
+        for (const key in params) url += "&" + key + "=" + encodeURIComponent(String(params[key]))
+        const req = xhr(url, onload, "POST")
+        req.addEventListener('loadend', () => {
+            if (req.status !== 200) this._stale = true
+            window.handleTimeoutError?.(req)   // timed out (its notification missed): read-only now
+            this._settled()
+        })
+        return req
+    }
+
+    _settled() {
+        this._inFlight--
+        if (!this._inFlight && this._stale) this.resync()
+    }
+
+    _setData(data) {
+        this.rows = data.rows || 3
+        this.cols = data.cols || 2
+        this.cells = data.cells || {}
+        this.cellFormats = data.cell_formats || {}
+        this.colWidths = data.col_widths || {}
+        this._normalizeColumnWidths()
+        this._updateOwnSnapshotCache()
+        this.evaluateAll()
+    }
+
+    /** Read the sheet again (changes that move cells around, ones this tab missed, a refused write). */
+    resync() {
+        if (this._inFlight) {   // the first load too: what it read may predate the change
+            this._stale = true
+            return
+        }
+        this._stale = false
+        if (this.id === undefined) return   // its load failed: nothing to read again
+        this._fetch((data) => {
+            this._setData(data)
+            this._repaint()
+            this._notifyDependentViews()
+        })
+    }
+
+    /** A change saved in this sheet (note_sheet); `own`: made by this tab. */
+    onRemoteChange(change, own) {
+        // Rows / columns added or removed: done here at once (the cell being typed in moves with
+        // them, in their order), then the sheet is read again for what the server made of them
+        if (change.kind === 'structure' && !own) this._applyStructureOperationLocal(change.op, change.ref, true)
+        if (this._inFlight) {
+            if (!own) this._stale = true   // this tab's own: what it sent says the same, or newer
+            return
+        }
+        if (change.kind === 'cell') {
+            const ref = this._normalizeRef(change.ref)
+            if (change.value) this.cells[ref] = change.value
+            else delete this.cells[ref]
+            if (change.format) this.cellFormats[ref] = change.format
+            else delete this.cellFormats[ref]
+            this._updateOwnSnapshotCache()
+            this.evaluateAll()
+            this._repaint()
+            this._notifyDependentViews()
+        } else if (change.kind === 'width') {
+            if (change.width) this._setColWidth(change.col, change.width)
+            else delete this.colWidths[change.col]
+            this._applyColWidthToDom(change.col, this._getColWidth(change.col))
+        } else {
+            this.resync()
+        }
+    }
+
+    /** The cell being typed in is dropped (the sheet became read-only): nothing of it is saved. */
+    cancelEdit() {
+        const input = this._getInput()
+        if (input) input.onblur = null
+        this.editingCell = null
+        this.liveEditValue = ''
+        this._clearFormulaEditorIfOwned()
+    }
+
+    /**
+     * Paint the sheet again. The cell being typed in keeps its text, caret and focus: the old
+     * input goes without its blur (that would save the edit), the new one takes its place.
+     */
+    _repaint() {
+        const container = this._viewEl
+        if (!container) return
+        const input = this._getInput()
+        if (!input) {
+            container.innerHTML = this.render()
+            return
+        }
+        const {value, selectionStart, selectionEnd} = input
+        const focused = document.activeElement === input
+        input.onblur = null
+        container.innerHTML = this.render()
+        const next = this._getInput()
+        if (!next) {
+            // Its row or column was deleted: the edit goes with it
+            this.editingCell = null
+            this.liveEditValue = ''
+            this._clearFormulaEditorIfOwned()
+            return
+        }
+        next.value = value
+        if (focused) {
+            next.focus()
+            next.setSelectionRange(selectionStart, selectionEnd)
+        }
+        this.updateReferenceHighlights()
     }
 
     _normalizeRef(ref) {
@@ -666,14 +814,7 @@ export class SpreadsheetView {
 
     _persistColumnWidth(colIdx) {
         const width = this._getColWidth(colIdx)
-        xhr(
-            "/save_spreadsheet_col_width?" + this.placeParam
-            + "&spreadsheet_id=" + this.id
-            + "&col_idx=" + encodeURIComponent(String(colIdx))
-            + "&width=" + encodeURIComponent(String(width)),
-            () => {},
-            "POST"
-        )
+        this._write("save_spreadsheet_col_width", {col_idx: colIdx, width})
     }
 
     _normalizeColumnWidths() {
@@ -709,7 +850,7 @@ export class SpreadsheetView {
 
     /** Sheet of a notes channel where edit-notes is denied (access.mjs): look, don't touch. */
     _readOnly() {
-        return !this.convId && !window.checkChannelRight(this.channelId, 'note', 'edit-notes')
+        return !this.convId && !window.canEditNotes(this.channelId)
     }
 
     startColResize(event, colIdx) {
@@ -1063,14 +1204,9 @@ export class SpreadsheetView {
 
         this._applyCellFormatToDom(ref)
 
-        xhr("/save_spreadsheet_cell_format?" + this.placeParam
-            + "&spreadsheet_id=" + this.id
-            + "&cell_id=" + encodeURIComponent(ref)
-            + "&text_color=" + encodeURIComponent(next.color)
-            + "&bg_color=" + encodeURIComponent(next.bg)
-            + "&align=" + encodeURIComponent(next.align)
-            + "&decimals=" + encodeURIComponent(next.decimals === '' ? '' : String(next.decimals)),
-            () => {}, "POST")
+        this._write("save_spreadsheet_cell_format", {
+            cell_id: ref, text_color: next.color, bg_color: next.bg, align: next.align, decimals: next.decimals,
+        })
     }
 
     _applyCellFormatToDom(ref) {
@@ -1188,40 +1324,18 @@ export class SpreadsheetView {
         return colIndexToLetter(colIdx) + rowNum
     }
 
-    _applyStructureOperationLocal(op, ref) {
+    /**
+     * A structure operation done here (`remote`: one someone else saved, the cell being typed in
+     * moves with it instead of the edit ending).
+     */
+    _applyStructureOperationLocal(op, ref, remote = false) {
         const parsed = this._parseRef(ref)
-        if (!parsed) return false
-
-        let nextRows = this.rows
-        let nextCols = this.cols
-        let insertCol = null
-        let insertRow = null
-        let deleteCol = null
-        let deleteRow = null
-
-        if (op === 'add-col-left') {
-            insertCol = parsed.col
-            nextCols += 1
-        } else if (op === 'add-col-right') {
-            insertCol = parsed.col + 1
-            nextCols += 1
-        } else if (op === 'add-row-top') {
-            insertRow = parsed.row
-            nextRows += 1
-        } else if (op === 'add-row-bottom') {
-            insertRow = parsed.row + 1
-            nextRows += 1
-        } else if (op === 'delete-col') {
-            if (this.cols <= 1) return false
-            deleteCol = parsed.col
-            nextCols -= 1
-        } else if (op === 'delete-row') {
-            if (this.rows <= 1) return false
-            deleteRow = parsed.row
-            nextRows -= 1
-        } else {
-            return false
-        }
+        const shift = parsed && structureShift(op, parsed)
+        if (!shift) return false
+        const {insertCol, insertRow, deleteCol, deleteRow} = shift
+        if ((deleteCol !== null && this.cols <= 1) || (deleteRow !== null && this.rows <= 1)) return false
+        const nextRows = this.rows + (insertRow !== null) - (deleteRow !== null)
+        const nextCols = this.cols + (insertCol !== null) - (deleteCol !== null)
 
         const nextCells = {}
         const nextFormats = {}
@@ -1229,23 +1343,10 @@ export class SpreadsheetView {
         const allRefs = new Set([...Object.keys(this.cells), ...Object.keys(this.cellFormats)])
         for (const oldRef of allRefs) {
             const pos = this._parseRef(oldRef)
-            if (!pos) continue
-            let c = pos.col
-            let r = pos.row
+            const moved = pos && shiftCell(pos.col, pos.row, shift)
+            if (!moved) continue
 
-            if (insertCol !== null && c >= insertCol) c += 1
-            if (insertRow !== null && r >= insertRow) r += 1
-
-            if (deleteCol !== null) {
-                if (c === deleteCol) continue
-                if (c > deleteCol) c -= 1
-            }
-            if (deleteRow !== null) {
-                if (r === deleteRow) continue
-                if (r > deleteRow) r -= 1
-            }
-
-            const newRef = this._toRef(c, r)
+            const newRef = this._toRef(moved[0], moved[1])
             const value = this.cells[oldRef]
             if (value !== undefined && value !== null && String(value) !== '') {
                 nextCells[newRef] = value
@@ -1263,13 +1364,20 @@ export class SpreadsheetView {
         this._normalizeColumnWidths()
         this.cells = nextCells
         this.cellFormats = nextFormats
-        this.editingCell = null
-        this.liveEditValue = ''
-        this._clearFormulaEditorIfOwned()
+        if (remote && this.editingCell) {
+            const pos = this._parseRef(this.editingCell)
+            const moved = pos && shiftCell(pos.col, pos.row, shift)
+            this.editingCell = moved ? this._toRef(moved[0], moved[1]) : null   // null: _repaint ends the edit
+        } else {
+            this.editingCell = null
+            this.liveEditValue = ''
+            this._clearFormulaEditorIfOwned()
+        }
         this._updateOwnSnapshotCache()
         this.evaluateAll()
 
-        if (this._viewEl) this._viewEl.innerHTML = this.render()
+        if (remote) this._repaint()
+        else if (this._viewEl) this._viewEl.innerHTML = this.render()
         this._notifyDependentViews()
         return true
     }
@@ -1278,28 +1386,18 @@ export class SpreadsheetView {
         const applied = this._applyStructureOperationLocal(op, ref)
         if (!applied) return
 
-        const req = xhr(
-            "/save_spreadsheet_structure?" + this.placeParam
-            + "&spreadsheet_id=" + this.id
-            + "&op=" + encodeURIComponent(op)
-            + "&ref=" + encodeURIComponent(ref),
-            (event) => {
-                const req = event.target
-                if (req.status !== 200) {
-                    this.load()
-                    return
+        // Refused: the sheet is read again (_write)
+        const req = this._write("save_spreadsheet_structure", {op, ref}, () => {
+            if (req.status !== 200) return
+            try {
+                const payload = JSON.parse(req.responseText || '{}')
+                if (payload.col_widths && typeof payload.col_widths === 'object') {
+                    this.colWidths = payload.col_widths
+                    this._normalizeColumnWidths()
+                    this._repaint()
                 }
-                try {
-                    const payload = JSON.parse(req.responseText || '{}')
-                    if (payload.col_widths && typeof payload.col_widths === 'object') {
-                        this.colWidths = payload.col_widths
-                        this._normalizeColumnWidths()
-                        if (this._viewEl) this._viewEl.innerHTML = this.render()
-                    }
-                } catch (_) {}
-            },
-            "POST"
-        )
+            } catch (_) {}
+        })
     }
 
     insertCellReference(ref, sourceBlockUuid = this.blockUuid) {
@@ -1423,10 +1521,7 @@ export class SpreadsheetView {
         this._notifyDependentViews()
 
         // Persist
-        xhr("/save_spreadsheet_cell?" + this.placeParam
-            + "&spreadsheet_id=" + this.id
-            + "&cell_id=" + encodeURIComponent(ref)
-            + "&value=" + encodeURIComponent(persistedValue), () => {}, "POST")
+        this._write("save_spreadsheet_cell", {cell_id: ref, value: persistedValue})
     }
 
     handleKeyDown(event, ref) {
@@ -1491,6 +1586,19 @@ export class SpreadsheetView {
         }
     }
 
+}
+
+/**
+ * note_sheet (static/ws/onMessage.mjs): a change saved in a sheet of a notes channel, relayed to
+ * the note's room (routes/notes_sync.py). `block` null: all its sheets, to read again (this tab
+ * joined the room, or the server's listener reconnected).
+ */
+export function onSheetChange({channel, block, change, own}) {
+    for (const view of Object.values(global.state.spreadsheetViews || {})) {
+        if (!view.convId && Number(view.channelId) === Number(channel) && (block == null || view.blockUuid === block)) {
+            view.onRemoteChange(change, own)
+        }
+    }
 }
 
 export function mountSpreadsheet(blockUuid, channelId, containerEl, convId = null) {

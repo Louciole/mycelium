@@ -133,7 +133,7 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
     if channel:
         server_id = channel["server"]
         mention_targets = set()
-        # Mute / unread / mention rows are keyed by channel id. A vocal channel's id comes
+        # Override / unread / mention rows are keyed by channel id. A vocal channel's id comes
         # from another sequence than message places (it could equal a text channel's), so
         # its chat is keyed by its own place id — the id the client reads and clears.
         key = message["place"] if channel_type == "vocal" else channel["id"]
@@ -185,13 +185,21 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
                    if "view-channels" in rights}
         mention_targets &= viewers
 
-        # Fetch channel mutes for this channel
+        # Members' own settings for this channel and for its category (right-click menus):
+        # muted by either, and a level set on the channel, else on the category, else the server's.
         now = datetime.datetime.now()
-        mute_rows = self.db.getFilters("channel_mute", ["channel", "=", key]) or []
+        with self.db.pool.connection() as conn:
+            override_rows = conn.execute(
+                "SELECT * FROM notification_override WHERE (target = %s AND NOT is_category) "
+                "OR (target = %s AND is_category)", (key, channel.get("category") or -1)).fetchall()
         channel_muted_for = {
-            m["account"] for m in mute_rows
-            if m["muted_until"] is None or m["muted_until"] > now
+            o["account"] for o in override_rows
+            if o["muted"] and (o["muted_until"] is None or o["muted_until"] > now)
         }
+        channel_level = {o["account"]: o["level"] for o in override_rows if o["is_category"] and o["level"] is not None}
+        channel_level.update({o["account"]: o["level"] for o in override_rows
+                              if not o["is_category"] and o["level"] is not None})
+        level_of = lambda account: channel_level.get(account, pref_level.get(account, 1))
 
         # Prefetch existing unread markers once so the broadcast loop below stays O(1)
         # per member instead of issuing a SELECT per member.
@@ -208,7 +216,7 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
 
         # Muted / server-muted members never get offline notifs or a red badge,
         # even when directly @mentioned (matches Discord muting semantics).
-        mention_targets = {t for t in mention_targets if pref_level.get(t, 1) != 2 and t not in channel_muted_for}
+        mention_targets = {t for t in mention_targets if level_of(t) != 2 and t not in channel_muted_for}
 
         # Broadcast the message to ALL server members (for live display in active channel views)
         notify_only = set()  # "All Messages" members: sound + push, but no red badge
@@ -220,13 +228,13 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
                 continue
             self.sendNotification(member_uid, {"type": "message", "content": message})
 
-            # Channel mute takes priority over server-level pref
+            # A mute (channel or category) takes priority over the level
             if member_uid in channel_muted_for:
                 continue
 
-            level = pref_level.get(member_uid, 1)
+            level = level_of(member_uid)
             if level == 2:
-                continue  # server muted: no unread tracking or notifications
+                continue  # "nothing": no unread tracking or notifications
 
             # Track unread state for all non-muted members (the "white" unread marker).
             # Not for vocal chats yet: the sidebar has no unread marker for them.
@@ -245,7 +253,8 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
         avatar_url = f"https://mycelium.carbonlab.dev/static/attachments/{sender_pfp}" if sender_pfp else ""
 
         # Unified "message" push contract (repliable + threaded). serverId marks it as a
-        # channel (drives navigation + a distinct thread id); groupTitle is the channel name.
+        # channel (a distinct thread id), channelType + channelId say which one a tap opens
+        # (the client builds the route); groupTitle is the channel name.
         push_payload = {
             "title": sender_name,
             "body": message.get("body", "New message"),
@@ -255,13 +264,10 @@ def notifyChannelMesage(self, uid, channel, message, channel_type="textual"):
                 "serverId": str(server_id),
                 "groupTitle": channel.get("name", "channel"),
                 "avatarUrl": avatar_url,
+                "channelType": channel_type,
+                "channelId": str(channel["id"]),
             }
         }
-        if channel_type == "vocal":
-            # convId (the chat's place) stays the quick-reply target; a tap opens the
-            # vocal channel with its chat (capacitor-bridge handleNotificationNavigation)
-            push_payload["data"]["channelId"] = str(channel["id"])
-            push_payload["data"]["vocalChat"] = "1"
 
         # Real @mentions: persistent offline notif + red badge (badge=True) + sound + push.
         for target_uid in mention_targets:

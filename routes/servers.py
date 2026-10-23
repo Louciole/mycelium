@@ -147,12 +147,22 @@ def get_serv_content(self, server_id):
     content["channels"] = visible(content["channels"], "textual")
     content["vocals"] = visible(content["vocals"], "vocal")
 
+    # Each vocal channel's chat place id (null until first opened): the key of its mute row.
+    # One query for all of them
+    chats = {}
+    if content["vocals"]:
+        with self.db.pool.connection() as conn:
+            chats = {row["vocal"]: row["id"] for row in conn.execute(
+                "SELECT vocal, id FROM vocal_chat WHERE vocal = ANY(%s)",
+                ([chan["id"] for chan in content["vocals"]],)).fetchall()}
+
     # Attach live occupant lists to each vocal channel
     for chan in content["vocals"]:
         call = self.callManager.get_call_by_vocal_channel(chan["id"])
         chan["occupants"] = call.participants if call else []
         chan["voice_states"] = call.voice_states if call else {}
         chan["started_at_ms"] = call.to_dict()["started_at_ms"] if call else None
+        chan["chat"] = chats.get(chan["id"])
     content["drives"] = visible(content["drives"], "drive")
     content["notes"] = visible(content["notes"], "note")
     content["forums"] = visible(content["forums"], "forum")
@@ -207,7 +217,8 @@ def get_note_content(self, channel_id):
     chan = self.require_channel_access(uid, channel_id, "note", "view")
 
     content = {"name": chan["name"], "id": channel_id}
-    content["blocks"] = self.db.getFilters("note_block", ["channel", "=", channel_id])
+    # The note is its op log (routes/notes_sync.py); these rows are its copy
+    content["blocks"] = self.db.getFilters("note_block", ["channel", "=", channel_id, "and", "deleted", "=", False])
     return json.dumps(content, default=str)
 
 
@@ -395,6 +406,8 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
     # Editing/deleting one channel: "manage-channels" in that channel (server right
     # or a channel overwrite).
     if chan and chan["server"] == int(server_id) and self.checkChannelAccess(uid, chan["id"], channel_type, "manage-channels"):
+        if action == "duplicate":
+            return _duplicate_channel(self, uid, chan, channel_type)
         if action == "delete":
             # channel_permission is polymorphic (no FK on channel): drop its overwrites
             for row in self.db.getFilters("channel_permission", ["channel", "=", chan["id"], "and", "channel_type", "=", channel_type]) or []:
@@ -406,17 +419,22 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
                     for msg in self.db.getFilters("message", ["place", "=", post["id"]]):
                         self.deleteMessageWithCleanup(msg)
                     self.db.deleteSomething("forum_post", post["id"])
+            place = chan["id"] if channel_type in ("textual", "forum") else None
             if channel_type == "vocal":
                 chat = self.db.getSomething("vocal_chat", chan["id"], "vocal")
                 if chat:   # newest first: a reply references an older message
+                    place = chat["id"]
                     for msg in reversed(self.db.getFilters("message", ["place", "=", chat["id"], "order by id"]) or []):
                         self.deleteMessageWithCleanup(msg)
                     # Rows keyed by the chat's place id (no FK on these polymorphic columns)
-                    for table, column in (("offline_notifs", "conversation"), ("channel_mute", "channel"),
-                                          ("channel_unread", "channel")):
+                    for table, column in (("offline_notifs", "conversation"), ("channel_unread", "channel")):
                         for row in self.db.getFilters(table, [column, "=", chat["id"]]) or []:
                             self.db.deleteSomething(table, row["id"])
                 # the vocal_chat row goes with the channel (ON DELETE CASCADE)
+            if place is not None:
+                # Members' notification settings for it (polymorphic target, no FK)
+                with self.db.pool.connection() as conn:
+                    conn.execute("DELETE FROM notification_override WHERE target = %s AND NOT is_category", (place,))
             self.db.deleteSomething(table_name, targetId)
             return json.dumps({"status": "ok"})
         allowed_channel_fields = ("name", "place", "category")
@@ -446,6 +464,42 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
         return json.dumps({"status": "ok"})
 
     raise HTTPError(self.response, 403, "forbidden")
+
+
+def _duplicate_channel(self, uid, chan, channel_type):
+    """A copy of a channel right under it: same name, category, privacy, settings (forum
+    tags, layout…) and permission overwrites — not its content. Creating it where it is
+    needs manage-channels there (its category, else the server), copying its overwrites
+    manage-roles in it: without it, a private channel's copy could lose who may see it."""
+    if chan.get("category"):
+        if not self.checkChannelAccess(uid, chan["category"], "category", "manage-channels"):
+            raise HTTPError(self.response, 403, "you can't create channels in this category")
+    else:
+        self.require_server_perm(uid, chan["server"], "manage-channels")
+    if not self.checkChannelAccess(uid, chan["id"], channel_type, "manage-roles"):
+        raise HTTPError(self.response, 403, "duplicating a channel copies its permissions: manage-roles needed")
+
+    table = self._getChannelTable(channel_type)
+    # Right after it in its list: halfway to the next item (crud.mjs sidebarOrder)
+    params = {"server": chan["server"], "category": chan.get("category"), "place": chan["place"]}
+    in_list = (f"SELECT place FROM ({_top_level_places_sql()}) t" if chan.get("category") is None else
+               "SELECT place FROM (" + " UNION ALL ".join(
+                   f"SELECT place FROM {t} WHERE category = %(category)s" for t in CHANNEL_TABLES) + ") t")
+    with self.db.pool.connection() as conn:
+        after = conn.execute(f"SELECT min(place) AS place FROM ({in_list}) l WHERE place > %(place)s",
+                             params).fetchone()["place"]
+    copy = {key: json.dumps(value) if isinstance(value, (dict, list)) else value
+            for key, value in chan.items() if key not in ("id", "place")}
+    copy["place"] = (chan["place"] + after) / 2 if after is not None else chan["place"] + 1
+    new_id = self.db.insertDict(table, copy, getId=True)
+
+    for row in self.db.getFilters("channel_permission", ["channel", "=", chan["id"], "and", "channel_type", "=", channel_type]) or []:
+        self.db.insertDict("channel_permission", {
+            key: json.dumps(value) if isinstance(value, (dict, list)) else value
+            for key, value in row.items() if key != "id"} | {"channel": new_id})
+    # Every member's client reloads the server: the copy and its overwrites show up
+    notify_permissions_changed(self, chan["server"])
+    return json.dumps({"channel": self.db.getSomething(table, new_id), "type": channel_type}, default=str)
 
 
 def _require_category_move(self, uid, chan, channel_type, new_category):
@@ -523,6 +577,8 @@ def edit_server_category(self, server_id, action=None, field=None, value=None, t
     if action == "delete":
         _detach_from_category(self, cat)
         self.db.deleteSomething("server_cat", targetId)
+        with self.db.pool.connection() as conn:
+            conn.execute("DELETE FROM notification_override WHERE target = %s AND is_category", (cat["id"],))
         # Its channels got the overwrites they inherited: the author's client only
         # moved them out locally, so it reloads too (no exclude).
         notify_permissions_changed(self, cat["server"])

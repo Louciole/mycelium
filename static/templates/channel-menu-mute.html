@@ -1,0 +1,5 @@
+${[[15, 'Pendant 15 minutes'], [60, 'Pendant 1 heure'], [180, 'Pendant 3 heures'], [480, 'Pendant 8 heures'],
+   [1440, 'Pendant 24 heures'], [null, "Jusqu'à ce que je le réactive"]].map(([minutes, label]) => `<button type="button" role="menuitem" class="ctx-item"
+        onclick="closeChannelMenu(event); muteTarget('${element.kind === 'category' ? 'category' : element.type}', ${element.id}, ${minutes})">
+    <span class="ctx-label">${_t(label)}</span>
+</button>`).join('')}

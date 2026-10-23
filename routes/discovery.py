@@ -8,7 +8,7 @@ import random
 import datetime
 import requests
 
-from vesta import Server, HTTPError, HTTPRedirect
+from vesta import Server, HTTPError
 from constants import B62
 
 
@@ -199,58 +199,66 @@ def get_available_tags(self):
     return json.dumps(sorted(list(all_tags)))
 
 
+def _invited_channel(self, invitation):
+    """The channel an invitation leads to, or None (an invitation to the server)."""
+    if not invitation.get("channel"):
+        return None
+    return self.db.getSomething(self._getChannelTable(invitation["channel_type"]), invitation["channel"])
+
+
 @Server.expose
 def server_display(self, invite):
-    server = self.db.getSomething("invitation", invite, "link")
-    if server:
-        details = self.db.getSomething("server", server["server"])
-        return json.dumps({"name": details["name"], "pfp": details.get("pfp")})
-    else:
+    invitation = self.db.getSomething("invitation", invite, "link")
+    if not invitation:
         raise HTTPError(self.response, 404, "Not Found")
+    details = self.db.getSomething("server", invitation["server"])
+    channel = _invited_channel(self, invitation)
+    return json.dumps({"name": details["name"], "pfp": details.get("pfp"), "channel": channel["name"] if channel else None})
 
 
 @Server.expose
-def create_invitation(self, server_id, pref=None):
+def create_invitation(self, server_id, channel_id=None, channel_type=None, pref=None):
+    """A 7-day invitation link to the server, or to one of its channels the inviter
+    can see (the invitee's client then opens it). An unexpired one is reused."""
     uid = self.getUser()
     self.require_member(uid, server_id)
-
-    res = self.db.getSomething("invitation", server_id, "server")
-    if res and res != [] and res["expiration"] > datetime.datetime.now():
+    target = {"server": int(server_id), "channel": None, "type": None}
+    if channel_id:
+        channel = self.require_channel_access(uid, channel_id, channel_type, "view")
+        if channel["server"] != target["server"]:
+            raise HTTPError(self.response, 400, "channel of another server")
+        target.update(channel=channel["id"], type=channel_type)
+    with self.db.pool.connection() as conn:
+        res = conn.execute("SELECT link FROM invitation WHERE server = %(server)s AND expiration > now() "
+                           "AND channel IS NOT DISTINCT FROM %(channel)s AND channel_type IS NOT DISTINCT FROM %(type)s "
+                           "LIMIT 1", target).fetchone()
+    if res:
         return res["link"]
 
-    if not pref:
-        id = ''.join(random.sample(B62, 8))
-
-        while 1:
-            if self.db.getSomething("invitation",id,"link"):
-                id = ''.join(random.sample(B62, 8))
-            else:
-                self.db.insertDict("invitation",{"link": id,"server":server_id,"expiration":datetime.datetime.now() + datetime.timedelta(days=7)})
-                return id
-    else:
-        id=pref
-        while 1:
-            if self.db.getSomething("invitation",id,"link"):
-                id = pref + ''.join(random.sample(B62, 3))
-            else :
-                self.db.insertDict("invitation",{"link": id,"server":server_id,"expiration":datetime.datetime.now() + datetime.timedelta(days=7)})
-                return id
+    link = pref or ''.join(random.sample(B62, 8))
+    while self.db.getSomething("invitation", link, "link"):
+        link = (pref + ''.join(random.sample(B62, 3))) if pref else ''.join(random.sample(B62, 8))
+    self.db.insertDict("invitation", {"link": link, "server": target["server"], "channel": target["channel"],
+                                      "channel_type": target["type"],
+                                      "expiration": datetime.datetime.now() + datetime.timedelta(days=7)})
+    return link
 
 
 @Server.expose
 def join_server(self, invite_code):
+    """Joins the invitation's server (a member just follows it) and says where it leads:
+    {server, channel, channel_type} — the client routes there."""
     uid = self.getUser()
     res = self.db.getSomething("invitation", invite_code, "link")
-    if res and res != []:
-        if res["expiration"] < datetime.datetime.now():
-            raise HTTPError(self.response, 403, "forbidden")
-        if self.db.getFilters("accessserver", ["account", "=", uid, "and", "server", "=", res["server"]]):
-            raise HTTPError(self.response, 403, "you're already in this server")
-        if self.isBannedFromServer(uid, res["server"]):
-            raise HTTPError(self.response, 403, "banned from this server")
+    if not res:
+        raise HTTPError(self.response, 404, "Not Found")
+    if res["expiration"] < datetime.datetime.now():
+        raise HTTPError(self.response, 403, "forbidden")
+    if self.isBannedFromServer(uid, res["server"]):
+        raise HTTPError(self.response, 403, "banned from this server")
+    if not self.db.getFilters("accessserver", ["account", "=", uid, "and", "server", "=", res["server"]]):
         self.db.insertDict("accessserver", {"account": uid, "server": res["server"]})
-        raise HTTPRedirect(self.response, "/channels")
-    raise HTTPError(self.response, 404, "Not Found")
+    return json.dumps({"server": res["server"], "channel": res.get("channel"), "channel_type": res.get("channel_type")})
 
 
 @Server.expose

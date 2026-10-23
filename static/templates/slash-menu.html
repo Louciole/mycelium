@@ -1,7 +1,7 @@
 ${(() => {
     const menu = global.state.slashMenu
     if (!menu?.visible) return ''
-    return '<div class="slash-menu" style="top:' + menu.top + 'px;left:' + menu.left + 'px">' +
+    return '<div class="slash-menu' + (menu.above ? ' above' : '') + '" style="top:' + menu.top + 'px;left:' + menu.left + 'px">' +
            fillWith('slash-menu-item', menu.items) +
            '</div>'
 })()}

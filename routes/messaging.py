@@ -181,28 +181,6 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
 
 
 @Server.expose
-def mute_channel(self, channel_id, minutes=None):
-    uid = self.getUser()
-    muted_until = None
-    if minutes is not None:
-        muted_until = datetime.datetime.now() + datetime.timedelta(minutes=int(minutes))
-    existing = self.db.getFilters("channel_mute", ["account", "=", uid, "and", "channel", "=", int(channel_id)])
-    if existing:
-        self.db.edit("channel_mute", existing[0]["id"], "muted_until", muted_until)
-    else:
-        self.db.insertDict("channel_mute", {"account": uid, "channel": int(channel_id), "muted_until": muted_until})
-    return json.dumps({"ok": True, "muted_until": str(muted_until) if muted_until else None})
-
-
-@Server.expose
-def unmute_channel(self, channel_id):
-    uid = self.getUser()
-    rows = self.db.getFilters("channel_mute", ["account", "=", uid, "and", "channel", "=", int(channel_id)])
-    for row in rows:
-        self.db.deleteSomething("channel_mute", row["id"])
-
-
-@Server.expose
 def mark_channel_read(self, channel_id):
     uid = self.getUser()
     cid = int(channel_id)

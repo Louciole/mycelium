@@ -1,0 +1,13 @@
+<div class="drive-context-menu note-block-menu" role="menu" style="left: ${element.x}px; top: ${element.y}px">
+    ${element.turnInto.length ? `<div class="note-menu-label">${_t('Transformer en')}</div>` : ''}
+    ${element.turnInto.map(item => `<button type="button" role="menuitem" class="drive-context-item${item.checked ? ' checked' : ''}" onmousedown="event.preventDefault()" onclick="global.state.noteEditor.turnBlockInto('${element.blockId}', '${item.type}')">
+        <span class="note-menu-glyph">${item.glyph}</span><span>${_t(item.label)}</span>${item.checked ? '<span class="drive-check">✓</span>' : ''}
+    </button>`).join('')}
+    ${element.turnInto.length ? '<div class="note-menu-sep"></div>' : ''}
+    ${element.canDuplicate ? `<button type="button" role="menuitem" class="drive-context-item" onclick="global.state.noteEditor.duplicateBlock('${element.blockId}')">
+        <img class="icon" src="/static/icons/material/copy.svg" alt=""/><span>${_t('Dupliquer')}</span>
+    </button>` : ''}
+    <button type="button" role="menuitem" class="drive-context-item danger" onclick="global.state.noteEditor.closeBlockMenu(); global.state.noteEditor.deleteBlock('${element.blockId}')">
+        <img class="icon" src="/static/icons/material/trash.svg" alt=""/><span>${_t('Supprimer')}</span>
+    </button>
+</div>

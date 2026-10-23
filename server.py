@@ -210,6 +210,7 @@ class Mycelium(ForumMixin, Server):
     async def _cleanup_connection(self, websocket):
         if websocket in self.clients:
             self.clients.remove(websocket)
+        await routes.notes_sync.on_socket_closed(self, websocket)   # out of its notes' rooms
 
         for connection_id in [cid for cid, entry in list(self.waiting_clients.items())
                               if entry["connection"] == websocket]:
@@ -384,7 +385,8 @@ class Mycelium(ForumMixin, Server):
                 except (json.JSONDecodeError, TypeError):
                     print("WS ignoring malformed message:", message)
                     continue
-                print("WS message received :", message)
+                if data.get("type") != "note_presence":   # sent while a caret moves
+                    print("WS message received :", message)
                 handler = ws_handlers.HANDLERS.get(data.get("type"))
                 if handler:
                     await handler(self, websocket, data)
@@ -1054,6 +1056,8 @@ import routes.drive          # noqa: E402,F401
 import routes.search         # noqa: E402,F401
 import routes.moderation     # noqa: E402,F401
 import routes.roles          # noqa: E402,F401
+import routes.notes_sync     # noqa: E402,F401
+ws_handlers.HANDLERS.update(routes.notes_sync.WS_HANDLERS)
 
 server = Mycelium(path=PATH, configFile="/server.ini")
 

@@ -1,5 +1,11 @@
+${element.groupStart ? `<div class="slash-menu-group">${_t(element.group)}</div>` : ''}
 <div class="slash-menu-item ${global.state.slashMenu.selectedIndex === element.index ? 'selected' : ''}"
-     onmousedown="event.preventDefault(); global.state.noteEditor._selectSlashItem('${element.type}')">
-    <span class="slash-menu-label">${element.label}</span>
-    <span class="slash-menu-desc">${element.description}</span>
+     onmousedown="event.preventDefault(); global.state.noteEditor._selectSlashItem('${element.type}')"
+     onmousemove="global.state.noteEditor._hoverSlashItem(${element.index})">
+    <span class="slash-menu-icon">${element.icon ? `<img src="/static/icons/material/${element.icon}.svg" alt=""/>` : element.glyph}</span>
+    <span class="slash-menu-text">
+        <span class="slash-menu-label">${_t(element.label)}</span>
+        <span class="slash-menu-desc">${_t(element.description)}</span>
+    </span>
+    ${element.shortcut ? `<span class="slash-menu-shortcut">${element.shortcut}</span>` : ''}
 </div>

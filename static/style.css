@@ -241,6 +241,24 @@ section{
     bottom: -5px;
 }
 
+/* Under its element (a header: no room above), which is position: relative */
+.tooltip.below {
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+.tooltip.below::after {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: calc(50% - 5px);
+    border-style: solid;
+    border-width: 0 5px 5px 5px;
+    border-color: transparent transparent #161617 transparent;
+}
+
 .scrollable .tooltip.bottom{
     transform: translate(144px,-30px);
 }
@@ -4524,6 +4542,69 @@ input:checked + .slider:before {
 .drive-context-item.danger { color: var(--red); }
 .drive-context-item.danger:hover { background: var(--red); color: #fff; }
 .drive-check { color: var(--accent-light); }
+/* Right-click menus of the sidebar (channel-menu*.html): Discord's look */
+.ctx-menu {
+    position: fixed;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    min-width: 188px;
+    max-width: 320px;
+    padding: 6px 8px;
+    background: var(--bg5);
+    border: 1px solid var(--bg3);
+    border-radius: 4px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+}
+
+.ctx-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 32px;
+    margin: 2px 0;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 18px;
+    text-align: left;
+    cursor: pointer;
+}
+.ctx-item:hover, .ctx-item.open { background: var(--accent); color: #fff; }
+.ctx-item.danger { color: var(--red); }
+.ctx-item.danger:hover { background: var(--red); color: #fff; }
+.ctx-item:disabled { opacity: 0.5; cursor: not-allowed; }
+.ctx-item:disabled:hover { background: transparent; color: var(--text); }
+
+.ctx-label { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.ctx-label small { font-size: 12px; font-weight: 400; line-height: 16px; color: var(--text2); }
+.ctx-item:hover .ctx-label small, .ctx-item.open .ctx-label small { color: inherit; }
+.ctx-arrow { flex: none; }
+.ctx-sep { height: 1px; margin: 4px; background: var(--text3); }
+
+/* Notification level (radio) and "Collapse category" (checkbox) */
+.ctx-radio, .ctx-check {
+    flex: none;
+    box-sizing: border-box;
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+}
+.ctx-radio { border-radius: 50%; }
+.ctx-check { border-radius: 4px; }
+.ctx-radio.on { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px); }
+.ctx-check.on { border-color: var(--accent); background: var(--accent) url(/static/icons/material/check.svg) center / 14px no-repeat; }
+.ctx-item:hover .ctx-radio.on { border-color: #fff; background: radial-gradient(circle, #fff 0 4px, transparent 4.5px); }
+.ctx-item:hover .ctx-check.on { border-color: #fff; }
 
 .drive-toast {
     position: fixed;
@@ -5598,35 +5679,110 @@ input:checked + .slider:before {
     cursor: text;
 }
 
-.editor {
-    background: var(--bg4);
-    padding: 2rem 2rem;
-    min-height: 100%;
-    width: fit-content;
-    min-width: 40%;
-    margin: 0 auto;
+/* ─── Notes channel: a Notion-like page (server-note-content.html) ─────────── */
+
+.note-page {
+    position: relative;            /* live cursors (note-cursors.html) are placed in it */
+    --note-width: 760px;           /* reading column */
+    --note-gutter: 3.5rem;         /* left room for the block handles */
+    --note-placeholder: color-mix(in srgb, var(--text) 28%, transparent);
     display: flex;
+    background: var(--bg4);
+    container-type: inline-size;   /* narrow panel → slim gutter (below) */
+}
+
+.note-page > .note-page-header,
+.note-page > .editor,
+.note-page > .note-page-tail {
+    width: calc(100% - 2 * var(--note-gutter));
+    max-width: var(--note-width);
+    margin-left: auto;
+    margin-right: auto;
+    flex-shrink: 0;
+}
+
+.note-page-header {
+    padding-top: 5.5rem;
+}
+
+.note-page-title {
+    margin: 0 0 0.6rem;
+    padding: 3px 2px;
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1.2;
     color: var(--text);
+    outline: none;
+    word-break: break-word;
+}
+
+.note-page-title:empty::before {
+    content: attr(data-placeholder);
+    color: var(--note-placeholder);
+}
+
+/* A block save failed (Editor._saveFailed): discreet, on the right of the top bar */
+.note-save-status {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.5rem;
+    border: none;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--red) 12%, transparent);
+    color: var(--red);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.note-save-status .icon {
+    width: 1rem;
+    height: 1rem;
+}
+
+.note-page-tail {
+    flex: 1 0 30vh;
+    cursor: text;
+}
+
+.editor {
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1.5;
 }
 
 .editor .editable-block{
     outline: none;
     white-space: pre-wrap;
     width: 100%;
+    min-width: 0;
     list-style: inside;
+    word-break: break-word;
 }
 
-.editor .editable-block:empty{
-    display: flex;
+/* Placeholders: on the line being typed, on empty headings, and on an empty page */
+.editor .block > .editable-block:empty::before {
+    content: none;
 }
+.editor .block > .editable-block:empty:focus::before,
+.editor .block > .editable-block:is(.note-heading1, .note-heading2, .note-heading3):empty::before,
+.editor .note-row:only-child .block:only-child > .editable-block:empty::before {
+    content: attr(data-placeholder);
+    color: var(--note-placeholder);
+    cursor: text;
+}
+#note-editor.read-only .block > .editable-block:empty::before { content: none; }
 
 /* Note layout grid */
 .note-row {
     display: flex;
     width: 100%;
-    gap: 8px;
+    gap: 3.25rem;   /* room for the right column's handles */
     position: relative;
 }
 
@@ -5637,64 +5793,90 @@ input:checked + .slider:before {
     flex-direction: column;
 }
 
-.editor .block .controls>div{
-    width: 1.4rem;
-    height: 1.4rem;
-    display: flex;
-    border-radius: 3px;
-    align-items: center;
-    justify-content: center;
-}
-
 .editor .block{
+    position: relative;
     display: flex;
-    padding-bottom: 0.6rem;
     width: 100%;
+    margin: 1px 0;
+    padding: 3px 2px;
     box-sizing: border-box;
 }
 
-.editor .block .add{
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: bold;
+/* Headings: air above them, and handles centred on their first line */
+.editor .note-heading1 { font-size: 1.875rem; font-weight: 700; line-height: 1.3; }
+.editor .note-heading2 { font-size: 1.5rem;   font-weight: 600; line-height: 1.3; }
+.editor .note-heading3 { font-size: 1.25rem;  font-weight: 600; line-height: 1.3; }
+.editor .block:has(> .note-heading1) { margin-top: 1.9rem; }
+.editor .block:has(> .note-heading2) { margin-top: 1.4rem; }
+.editor .block:has(> .note-heading3) { margin-top: 1rem; }
+.editor .note-row:first-child .note-column > .block:first-child { margin-top: 1px; }
+.editor .block:has(> .note-heading1) > .controls { top: calc(3px + 0.47rem); }
+.editor .block:has(> .note-heading2) > .controls { top: calc(3px + 0.23rem); }
+.editor .block:has(> .note-heading3) > .controls { top: calc(3px + 0.06rem); }
+
+.editor .note-small {
+    font-size: 0.85rem;
+    color: var(--text2);
 }
 
-.editor .block .drag{
-    cursor: grab;
+.editor a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--text) 40%, transparent);
+    text-underline-offset: 3px;
+}
+.editor a:hover { text-decoration-color: var(--text); }
+
+.editor .answer {
+    border-left: 3px solid var(--text);
+    border-radius: 0;
+    padding-left: 0.9rem;
+}
+
+/* Gutter: "+" and the handle (drag it, or click it for the block menu) */
+.editor .block > .controls{
+    position: absolute;
+    left: -3.3rem;
+    top: 3px;
+    height: 1.5rem;
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.editor .block:hover > .controls{
+    opacity: 1;
+}
+
+.editor .block .controls>div{
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    border-radius: 4px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
 }
 
 .editor .block .controls>div:hover{
     background: var(--text3);
 }
 
-.editor .block .drag img{
-    filter: invert(85%) sepia(5%) saturate(15%) hue-rotate(315deg) brightness(81%) contrast(81%);
-    height: 1.2rem;
+.editor .block .controls img{
+    height: 1.15rem;
+    filter: invert(1);
+    opacity: 0.4;
+}
+.editor .block .controls>div:hover img{ opacity: 0.85; }
+
+.editor .block .drag{
+    cursor: grab;
 }
 
-.editor .block .delete img{
-    filter: invert(85%) sepia(5%) saturate(15%) hue-rotate(315deg) brightness(81%) contrast(81%);
-    height: 1.1rem;
-}
-
-.editor .block .delete:hover{
-    background: var(--red) !important;
-}
-
-.editor .block .delete:hover img{
-    filter: invert(100%);
-}
-
-.editor .block .controls{
-    opacity: 0;
-    transition: opacity 0.2s;
-    display: flex;
-    gap: 0.1rem;
-    align-items: center;
-}
-
-.editor .block:hover .controls{
-    opacity: 1;
+.editor .block .drag:active{
+    cursor: grabbing;
 }
 
 .editor .block.dragging{
@@ -5703,9 +5885,10 @@ input:checked + .slider:before {
 
 .drop-indicator{
     height: 2px;
-    background: #22c55e;
+    background: var(--accent);
+    opacity: 0.8;
     margin: 0rem 0;
-    border-radius: 1px;
+    border-radius: 2px;
     position: absolute;
     pointer-events: none;
     z-index: 10;
@@ -5723,47 +5906,185 @@ input:checked + .slider:before {
     height: 4px;
 }
 
-.editor .block .drag:active{
-    cursor: grabbing;
+/* What scrolls inside a note (menus, wide tables): thin scrollbars, like the rest of the app */
+:is(.slash-menu, .note-block-menu, .spreadsheet-wrapper, .note-database .db-table-wrapper)::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+:is(.slash-menu, .note-block-menu, .spreadsheet-wrapper, .note-database .db-table-wrapper)::-webkit-scrollbar-track,
+:is(.slash-menu, .note-block-menu, .spreadsheet-wrapper, .note-database .db-table-wrapper)::-webkit-scrollbar-corner {
+    background: transparent;
+}
+:is(.slash-menu, .note-block-menu, .spreadsheet-wrapper, .note-database .db-table-wrapper)::-webkit-scrollbar-thumb {
+    background: var(--text3);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 8px;
+}
+:is(.slash-menu, .note-block-menu, .spreadsheet-wrapper, .note-database .db-table-wrapper)::-webkit-scrollbar-thumb:hover {
+    background-color: var(--text2bis);
+}
+@supports not selector(::-webkit-scrollbar) {
+    .slash-menu, .note-block-menu, .spreadsheet-wrapper, .note-database .db-table-wrapper {
+        scrollbar-width: thin;
+        scrollbar-color: var(--text3) transparent;
+    }
 }
 
+/* Live cursors of the others (notePresence.mjs, note-cursors.html / note-people.html) */
+.note-cursors-host { position: absolute; inset: 0 auto auto 0; width: 0; height: 0; z-index: 5; pointer-events: none; }
+.note-peer-bar { position: absolute; width: 3px; border-radius: 2px; background: var(--peer); opacity: 0.85; }
+.note-peer-selection { position: absolute; background: var(--peer); opacity: 0.22; border-radius: 2px; }
+.note-peer-caret { position: absolute; width: 2px; margin-left: -1px; background: var(--peer); }
+.note-peer-name {
+    position: absolute;
+    bottom: 100%;
+    left: -1px;
+    padding: 1px 6px;
+    border-radius: 4px 4px 4px 0;
+    background: var(--peer);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+.note-people-host { margin-left: auto; }
+.note-people { display: flex; align-items: center; gap: 0.45rem; padding-right: 0.8rem; }
+/* Their avatar (voiceAvatar), ringed with their caret's colour; click: their profile */
+.note-person { position: relative; display: flex; border-radius: 50%; cursor: pointer; }
+.note-person .pfp-small { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--peer); }
+.note-person:hover > .tooltip { visibility: visible; }
+.note-person:last-child > .tooltip.below { left: auto; right: -4px; transform: none; }
+.note-person:last-child > .tooltip.below::after { left: auto; right: 11px; }
+
+/* Block menu (note-block-menu.html, styled as the drive's context menu) */
+.note-block-menu { min-width: 230px; }
+.note-block-menu .drive-context-item { padding: 6px 10px; font-size: 0.9rem; }
+.note-block-menu .drive-context-item > span:nth-of-type(2) { flex: 1; }
+.note-menu-label {
+    padding: 6px 10px 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text2);
+}
+.note-menu-glyph {
+    width: 1.3rem;
+    flex: 0 0 auto !important;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--text2);
+}
+.drive-context-item:hover .note-menu-glyph { color: #fff; }
+.note-menu-sep { height: 1px; margin: 4px 6px; background: var(--text3); }
+
+/* "/" menu (slash-menu.html) */
 .slash-menu {
     position: fixed;
     background: var(--bg3);
-    border: 1px solid var(--bg2);
-    border-radius: 8px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    border: 1px solid var(--bg5);
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 12px 32px rgba(0,0,0,0.5);
     z-index: 1000;
-    min-width: 220px;
-    max-height: 280px;
+    width: 20rem;
+    max-height: 21rem;
     overflow-y: auto;
-    padding: 4px;
+    padding: 6px;
+    box-sizing: border-box;
 }
+
+.slash-menu.above {
+    transform: translateY(-100%);
+}
+
+.slash-menu-group {
+    padding: 8px 8px 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text2);
+}
+.slash-menu-group:first-child { padding-top: 4px; }
 
 .slash-menu-item {
     display: flex;
-    flex-direction: column;
-    padding: 6px 10px;
-    border-radius: 5px;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 4px 6px;
+    border-radius: 6px;
     cursor: pointer;
-    gap: 2px;
 }
 
-.slash-menu-item:hover,
 .slash-menu-item.selected {
-    background: var(--bg4);
+    background: var(--text3);
+}
+
+.slash-menu-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--bg);
+    border: 1px solid var(--text3);
+    color: var(--text);
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+.slash-menu-icon small { font-size: 0.72rem; }
+.slash-menu-icon img {
+    width: 1.3rem;
+    filter: invert(1);
+    opacity: 0.85;
+}
+
+.slash-menu-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
 }
 
 .slash-menu-label {
     font-size: 0.9rem;
     color: var(--text);
-    font-weight: 500;
 }
 
 .slash-menu-desc {
     font-size: 0.75rem;
-    color: var(--text2bis);
+    color: var(--text2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+
+.slash-menu-shortcut {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    color: var(--text2);
+    opacity: 0.7;
+    font-family: ui-monospace, monospace;
+}
+
+/* Narrow panel or phone (no hover): a slim gutter with the handle only */
+@container (max-width: 40rem) {
+    .note-page > .note-page-header,
+    .note-page > .editor,
+    .note-page > .note-page-tail { width: calc(100% - 3.5rem); }
+    .note-page-header { padding-top: 2rem; }
+    .note-page-title { font-size: 2rem; }
+    .editor .block > .controls { left: -1.75rem; }
+    .editor .block .controls .add { display: none; }
+}
+.mobile .editor .block > .controls { opacity: 0.45; }
+
+/* Inline databases: the app's font (form controls don't inherit it), title aligned with the text */
+.editor .note-database :is(input, button, select, textarea) { font-family: inherit; }
+.editor .note-database .db-header { padding-left: 0; padding-right: 0; }
+.editor .note-database .db-title { margin-left: -0.4rem; }
+.editor .note-database .db-view-toggle button { white-space: nowrap; }
 
 /* ─── Composer slash commands (popup shares .mention-autocomplete with the @ menu) ─── */
 
@@ -5901,12 +6222,21 @@ input:checked + .slider:before {
     color: var(--text2bis);
 }
 
+/* A block being edited shows its markdown source (Markdown.renderSource, notes.mjs MDToPreview):
+   the syntax dimmed, the formatting applied */
+.editor .md-mark { color: var(--text2bis); }
+.editor .md-quote { border-left: 3px solid var(--text); padding-left: 0.9rem; }
+.editor .md-heading { font-weight: 700; }
+.editor .md-link { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--text) 40%, transparent); text-underline-offset: 3px; }
+.editor .md-code { background: var(--bg3); border-radius: 4px; padding: 0 3px; font-family: ui-monospace, monospace; font-size: 0.9em; }
+.editor .md-spoiler { background: var(--bg3); border-radius: 3px; }
+
 .note-showcase{
-    background: var(--bg3);
-    border: solid 1px var(--text2bis);
-    padding: 1rem;
-    border-radius: 0.6rem;
-    font-size: 1.8rem;
+    background: color-mix(in srgb, var(--text) 5%, transparent);
+    padding: 0.9rem 1.25rem;
+    border-radius: 6px;
+    font-size: 1.6rem;
+    font-weight: 600;
     width: fit-content !important;
 }
 
@@ -5927,21 +6257,22 @@ input:checked + .slider:before {
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 2px;
 }
 
 .checklist-item {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    align-items: flex-start;
+    gap: 0.55rem;
 }
 
 .checklist-checkbox {
     width: 1rem;
     height: 1rem;
+    margin-top: 0.25rem;   /* centred on the first line (line-height 1.5) */
     flex-shrink: 0;
     cursor: pointer;
-    border: 2px solid var(--text2bis);
+    border: 1.5px solid var(--text2);
     border-radius: 3px;
     display: flex;
     align-items: center;
@@ -5949,9 +6280,13 @@ input:checked + .slider:before {
     transition: background 0.1s, border-color 0.1s;
 }
 
+.checklist-checkbox:hover {
+    background: var(--text3);
+}
+
 .checklist-checkbox.checked {
-    background: var(--primary);
-    border-color: var(--primary);
+    background: var(--accent);
+    border-color: var(--accent);
 }
 
 .checklist-checkbox.checked::after {
@@ -5973,22 +6308,31 @@ input:checked + .slider:before {
 
 .checklist-item.checked .checklist-item-text {
     text-decoration: line-through;
-    color: var(--text2bis);
+    text-decoration-color: var(--text2);
+    color: var(--text2);
 }
 
 .checklist-add-btn {
     background: none;
     border: none;
-    color: var(--text2bis);
+    color: var(--text2);
     cursor: pointer;
     font-size: 0.85rem;
     padding: 0.2rem 0;
     margin-top: 0.1rem;
     font-family: inherit;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.note-checklist:hover .checklist-add-btn,
+.checklist-add-btn:focus-visible,
+.mobile .checklist-add-btn {
+    opacity: 1;
 }
 
 .checklist-add-btn:hover {
-    color: var(--text1);
+    color: var(--text);
 }
 
 /* ─── Transport Block ─────────────────────────────────────────────── */
@@ -7314,16 +7658,6 @@ span.progress-bar {
 
 .editor .editable-block:has(.note-spreadsheet) {
     white-space: normal;
-}
-
-/* The editor is `width: fit-content`, so it grows to its widest child. A wide
-   spreadsheet would blow the editor past the panel (and make `max-width: 100%`
-   on the sheet wrapper indefinite, so it never caps). Capping the editor to the
-   panel width restores a definite width down the chain, so the sheet wrapper
-   caps at the panel and scrolls internally instead of stretching the note. */
-.editor:has(.note-spreadsheet) {
-    max-width: 100%;
-    box-sizing: border-box;
 }
 
 /* ---------------- Forum channels ---------------- */

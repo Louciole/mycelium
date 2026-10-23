@@ -3,6 +3,7 @@ import {goTo} from "../framework/navigation.mjs";
 import {updateElement} from "../framework/vesta.mjs";
 import {xhr} from "../framework/templating.mjs";
 import {lookFor} from "../crud.mjs";
+import {channelRoute} from "../routes.mjs";
 import {DRIVE_KINDS, canManageDriveItem, canUploadToDrive, driveFileKind, driveItemAuthor, driveItemDate, driveItemName, driveName, findDriveItem, getFileExtension, getFilePreviewType} from "./drive-files.mjs";
 import {closeDriveViewer, editInPhoton, isPhotonEditable, openDriveFile, openDriveViewer} from "./drive-viewer.mjs";
 import {closeDriveMoveDialog, openDriveMoveDialog} from "./drive-move.mjs";
@@ -54,14 +55,14 @@ window.repaintDrive = () => paintDrive()
 
 export function driveRoute(folderId) {
     const drive = global.drive
-    return drive.server + '/' + drive.id + (folderId ? '/folder/' + folderId : '')
+    return folderId ? channelRoute(drive.server, 'drive', drive.id, 'folder', folderId) : channelRoute(drive.server, 'drive', drive.id)
 }
 
 // ── Opening a drive / a folder ────────────────────────────────────────────────
 
 /**
  * Opens a drive channel, at its root or at `target.folder`, or opens
- * `target.file` (its folder + the viewer) — what /channels#<server>/<drive>/folder/<id>
+ * `target.file` (its folder + the viewer) — what /channels#<server>/drive/<drive>/folder/<id>
  * and .../file/<id> links resolve to (navigation.mjs handleHashRoute).
  */
 function goToDriveChannel(id, target = {}) {

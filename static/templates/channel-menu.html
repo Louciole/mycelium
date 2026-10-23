@@ -1,0 +1,11 @@
+<div class="ctx-menu" id="channel-menu" role="menu" style="left: ${element.x}px; top: ${element.y}px">
+    ${element.panel ? `<button type="button" class="ctx-item ctx-back" onclick="closeChannelSubmenu(event)">
+            <span class="ctx-label">${_t('Retour')}</span>
+        </button>
+        <div class="ctx-sep" role="separator"></div>
+        ${fillWith('channel-menu-' + element.panel, [element])}`
+      : fillWith('channel-menu-' + element.kind, [element])}
+</div>
+${element.sub ? `<div class="ctx-menu ctx-submenu" role="menu" style="left: ${element.sub.x}px; top: ${element.sub.y}px">
+    ${fillWith('channel-menu-' + element.sub.name, [element])}
+</div>` : ''}

@@ -1,0 +1,39 @@
+${[
+    `<button type="button" role="menuitem" class="ctx-item" id="category-menu-read" ${categoryUnreads(element.id).length ? '' : 'disabled'}
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); markCategoryRead(${element.id})">
+        <span class="ctx-label">${_t('Marquer comme lu')}</span>
+    </button>`,
+
+    `<button type="button" role="menuitemcheckbox" aria-checked="${isCategoryCollapsed(element.id)}" class="ctx-item" id="category-menu-collapse"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); toggleCategory(${element.id})">
+        <span class="ctx-label">${_t('Réduire la catégorie')}</span><span class="ctx-check${isCategoryCollapsed(element.id) ? ' on' : ''}"></span>
+    </button>
+    <button type="button" role="menuitem" class="ctx-item" id="category-menu-collapse-all"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); collapseAllCategories()">
+        <span class="ctx-label">${_t('Réduire toutes les catégories')}</span>
+    </button>`,
+
+    `${categoryMute(element.id)
+        ? `<button type="button" role="menuitem" class="ctx-item" id="category-menu-unmute"
+                onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); unmuteTarget('category', ${element.id})">
+            <span class="ctx-label">${_t('Réactiver la catégorie')}<small>${escapeHTML(muteHint(categoryMute(element.id)))}</small></span>
+        </button>`
+        : `<button type="button" role="menuitem" aria-haspopup="menu" class="ctx-item${element.sub?.name === 'mute' ? ' open' : ''}" id="category-menu-mute"
+                onmouseenter="hoverChannelMenu(event, 'mute')" onclick="openChannelSubmenu(event, 'mute')">
+            <span class="ctx-label">${_t('Rendre la catégorie muette')}</span>${includeTemplate('ctx-chevron')}
+        </button>`}
+    <button type="button" role="menuitem" aria-haspopup="menu" class="ctx-item${element.sub?.name === 'notif' ? ' open' : ''}" id="category-menu-notif"
+            onmouseenter="hoverChannelMenu(event, 'notif')" onclick="openChannelSubmenu(event, 'notif')">
+        <span class="ctx-label">${_t('Paramètres de notification')}<small>${levelLabel(categoryLevel(element.id))}</small></span>${includeTemplate('ctx-chevron')}
+    </button>`,
+
+    // Settings: the Overview tab needs manage-channels, Permissions manage-roles (cat-params.html)
+    (checkChannelRight(element.id, 'category', 'manage-channels') || checkChannelRight(element.id, 'category', 'manage-roles') ? `<button type="button" role="menuitem" class="ctx-item" id="edit-cat-item"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); openCategorySettings()">
+        <span class="ctx-label">${_t('Modifier la catégorie')}</span>
+    </button>` : '')
+    + (checkChannelRight(element.id, 'category', 'manage-channels') ? `<button type="button" role="menuitem" class="ctx-item danger" id="category-menu-delete"
+            onmouseenter="hoverChannelMenu(event)" onclick="closeChannelMenu(event); deleteCat(${element.id})">
+        <span class="ctx-label">${_t('Supprimer la catégorie')}</span>
+    </button>` : ''),
+].filter(Boolean).join('<div class="ctx-sep" role="separator"></div>')}

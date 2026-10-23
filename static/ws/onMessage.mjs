@@ -4,6 +4,7 @@ import {displayNotif, postWS} from "../main.mjs";
 import {setElement, pushElement, deleteElement, addElement} from "../framework/vesta.mjs";
 import {handleMessageGroup, bumpConvActivity} from "../crud.mjs";
 import { notifyMessage, setBadge, callStarted, callEnded, isNative } from "../capacitor-bridge.mjs";
+import {isPlaceSilenced} from "../notif-overrides.mjs";
 
 // Second half of the WS handshake: trade the connectionId of a "register_request"
 // for a clientID. A socket the server could not authenticate (closed server-side,
@@ -40,17 +41,25 @@ function setVocalOccupants(serverId, channelId, participants) {
     }
 }
 
-function isChannelMuted(channelId) {
-    const now = Date.now()
-    return (global.user?.channel_mutes || []).some(
-        m => m.channel === channelId && (!m.muted_until || new Date(m.muted_until).getTime() > now)
-    )
-}
 
 export async function onMessage(event) {
-    console.log("Received message from Python server:", event.data);
     const message = JSON.parse(event.data)
+    if (message.type !== "note_presence") console.log("Received message from Python server:", event.data);   // cursors: many
     switch (message.type){
+        // Collaborative notes (routes/notes_sync.py → workspaces/notes.mjs): the note's
+        // operations in order, live cursors, its sheets' changes, and access taken away
+        case "note_ops":
+            window.onNoteOps?.(message)
+            break
+        case "note_sheet":
+            window.onNoteSheet?.(message)
+            break
+        case "note_presence":
+            window.onNotePresence?.(message)
+            break
+        case "note_error":
+            window.onNoteError?.(message)
+            break
         case "register_request":
             //TODO handle multiserver xhr with the received servID
             authenticateWebSocket(message.connectionId, postWS)
@@ -81,9 +90,8 @@ export async function onMessage(event) {
                             // (its @mentions still ping through the "mention" event).
                         } else if (isChannel) {
                             // Server channel: mark unread (the ping sound fires only on a
-                            // targeted "mention" event). Respect a channel or server mute.
-                            const serverMuted = global.user?.notif_prefs?.[String(content.server)]?.level === 2
-                            if (!isChannelMuted(content.place) && !serverMuted) {
+                            // targeted "mention" event), unless muted or set to "nothing".
+                            if (!isPlaceSilenced(content.place, content.server)) {
                                 document.getElementById('channel-conv-' + content.place)?.classList.add('unread')
                                 if (!global.user.channel_unreads) global.user.channel_unreads = []
                                 if (!global.user.channel_unreads.some(u => u.channel === content.place)) {
@@ -101,7 +109,7 @@ export async function onMessage(event) {
                         }
                         // Native notification when app is in background
                         // (skip channels the user has muted locally)
-                        if (isNative && document.visibilityState === 'hidden' && !(isChannel && isChannelMuted(content.place))) {
+                        if (isNative && document.visibilityState === 'hidden' && !(isChannel && isPlaceSilenced(content.place, content.server))) {
                             const sender = global.users?.[message.content.content.sender];
                             const convName = global.convs?.[message.content.content.place]?.name || 'Mycelium';
                             notifyMessage({

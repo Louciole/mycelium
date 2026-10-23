@@ -176,10 +176,14 @@ final class NotificationHelper {
     private static Intent contentIntent(Context ctx, Map<String, String> data) {
         String convId = data.get("convId");
         String serverId = data.get("serverId");
+        String channelType = data.get("channelType");
+        String channelId = data.get("channelId");
         Uri uri = null;
-        if (serverId != null && convId != null) {
-            // Channel post → open the channel within its server.
-            uri = Uri.parse("mycelium://channel/" + serverId + "/" + convId);
+        if (serverId != null && channelType != null && channelId != null) {
+            // Channel post → the channel's route in the web app (<server>/<type>/<id>);
+            // for a vocal channel, with its text chat open.
+            uri = Uri.parse("mycelium://channel/" + serverId + "/" + channelType + "/" + channelId
+                    + ("vocal".equals(channelType) ? "/chat" : ""));
         } else if (convId != null) {
             // Direct message → open the conversation.
             uri = Uri.parse("mycelium://conv/" + convId);

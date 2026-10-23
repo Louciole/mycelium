@@ -71,7 +71,7 @@ test.describe('Drive — E2E', () => {
         await openDrive(page, driveId);
 
         // ── URL follows the drive ─────────────────────────────────────────────
-        await expect(page).toHaveURL(new RegExp(`#${serverId}/${driveId}$`));
+        await expect(page).toHaveURL(new RegExp(`#${serverId}/drive/${driveId}$`));
         await expect(page.locator('.drive-empty')).toBeVisible();
 
         // ── Menus toggle on their button; the member list opens ───────────────
@@ -128,7 +128,7 @@ test.describe('Drive — E2E', () => {
 
         // ── Open the folder: URL, breadcrumb, back button ─────────────────────
         await folder.dblclick();
-        await expect(page).toHaveURL(new RegExp(`#${serverId}/${driveId}/folder/${folderId}$`));
+        await expect(page).toHaveURL(new RegExp(`#${serverId}/drive/${driveId}/folder/${folderId}$`));
         await expect(page.locator('.drive-crumb.current')).toContainText(`Dossier ${suffix}`);
         await expect(fileItem(page, fileId)).toBeVisible();
 
@@ -146,7 +146,7 @@ test.describe('Drive — E2E', () => {
         await fileItem(page, fileId).dblclick();
         await expect(page.locator('#drive-viewer')).toBeVisible();
         await expect(page.locator('#drive-viewer .drive-viewer-text')).toContainText(`Hello ${suffix}`);
-        await expect(page).toHaveURL(new RegExp(`#${serverId}/${driveId}/file/${fileId}$`));
+        await expect(page).toHaveURL(new RegExp(`#${serverId}/drive/${driveId}/file/${fileId}$`));
         await page.keyboard.press('Escape');
         await expect(page.locator('#drive-viewer')).toHaveCount(0);
         await expect(page).toHaveURL(new RegExp(`/folder/${folderId}$`));
@@ -260,7 +260,7 @@ test.describe('Drive — E2E', () => {
             // ── Clicking a file link opens the drive on that file ─────────────
             await member.locator(`.drive-link-card[data-drive-card="${fileRef}"]`).last().click();
             await expect(member.locator(`#drive-viewer[data-file-id="${fileId}"]`)).toBeVisible();
-            await expect(member).toHaveURL(new RegExp(`#${serverId}/${driveId}/file/${fileId}$`));
+            await expect(member).toHaveURL(new RegExp(`#${serverId}/drive/${driveId}/file/${fileId}$`));
             await member.keyboard.press('Escape');
             await expect(member.locator('.drive-crumb.current')).toContainText('Eseo');
 

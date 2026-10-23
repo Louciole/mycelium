@@ -1,0 +1,5 @@
+<div class="note-cursors" aria-hidden="true">
+    ${element.bars.map(b => `<div class="note-peer-bar" style="left:${b.x - 10}px;top:${b.y}px;height:${b.h}px;--peer:${b.color}"></div>`).join('')}
+    ${element.cursors.map(c => c.rects.map(r => `<div class="note-peer-selection" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;--peer:${c.color}"></div>`).join('')
+        + `<div class="note-peer-caret" style="left:${c.x}px;top:${c.y}px;height:${c.h}px;--peer:${c.color}"><span class="note-peer-name">${escapeHTML(c.name)}</span></div>`).join('')}
+</div>

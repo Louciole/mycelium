@@ -161,6 +161,16 @@ test.describe('Conversation blocks — E2E', () => {
         // The grid is still usable
         await editSpreadsheetCell(page, blockUuid, 'A1', 'hello', root);
         expect(String(await getSpreadsheetCellDisplayValue(page, blockUuid, 'A1', root)).trim()).toBe('hello');
+
+        // A row added but refused by the server: the sheet goes back to what is stored
+        const rows = await page.evaluate((uuid) => window.global.state.spreadsheetViews[uuid].rows, blockUuid);
+        await page.route('**/save_spreadsheet_structure?*', (route) => route.fulfill({ status: 403, body: '' }));
+        await page.evaluate((uuid) => window.global.state.spreadsheetViews[uuid].applyStructureOperation('add-row-top', 'A1'), blockUuid);
+        await expect.poll(() => page.evaluate((uuid) => {
+            const v = window.global.state.spreadsheetViews[uuid];
+            return [v.rows, v.cells.A1 ?? null, v.cells.A2 ?? null];
+        }, blockUuid)).toEqual([rows, 'hello', null]);
+        await expect(page.locator(`${root} .sheet-cell[data-ref="A1"] .sheet-cell-content`)).toHaveText('hello');
     });
 
     test('A tricount block inserted in a private conversation is visible to both members', async ({ browser }) => {

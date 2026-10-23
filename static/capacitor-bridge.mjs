@@ -13,6 +13,8 @@
  *   initNative()      – bootstraps all native integrations (called once on load)
  */
 
+import { channelRoute } from './routes.mjs';
+
 // ─── Guard: only activate when inside Capacitor ──────────────────────────────
 const isNative = !!(window.Capacitor?.isNativePlatform?.());
 export { isNative };
@@ -351,11 +353,10 @@ async function setupDeepLinks() {
       window.dispatchEvent(new CustomEvent('cap:navigateToConv', { detail: { convId } }));
     }
 
-    // mycelium://channel/<serverId>/<channelId>[/folder|file/<id>] (drive links)
+    // mycelium://channel/<server>/<type>/<id>[/…]: a channel's route (routes.mjs)
     if (url.hostname === 'channel') {
-      const [, serverId, channelId, kind, itemId] = url.pathname.split('/');
       window.dispatchEvent(new CustomEvent('cap:deepLinkChannel', {
-        detail: { serverId, channelId, kind, itemId },
+        detail: { route: url.pathname.slice(1) },
       }));
     }
   });
@@ -552,17 +553,14 @@ if (isNative) {
 
 // ─── Navigation helper ────────────────────────────────────────────────────────
 function handleNotificationNavigation(extra = {}) {
-  if (extra.vocalChat && extra.serverId && extra.channelId) {
-    // A vocal channel's chat: its convId is a message place, not a conversation
+  if (extra.serverId && extra.channelType && extra.channelId) {
+    // A channel message (message_helpers push payload); a vocal channel opens with its chat
+    const rest = extra.channelType === 'vocal' ? ['chat'] : [];
     window.dispatchEvent(new CustomEvent('cap:deepLinkChannel', {
-      detail: { serverId: extra.serverId, channelId: extra.channelId, kind: 'chat' },
+      detail: { route: channelRoute(extra.serverId, extra.channelType, extra.channelId, ...rest) },
     }));
   } else if (extra.convId) {
     window.dispatchEvent(new CustomEvent('cap:navigateToConv', { detail: { convId: extra.convId } }));
-  } else if (extra.serverId && extra.channelId) {
-    window.dispatchEvent(new CustomEvent('cap:deepLinkChannel', {
-      detail: { serverId: extra.serverId, channelId: extra.channelId },
-    }));
   }
 }
 

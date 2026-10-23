@@ -10,6 +10,7 @@
 // tier by frecency (get_frecency, fetched once per session), then raw score.
 import global from "/static/framework/global.mjs"
 import {goTo} from "/static/framework/navigation.mjs"
+import {channelRoute} from "/static/routes.mjs"
 import {xhr} from "/static/framework/templating.mjs"
 import {setElement} from "/static/framework/vesta.mjs"
 import {handleHashRoute} from "/static/navigation.mjs"
@@ -205,25 +206,22 @@ function openSearchResultAt(i) {
             openRoute('@me/' + item.id)
             break
         case 'server': {
-            // '/0' opens the server without a channel; then land on the first
-            // textual channel like a sidebar click would.
-            handleHashRoute(item.id + '/0')
-            const first = window.firstTextChannel(global.state.currentServer)
-            if (first) goToChannel(first.id)
+            // The server alone: its last visited channel, like a click on the server
+            handleHashRoute(String(item.id))
             break
         }
         case 'post':
-            openRoute(item.server + '/' + item.forum + '/post/' + item.id)
+            openRoute(channelRoute(item.server, 'forum', item.forum, 'post', item.id))
             break
         case 'file':
         case 'folder':
         {
             // A folder opens in the drive, a file in the drive's viewer.
-            openRoute(item.server + '/' + item.drive_channel + '/' + item.kind + '/' + item.id)
+            openRoute(channelRoute(item.server, 'drive', item.drive_channel, item.kind, item.id))
             break
         }
         default: // textual / vocal / note / forum / drive channels
-            openRoute(item.server + '/' + item.id)
+            openRoute(channelRoute(item.server, item.kind, item.id))
     }
 }
 window.openSearchResultAt = openSearchResultAt

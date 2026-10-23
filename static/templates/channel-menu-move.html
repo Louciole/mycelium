@@ -1,0 +1,4 @@
+${moveDestinations(element.id, element.type).map(destination => `<button type="button" role="menuitem" class="ctx-item"
+        onclick="closeChannelMenu(event); moveChannel(${element.id}, '${element.type}', ${destination.id ?? 'null'})">
+    <span class="ctx-label">${escapeHTML(destination.name)}</span>
+</button>`).join('')}

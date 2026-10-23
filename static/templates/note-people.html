@@ -1,0 +1,3 @@
+<div class="note-people">
+    ${element.people.map(p => `<div class="note-person" style="--peer:${p.color}" onclick="toggleProfileInfo(${p.uid}, event)">${voiceAvatar(p.uid, 'pfp-small')}<span class="tooltip below">${escapeHTML(p.name)}</span></div>`).join('')}
+</div>
