@@ -1,4 +1,4 @@
-import {Markdown} from "../markdown/markdown.mjs";
+import {ChatMarkdown} from "../chat-markdown.mjs";
 import {xhr} from "../framework/templating.mjs";
 import {setElement, updateElement} from "../framework/vesta.mjs";
 import {goTo} from "../framework/navigation.mjs";
@@ -1575,7 +1575,7 @@ function blockToRawContent(el) {
  * preview is the text (Vesta tests/markdown, and notesPage.spec.mjs here).
  */
 function MDToPreview(text){
-    return window.enhanceChannelMentions(new Markdown().renderSource(text))
+    return new ChatMarkdown().renderSource(text)
 }
 
 /**
@@ -1598,11 +1598,6 @@ const render_equiv = {
     "link":"<a href='${props.link}' target='_blank'>${content}</a>",
     "color":"<span class='color' style='color: ${props.color}'>${content}</span>",
     "-#":"<span class='small'>${content}</span>",
-    "mention_user":"${content}",
-    "mention_role":"${content}",
-    "mention_channel":"${content}",
-    "mention_everyone":"<span class='mention mention-everyone'>@everyone</span>",
-    "mention_here":"<span class='mention mention-here'>@here</span>",
     "endline":"\n",
     "newline":"${content}",
     "|":"${content}|",
@@ -1620,20 +1615,20 @@ const render_equiv = {
  * are not evaluated here.
  */
 function renderedLength(raw) {
-    const engine = new Markdown()
+    const engine = new ChatMarkdown()
     const template = document.createElement('template')   // inert: nothing in it loads or runs
-    template.innerHTML = window.enhanceChannelMentions(engine.render(engine.tokenize(forDisplay(raw)), render_equiv))
+    template.innerHTML = engine.render(engine.tokenize(forDisplay(raw)), render_equiv)
     return template.content.textContent.length
 }
 
 function MDToRender(text){
     //rendering MD
-    const engine = new Markdown()
+    const engine = new ChatMarkdown()
     const tokens = engine.tokenize(forDisplay(text))
     const rendered = engine.render(tokens, render_equiv)
 
     //evaluating functions
-    return window.enhanceChannelMentions(evaluateText(rendered))
+    return evaluateText(rendered)
 }
 window.MDToRender = MDToRender
 window.MDToPreview = MDToPreview

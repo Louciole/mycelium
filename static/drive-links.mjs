@@ -91,10 +91,10 @@ function linkLabel(ref) {
 }
 
 /**
- * HTML of a "<#ref>" mention (markdown.mjs mention_channel), or null when ref
+ * HTML of a "<#ref>" mention (chat-markdown.mjs mention_channel), or null when ref
  * isn't a channel/drive reference.
  */
-function renderChannelMention(ref) {
+export function renderChannelMention(ref) {
     ref = String(ref)
     const parsed = parseRef(ref)
     if (!parsed) return null
@@ -245,13 +245,3 @@ function driveMentionCandidates(query, refresh) {
     ].slice(0, 15)
 }
 window.driveMentionCandidates = driveMentionCandidates
-
-// The markdown renderer (static/markdown, vendored) renders "<#id>" for textual
-// channels only: re-render its mention spans with renderChannelMention.
-const MENTION_SPAN = /<span class='mention mention-channel' data-channel-id='([^']*)'[^>]*>[^<]*<\/span>/g
-
-function enhanceChannelMentions(html) {
-    if (!html || !html.includes('mention-channel')) return html
-    return html.replace(MENTION_SPAN, (span, ref) => renderChannelMention(ref) ?? span)
-}
-window.enhanceChannelMentions = enhanceChannelMentions

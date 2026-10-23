@@ -7,6 +7,7 @@ import {channelRoute} from "./routes.mjs";
 import {NOTIF_TYPES, isChannelMuted, nextMuteEnd} from "./notif-overrides.mjs";
 import {} from "./servers/drive.mjs"
 import {} from "./drive-links.mjs"
+import {chatToHTML} from "./chat-markdown.mjs"
 let emptyStr = '' //DO NOT REMOVE
 
 // Mounts the conv blocks of a freshly rendered chat view. repaintConv() only covers
@@ -170,13 +171,13 @@ export function handleHashRoute(hash) {
 }
 
 /**
- * Wraps MDToHTML and replaces :emojiname: shortcodes from known custom emojis
- * with inline <img> elements. Falls back to the raw shortcode if unknown.
+ * Wraps chatToHTML (markdown with mentions) and replaces :emojiname: shortcodes from
+ * known custom emojis with inline <img> elements. Falls back to the raw shortcode if unknown.
  */
 function renderMessageBody(text) {
     if (!text) return ''
-    // Channel and drive mentions (drive-links.mjs); a lone file link also gets a card.
-    const html = window.enhanceChannelMentions(MDToHTML(text)) + window.driveLinkCardHtml(text)
+    // A lone file link also gets a card (drive-links.mjs).
+    const html = chatToHTML(text) + window.driveLinkCardHtml(text)
 
     // Build name -> file map from all locally loaded servers (deduplicated)
     const emojiMap = {}
