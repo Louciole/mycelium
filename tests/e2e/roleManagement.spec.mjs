@@ -190,7 +190,7 @@ test.describe('Role management — E2E', () => {
         await expect(page.locator('h2')).toContainText(serverName, { timeout: 10000 });
         await Promise.all([
             page.waitForURL('**/channels**', { timeout: 15000 }),
-            page.locator('a[href*="join_server"] .btn').click(),
+            page.locator('#join-invite-btn').click(),
         ]);
         await waitForAppReady(page);
         expect(await getServerIds(page)).toContain(serverId);

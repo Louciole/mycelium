@@ -106,13 +106,18 @@ export function renderChannelMention(ref) {
 }
 window.renderChannelMention = renderChannelMention
 
-function cardHtml(ref) {
+/** What a file's card shows (drive-link-card.html, note-file.html). */
+function cardData(ref) {
     const info = links[ref]
-    return fillWith('drive-link-card', [{
+    return {
         ref, info,
         kind: info?.ok && window.driveFileKind(info.name),
         where: info?.ok ? [info.drive_name, ...(info.path || []).map(p => p.name)].join(' › ') : '',
-    }])
+    }
+}
+
+function cardHtml(ref) {
+    return fillWith('drive-link-card', [cardData(ref)])
 }
 
 /**
@@ -131,6 +136,27 @@ function driveLinkCardHtml(text) {
 }
 window.driveLinkCardHtml = driveLinkCardHtml
 window.driveLinkCardInner = ([driveId, fileId]) => cardHtml(`drive:${driveId}/f:${fileId}`)
+
+/** [driveId, fileId] of the first file link in a text ("<#drive:12/f:301>"), or null. */
+export function fileLinkIds(text) {
+    const match = /<#drive:(\d+)\/f:(\d+)>/.exec(text || '')
+    return match ? [Number(match[1]), Number(match[2])] : null
+}
+window.fileLinkIds = fileLinkIds
+
+/**
+ * A note's file block (static/workspaces/notes.mjs): the file itself in the page (an image,
+ * a video…, else its card), repainted with the cards when drive_links answers.
+ */
+function noteFileHtml(text) {
+    const ids = fileLinkIds(text)
+    if (!ids) return ''
+    queueLink(`drive:${ids[0]}/f:${ids[1]}`)
+    return Subscribe(`global.driveLinkCards[${ids[0]}][${ids[1]}]`,
+        (file = ids) => window.noteFileInner(file), 'note-file-view', {element: JSON.stringify(ids)})
+}
+window.noteFileHtml = noteFileHtml
+window.noteFileInner = ([driveId, fileId]) => fillWith('note-file', [cardData(`drive:${driveId}/f:${fileId}`)])
 
 function repaintLink(ref) {
     const label = linkLabel(ref)

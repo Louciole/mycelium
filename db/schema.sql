@@ -314,7 +314,8 @@ create table if not exists note_block (
     pos_key varchar(200) COLLATE "C",   -- fractional keys: compared byte by byte, like JS
     sub_key varchar(200) COLLATE "C",
     deleted boolean NOT NULL DEFAULT false,
-    proj_seq bigint NOT NULL DEFAULT 0
+    proj_seq bigint NOT NULL DEFAULT 0,
+    indent smallint NOT NULL DEFAULT 0
 );
 
 -- Collaborative notes: every operation (CRDT, static/crdt/) in the order the server stored it

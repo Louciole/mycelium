@@ -1,0 +1,8 @@
+<div class="note-file" data-media-block="${element.uuid}" ondblclick="global.state.noteEditor?.openFileBlock('${element.uuid}')">
+    ${fileLinkIds(element.content) ? noteFileHtml(element.content)
+    : global.state.noteEditor?.readOnly ? ''
+    : `<button type="button" class="note-file-empty" onclick="global.state.noteEditor.openFilePicker('${element.uuid}')">
+        <img class="icon" src="/static/icons/material/image.svg" alt=""/>
+        <span>${_t('Ajouter une image ou un fichier du Drive')}</span>
+    </button>`}
+</div>

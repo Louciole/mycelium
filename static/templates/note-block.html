@@ -1,4 +1,6 @@
-<div class="block" data-block-id="${element.uuid}"
+<div class="block${global.state.noteEditor?.selectedBlockId === element.uuid ? ' selected' : ''}" data-block-id="${element.uuid}" data-indent="${element.indent || 0}"
+     onkeydown="global.state.noteEditor.onBlockKeyDown('${element.uuid}', event)"
+     onblur="global.state.noteEditor.onBlockBlur('${element.uuid}', event)"
      ondragover="global.state.noteEditor.onDragOver('${element.uuid}', event)"
      ondrop="global.state.noteEditor.onDrop('${element.uuid}', event)">
     <div class="controls">
@@ -19,6 +21,7 @@
           oncompositionstart="global.state.noteEditor.onCompositionStart('${element.uuid}')"
           oncompositionend="global.state.noteEditor.onCompositionEnd('${element.uuid}', event)"
           onkeydown="global.state.noteEditor.onKeyDown('${element.uuid}', event)"
+          onpaste="global.state.noteEditor.onPaste('${element.uuid}', event)"
           onblur="global.state.noteEditor.onBlur('${element.uuid}', event)"
           onfocus="global.state.noteEditor.onFocus('${element.uuid}', event)">${MDToRender(element.content)}</span>
 </div>

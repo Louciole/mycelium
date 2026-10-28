@@ -2,7 +2,7 @@ import {} from "/static/dialogs.mjs"; // uiAlert / uiConfirm / uiPrompt (in-app 
 import {initNavigation, printWatermark, goTo} from "/static/framework/navigation.mjs"
 import {handleHashRoute} from "/static/navigation.mjs"
 import {initWebSockets} from "./framework/websockets.mjs";
-import {loadServers, loadUser, loadConvs, loadUsers, refreshUsers, handleMessageGroup, sendTyping, lookFor, orderServDirs, bumpConvActivity} from "/static/crud.mjs"
+import {loadServers, loadUser, loadConvs, loadUsers, refreshUsers, handleMessageGroup, sendTyping, lookFor, orderServDirs, bumpConvActivity, bootServers, bootConvs} from "/static/crud.mjs"
 import global from "/static/framework/global.mjs"
 import {MDToHTML} from "/static/markdown/utils.mjs"; // DO NOT REMOVE
 import {} from "/static/admin.mjs"; // DO NOT REMOVE
@@ -79,6 +79,9 @@ const onInvitationsLoaded = function(){
     loadUsers(usersToload)
 }
 
+const ROUTE_WAIT = 5000     // ms a deep link waits for the servers / DMs it may name
+const READY_FALLBACK = 10000   // ms before the UI is shown anyway (no socket, no snapshot)
+
 // markReady reveals the UI. It is safe to call WITHOUT a websocket (offline
 // boot), and is idempotent — postWS and the offline path both call it.
 export function markReady(){
@@ -86,22 +89,27 @@ export function markReady(){
     global.state._ready = true
 
     console.log("UI ready", global)
-    hideLoadingScreen()
 
-    // URL routing: restore view from hash on initial load, handle browser back/forward
-    const _initialHash = window.location.hash.slice(1)
-    if (_initialHash) {
-        // Skip it if the user already navigated (the hash changed) during the delay.
-        setTimeout(() => {
-            if (window.location.hash.slice(1) === _initialHash) handleHashRoute(_initialHash)
-        }, 300)
-    }
+    // URL routing: the view of the URL's hash is opened behind the loading screen, once the
+    // servers and DMs it may name are loaded, and only then is the UI revealed: nothing the
+    // user opens can be replaced by it (it used to run 300 ms after the reveal).
+    // Offline, nothing more will come: the route opens what the snapshot has, right away.
+    const initialHash = window.location.hash.slice(1)
+    const unreachable = bootServers.then(reached => reached ? new Promise(() => {}) : undefined)
+    const loaded = initialHash && !global.state.offline
+        ? Promise.race([Promise.all([bootServers, bootConvs]), unreachable,
+                        new Promise(resolve => setTimeout(resolve, ROUTE_WAIT))])
+        : Promise.resolve()
+    loaded.then(() => {
+        if (window.location.hash.slice(1) === initialHash && initialHash) handleHashRoute(initialHash)
+    }).finally(() => {
+        hideLoadingScreen()
+        hideSplash()   // the native splash screen too
+    })
     window.addEventListener('popstate', () => handleHashRoute(window.location.hash.slice(1)))
-
-    // Hide native splash screen once the app is ready
-    hideSplash();
 }
 window.markReady = markReady
+setTimeout(markReady, READY_FALLBACK)
 
 // postWS runs once the websocket handshake has completed (online) — again after
 // every reconnection.
@@ -1061,6 +1069,10 @@ if (_snapshot) {
     markReady()
     initWebSockets()   // idempotent; reconnects when the network returns
 }
+// Offline (the browser says so, or the server can't be reached): no socket will come to reveal
+// the UI, it shows at once (with a snapshot, it already does)
+if (global.state.offline) markReady()
+bootServers.then(reached => { if (!reached) markReady() })
 
 // Network bootstrap (always): refreshes the cache paint when online, fails
 // silently when offline.
@@ -1157,7 +1169,3 @@ window.declineCall = function(callId) {
         ringtone.currentTime = 0;
     }
 };
-
-window.addEventListener('load', () => {
-    hideLoadingScreen()
-});

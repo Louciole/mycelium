@@ -18,14 +18,16 @@ export function uploadDriveFolder() {
 }
 window.uploadDriveFolder = uploadDriveFolder
 
-// Upload a single File object into the given folder (null = root of the drive).
-// Resolves on success, rejects with Error("quota") when the quota is exceeded.
-function uploadSingleDriveFile(file, drive_id, parent_folder) {
+/**
+ * POST a file as a data URI in a JSON body ({file: "data:…"}). Resolves with the answer's
+ * JSON ({} without one); rejects with Error("quota") when the storage is full (after its own
+ * message, handleQuotaError), else with an Error. Drive uploads, the notes' images
+ * (static/workspaces/notes.mjs upload_note_image).
+ */
+export function postFileAsDataUrl(url, file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = function(e) {
-            const base64 = e.target.result
-
             const onload = function() {
                 if (this.status === 413) {
                     handleQuotaError(this)
@@ -36,20 +38,29 @@ function uploadSingleDriveFile(file, drive_id, parent_folder) {
                     reject(new Error("upload failed: " + this.status))
                     return
                 }
-                resolve()
+                try {
+                    resolve(JSON.parse(this.responseText))
+                } catch (e) {
+                    resolve({})
+                }
             }
-
-            const url = parent_folder
-                ? `upload_drive_file?drive_id=${drive_id}&filename=${encodeURIComponent(file.name)}&parent_folder=${parent_folder}`
-                : `upload_drive_file?drive_id=${drive_id}&filename=${encodeURIComponent(file.name)}`
-
             // Send file content in the body, not in the URL
-            const request = xhr(url, onload, "POST", true, {"file": base64})
+            const request = xhr(url, onload, "POST", true, {"file": e.target.result})
             request.onerror = () => reject(new Error("network error"))
         }
         reader.onerror = () => reject(reader.error || new Error("read error"))
         reader.readAsDataURL(file)
     })
+}
+
+// Upload a single File object into the given folder (null = root of the drive).
+// Resolves with {file_id, filename}, rejects with Error("quota") when the quota is
+// exceeded. Also used by the notes' file blocks (static/workspaces/notes.mjs).
+export function uploadSingleDriveFile(file, drive_id, parent_folder) {
+    const url = parent_folder
+        ? `upload_drive_file?drive_id=${drive_id}&filename=${encodeURIComponent(file.name)}&parent_folder=${parent_folder}`
+        : `upload_drive_file?drive_id=${drive_id}&filename=${encodeURIComponent(file.name)}`
+    return postFileAsDataUrl(url, file)
 }
 
 // Create a folder remotely and resolve with its new id.

@@ -1,0 +1,17 @@
+${!element.info ? `<div class="note-file-pending" data-drive-card="${escapeHTML(element.ref)}"></div>`
+: !element.info.ok ? `<div class="note-file-denied" data-drive-card="${escapeHTML(element.ref)}">
+        <img class="icon" src="/static/icons/material/file.svg" alt=""/>${_t('inaccessible item')}</div>`
+: element.kind === 'image' ? `<figure class="note-file-media" data-drive-card="${escapeHTML(element.ref)}">
+        <img src="/static/attachments/${escapeHTML(element.info.filepath)}" alt="${escapeHTML(element.info.name)}" loading="lazy" draggable="false"
+             onclick="openChannelMention(event, this.parentElement.dataset.driveCard)"/>
+        <figcaption>${escapeHTML(element.info.name)}</figcaption>
+    </figure>`
+: element.kind === 'video' ? `<figure class="note-file-media" data-drive-card="${escapeHTML(element.ref)}">
+        <video src="/static/attachments/${escapeHTML(element.info.filepath)}" controls preload="metadata"></video>
+        <figcaption>${escapeHTML(element.info.name)}</figcaption>
+    </figure>`
+: element.kind === 'audio' ? `<figure class="note-file-media note-file-audio" data-drive-card="${escapeHTML(element.ref)}">
+        <audio src="/static/attachments/${escapeHTML(element.info.filepath)}" controls preload="metadata"></audio>
+        <figcaption>${escapeHTML(element.info.name)}</figcaption>
+    </figure>`
+: fillWith('drive-link-card', [element])}

@@ -5,7 +5,8 @@ import {goTo} from "../framework/navigation.mjs";
 import {} from "./synapse.mjs";
 import {getNoteSync, onNotesSocketReady, noteSyncFor} from "./noteSync.mjs";
 import {NotePresence, pointAt} from "./notePresence.mjs";
-import {keyBetween, MAX_KEY_LENGTH} from "../crdt/keys.mjs";
+import {keyBetween, MAX_KEY_LENGTH} from "../crdt/keys.mjs"
+import {MAX_INDENT} from "../crdt/doc.mjs";
 import {
     registerFunction,
     evaluateText
@@ -14,9 +15,25 @@ import {mountDatabase} from "./database.mjs";
 import {mountSpreadsheet, onSheetChange} from "./spreadsheet.mjs";
 import {mountTransportBlock} from "./transport.mjs";
 import {orderServDirs} from "../crud.mjs";
+import {uploadSingleDriveFile, postFileAsDataUrl} from "../servers/drive-upload.mjs";
+import {fileLinkIds} from "../drive-links.mjs";
 
 // Plain-text kinds: a block of one of these can be turned into another (block menu)
-const TEXT_KINDS = ["text", "heading1", "heading2", "heading3", "small"]
+const TEXT_KINDS = ["text", "heading1", "heading2", "heading3", "small", "bullet", "numbered"]
+// List items: one block per item, its level in `indent` (Tab / Shift+Tab). The bullets and
+// the numbers are drawn by CSS (style.css, counters over the whole page)
+const LIST_KINDS = ["bullet", "numbered"]
+const isList = (block) => LIST_KINDS.includes(block?.type)
+
+// Image blocks: their text is where the image is stored with the note (upload_note_image,
+// routes/workspaces.py: the same types). Anything else in it shows nothing, an image of another
+// note too: the server deletes a note's images that its own blocks no longer show
+const NOTE_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]
+const NOTE_IMAGE_PATH = /^note_(\d+)\/[0-9a-f]{64}\.(png|jpg|gif|webp|avif)$/
+window.noteImagePath = (text) => {
+    const match = NOTE_IMAGE_PATH.exec(text || "")
+    return match && Number(match[1]) === global.state.noteEditor?.channelId ? text : null
+}
 
 // Block fields that place it in the page: a change to one of them lays the rows out again
 const LAYOUT_FIELDS = ["position", "row_group", "column_index", "sub_position"]
@@ -77,6 +94,7 @@ class Editor {
         this._offBefore?.()
         this.presence?.destroy()
         this.sync.leave()
+        global.state.noteFilePicker = null   // its page is gone (its Subscribe with it)
     }
 
     /** Its page left the screen: this tab no longer follows the note (nor shows in it to others). */
@@ -128,8 +146,11 @@ class Editor {
             const block = this.blocks[el.parentElement.dataset.blockId]
             if (!block) continue
             if (!blockTypes[block.type]?.template) el.contentEditable = readOnly ? 'false' : 'true'
-            // Checklists, transport, synapse… have no read-only mode of their own
-            else if (!['database', 'spreadsheet'].includes(block.type)) el.inert = readOnly
+            // Checklists, transport, synapse… have no read-only mode of their own. A file stays
+            // open to readers (its image, its link to the drive); note-file-root.html hides the picking
+            else if (!['database', 'spreadsheet', 'file'].includes(block.type)) el.inert = readOnly
+            // An empty file / image block shows its "add" button to editors only: drawn again
+            if (rerenderViews && this._isEmptyMedia(block)) this._mountBlock(block.uuid)
         }
         if (!rerenderViews) return
         const channelId = this.channelId
@@ -181,7 +202,7 @@ class Editor {
             }))
     }
 
-    createBlock({type = "text", content = "", afterBlockId = null, uuid = null}, addDom = true) {
+    createBlock({type = "text", content = "", afterBlockId = null, uuid = null, indent = 0}, addDom = true) {
         if (this.readOnly) return null
         const newBlockId = uuid || crypto.randomUUID()
         let slot
@@ -200,7 +221,8 @@ class Editor {
             "position": slot.position,
             "row_group": slot.rowGroup || newBlockId,
             "column_index": slot.colIndex,
-            "sub_position": slot.subPosition
+            "sub_position": slot.subPosition,
+            "indent": isList({type}) ? indent : 0
         };
 
         if (addDom){
@@ -346,7 +368,9 @@ class Editor {
                 return {type, glyph: item.glyph, label: item.label, checked: block.type === type}
             }) : [],
             // Databases, spreadsheets… keep their content in their own tables
-            canDuplicate: textual || block.type === "checklist" || block.type === "showcase",
+            canDuplicate: textual || ["checklist", "showcase", "file", "image"].includes(block.type),
+            canReplaceFile: block.type === "file",
+            canReplaceImage: block.type === "image",
         }
         setElement("global.state.noteBlockMenu", menu)
 
@@ -367,6 +391,7 @@ class Editor {
         const block = this.blocks[blockId]
         if (!block || block.type === type || !TEXT_KINDS.includes(type)) return
         block.type = type
+        if (!isList(block)) block.indent = 0   // only list items have levels
         this.saveBlock(blockId)
         this.reorderDOM()
         this.focusBlock(blockId)
@@ -376,8 +401,214 @@ class Editor {
         this.closeBlockMenu()
         const block = this.blocks[blockId]
         if (!block) return
-        const newId = this.createBlock({type: block.type, content: block.content, afterBlockId: blockId})
+        const newId = this.createBlock({type: block.type, content: block.content, afterBlockId: blockId, indent: block.indent})
         if (newId && TEXT_KINDS.includes(block.type)) this.focusBlock(newId)
+    }
+
+    // ── File blocks: a Drive file shown in the page (note-file-root.html) ─────
+
+    /**
+     * The dialog that picks a file block's file (note-file-picker.html): this server's drives,
+     * their folders and files, and an upload into the folder shown.
+     * global.state.noteFilePicker = {blockId, drive, folder, path, folders, files, loading, uploading}.
+     */
+    openFilePicker(blockId) {
+        if (this.readOnly || this.blocks[blockId]?.type !== "file") return
+        this.closeBlockMenu()
+        global.state.noteFilePicker = {blockId, drive: null, folder: null, path: [], folders: [], files: [],
+                                       loading: false, uploading: false}
+        const drives = global.state.currentServer?.dirs?.drives || []
+        if (drives.length === 1) this.browseFilePicker(drives[0].id, null)   // straight into the only one
+        else this._paintFilePicker()
+    }
+
+    /** Show a folder of a drive in the dialog (`driveId` null: the list of drives). */
+    browseFilePicker(driveId, folderId) {
+        const state = global.state.noteFilePicker
+        if (!state) return
+        const request = state.request = {}   // only the last folder asked for is shown
+        if (driveId === null) {
+            Object.assign(state, {drive: null, folder: null, path: [], loading: false})
+            return this._paintFilePicker()
+        }
+        Object.assign(state, {drive: driveId, loading: true})
+        this._paintFilePicker()
+        const editor = this
+        xhr(`list_drive?drive_id=${driveId}` + (folderId ? `&folder_id=${folderId}` : ''), function () {
+            if (global.state.noteFilePicker !== state || state.request !== request) return
+            const data = this.status === 200 ? JSON.parse(this.responseText) : {folders: [], files: [], path: []}
+            Object.assign(state, {folder: data.folder_id ?? null, path: data.path || [], folders: data.folders || [],
+                                  files: data.files || [], loading: false})
+            editor._paintFilePicker()
+        })
+    }
+
+    /** What note-file-picker.html shows. */
+    filePickerView() {
+        const state = global.state.noteFilePicker
+        const drives = global.state.currentServer?.dirs?.drives || []
+        const crumbs = [{drive: null, id: null, name: _t("Drives")}]
+        if (state.drive !== null) {
+            const drive = drives.find(d => Number(d.id) === Number(state.drive))
+            crumbs.push({drive: state.drive, id: null, name: drive?.name ?? _t("Drive")},
+                        ...state.path.map(p => ({drive: state.drive, id: p.id, name: p.name})))
+        }
+        return {
+            crumbs, loading: state.loading, drive: state.drive, folders: state.folders, files: state.files,
+            drives: state.drive === null ? drives : null,
+            // Adding a file to a drive is a write there, like any upload (driveManager._require_drive_write)
+            canUpload: state.drive !== null && !state.loading && window.checkChannelRight(state.drive, "drive", "send-messages"),
+            uploading: state.uploading,
+        }
+    }
+
+    _paintFilePicker() {
+        updateElement("global.state.noteFilePicker")
+    }
+
+    closeFilePicker() {
+        if (!global.state.noteFilePicker) return
+        setElement("global.state.noteFilePicker", null)
+    }
+
+    /** The file of the block the dialog was opened for: its text becomes the file's link. */
+    chooseFile(driveId, fileId) {
+        const block = this.blocks[global.state.noteFilePicker?.blockId]
+        this.closeFilePicker()
+        if (!block || block.type !== "file" || this.readOnly) return
+        block.content = `<#drive:${Number(driveId)}/f:${Number(fileId)}>`
+        this.sync.undo.stopCapturing()   // an undo step of its own
+        this.saveBlock(block.uuid)
+        this.sync.undo.stopCapturing()
+        this._mountBlock(block.uuid)
+    }
+
+    /** "Upload here": the file goes into the folder shown, then into the block. */
+    async uploadFile(event) {
+        const state = global.state.noteFilePicker
+        const file = event.target.files?.[0]
+        if (!state || !file || state.drive === null) return
+        const driveId = state.drive
+        state.uploading = true
+        this._paintFilePicker()
+        try {
+            const {file_id} = await uploadSingleDriveFile(file, driveId, state.folder)
+            if (!file_id) throw new Error("no file id in the answer")
+            if (global.state.noteFilePicker === state) this.chooseFile(driveId, file_id)
+        } catch (e) {
+            console.warn("Upload failed for", file.name, e)
+            if (e.message !== "quota") window.uiAlert?.(_t("Le fichier n'a pas pu être envoyé."))
+            if (global.state.noteFilePicker === state) {
+                state.uploading = false
+                this._paintFilePicker()
+            }
+        }
+    }
+
+    // ── Image blocks: images stored with the note (note-image-root.html) ──────
+
+    /** An image of this tab on its way to the server: its block says so. */
+    isUploading(blockId) {
+        return Boolean(this._uploads?.has(blockId))
+    }
+
+    /** A file block without its file, an image block without its image (none on its way). */
+    _isEmptyMedia(block) {
+        return (block.type === "file" && !fileLinkIds(block.content))
+            || (block.type === "image" && !noteImagePath(block.content) && !this.isUploading(block.uuid))
+    }
+
+    /** "/image", the empty block's button, "Replace the image": the image comes from a file. */
+    pickImage(blockId) {
+        if (this.readOnly || this.blocks[blockId]?.type !== "image") return
+        this._imageBlock = blockId
+        const input = document.getElementById("note-image-input")
+        if (!input) return
+        input.value = ""
+        input.click()
+    }
+
+    onImagePicked(event) {
+        const file = event.target.files?.[0]
+        const blockId = this._imageBlock
+        this._imageBlock = null
+        if (!file || this.blocks[blockId]?.type !== "image") return
+        if (!NOTE_IMAGE_TYPES.includes(file.type)) return window.uiAlert?.(_t("L'image n'a pas pu être envoyée."))
+        this._uploadImage(blockId, file)
+    }
+
+    /**
+     * An image pasted into a block becomes an image block. Text comes first: Word or a
+     * spreadsheet put a picture of what was copied next to its text, and that is pasted as text.
+     */
+    onPaste(blockId, event) {
+        const data = event.clipboardData
+        if (this.readOnly || !data || data.getData("text/plain")) return
+        // Tables and checklists: pasted into their cell / item, as they handle it
+        if (["database", "spreadsheet", "checklist"].includes(this.blocks[blockId]?.type)) return
+        const images = [...data.files].filter(file => NOTE_IMAGE_TYPES.includes(file.type))
+        if (!images.length) return
+        event.preventDefault()
+        this.insertImages(blockId, images)
+    }
+
+    /**
+     * Images pasted or dropped on a block: one image block each, below it (the block itself
+     * when it is an empty paragraph or an empty image block), uploaded with the note. One undo step.
+     */
+    insertImages(blockId, files) {
+        const block = this.blocks[blockId]
+        if (this.readOnly || !block) return
+        this._hideSlashMenu()
+        const emptyImage = block.type === "image" && !noteImagePath(block.content) && !this.isUploading(blockId)
+        if (emptyImage) {
+            this._uploadImage(blockId, files[0])
+            files = files.slice(1)
+            if (!files.length) return
+        }
+        this.sync.undo.stopCapturing()
+        const ids = this.sync.undo.transact(() => {
+            const ids = []
+            let after = blockId
+            for (const [i, file] of files.entries()) {
+                if (i === 0 && block.type === "text" && !block.content) {
+                    block.type = "image"
+                    this.saveBlock(blockId)
+                    ids.push(blockId)
+                } else {
+                    ids.push(this.createBlock({type: "image", afterBlockId: after}, false))
+                }
+                after = ids[ids.length - 1]
+            }
+            return ids
+        })
+        this.sync.undo.stopCapturing()
+        this.reorderDOM()
+        ids.forEach((id, i) => id && this._uploadImage(id, files[i]))
+    }
+
+    /** Send an image, then make it the block's: its text becomes the stored image's path. */
+    async _uploadImage(blockId, file) {
+        (this._uploads ??= new Set()).add(blockId)
+        this._mountBlock(blockId)   // "Uploading…"
+        let path = null
+        try {
+            path = noteImagePath((await postFileAsDataUrl("upload_note_image?channel=" + this.channelId, file)).path)
+            if (!path) throw new Error("no image path in the answer")
+        } catch (e) {
+            console.warn("Image upload failed for", file.name, e)
+            // A full storage has its own message (handleQuotaError)
+            if (e.message !== "quota") window.uiAlert?.(_t("L'image n'a pas pu être envoyée."))
+        }
+        this._uploads.delete(blockId)
+        const block = this.blocks[blockId]
+        if (path && block?.type === "image" && !this.readOnly) {
+            block.content = path
+            this.sync.undo.stopCapturing()   // an undo step of its own
+            this.saveBlock(blockId)
+            this.sync.undo.stopCapturing()
+        }
+        this._mountBlock(blockId)
     }
 
     moveBlock(blockId, newPosition, newRowGroup = null, newColIndex = null, newSubPosition = null) {
@@ -502,6 +733,11 @@ class Editor {
     onDrop(blockId, event) {
         event.preventDefault()
 
+        // Images dropped from the computer: image blocks below this one. Not one dragged from this
+        // page (an image of the note, of a message…): the browser gives it as a file too
+        const images = [...(event.dataTransfer?.files || [])].filter(file => NOTE_IMAGE_TYPES.includes(file.type))
+        if (this.draggedBlockId === null && images.length && !window._dragFromPage) return this.insertImages(blockId, images)
+
         if (this.draggedBlockId === null || this.draggedBlockId === blockId) return
 
         const draggedBlock = this.blocks[this.draggedBlockId]
@@ -589,6 +825,12 @@ class Editor {
 
             const parser = new InitiatorParser(text)
             const parsedInitiator = parser.parse()
+            // A list starts when its marker's space is typed, there (like Notion): a markdown
+            // list already in a paragraph ("- a\n- b", older notes) stays as it is when edited
+            if (isList({type: parsedInitiator.initiator?.type}) && !(event.data === " "
+                && this.saveCursorPosition(event.currentTarget) === parsedInitiator.initiator.initiator.length)) {
+                parsedInitiator.initiator = null
+            }
             if (parsedInitiator.initiator) {
                 // The block is converted: the "/" menu shown above no longer applies
                 this._hideSlashMenu()
@@ -660,6 +902,8 @@ class Editor {
 
             if (persistTypeChange) {
                 this.saveBlock(blockId)
+                // A file block just made (the "/" menu, "/file"): pick its file right away
+                if (block.type === "file" && !fileLinkIds(block.content)) this.openFilePicker(blockId)
                 // A database / spreadsheet loads its own tables: the server creates them before
                 // the block mounts (and before others receive the type change)
                 if (block.type === "database" || block.type === "spreadsheet") {
@@ -702,6 +946,9 @@ class Editor {
             }
         }
 
+        if (isList(block) && this._onListKeyDown(block, event)) return
+        if (this._toWholeBlock(block, event)) return
+
         if (block.type === "text") {
             // The note keeps at least one block; the caret goes back to the line above
             if (event.key === "Backspace" && block.content === "" && Object.keys(this.blocks).length > 1) {
@@ -714,20 +961,8 @@ class Editor {
             return
         }
 
+        // An empty heading, small text…: back to a paragraph
         if(event.key === "Backspace" && block.content === ""){
-            if (block.type === "spreadsheet" && global.state.spreadsheetViews) {
-                delete global.state.spreadsheetViews[blockId]
-                if (global.state.activeSpreadsheetFormulaEditor?.blockUuid === blockId) {
-                    global.state.activeSpreadsheetFormulaEditor = null
-                }
-                if (global.state.spreadsheetSnapshots) {
-                    delete global.state.spreadsheetSnapshots[blockId]
-                }
-            }
-            if (block.type === "database" && global.state.databaseViews) {
-                delete global.state.databaseViews[blockId]
-            }
-
             block.content = blockTypes[block.type].initiator
             event.currentTarget.classList.remove("note-"+block.type)
             event.currentTarget.innerText = block.content
@@ -753,10 +988,258 @@ class Editor {
                 block.content = contentBeforeCursor
                 event.currentTarget.innerText = block.content
                 this.saveBlock(blockId)
-                return this.createBlock({type: "text", content: contentAfterCursor, afterBlockId: blockId})
+                // The next item of a list, at the same level; after anything else, a paragraph
+                return this.createBlock({type: isList(block) ? block.type : "text", content: contentAfterCursor,
+                                         afterBlockId: blockId, indent: block.indent})
             })
             if (newId) this.focusBlock(newId)
         }
+    }
+
+    /**
+     * Keys of a list item: Tab / Shift+Tab change its level; Enter on an empty item goes one
+     * level up, or out of the list at the first level; Backspace at its start makes it a
+     * paragraph. True if handled.
+     */
+    _onListKeyDown(block, event) {
+        const el = event.currentTarget
+        if (event.key === "Tab") {
+            event.preventDefault()
+            this.indentBlock(block.uuid, event.shiftKey ? -1 : 1)
+            return true
+        }
+        if (event.key === "Enter" && !event.shiftKey && block.content === "") {
+            event.preventDefault()
+            if ((block.indent || 0) > 0) this.indentBlock(block.uuid, -1)
+            else this._leaveList(block, el)
+            return true
+        }
+        if (event.key === "Backspace" && window.getSelection().isCollapsed && this.saveCursorPosition(el) === 0) {
+            event.preventDefault()
+            this._leaveList(block, el)
+            return true
+        }
+        return false
+    }
+
+    /** A list item becomes a paragraph, its text and caret kept. An undo step of its own. */
+    _leaveList(block, el) {
+        const caret = this.saveCursorPosition(el)
+        this.sync.undo.stopCapturing()
+        block.type = "text"
+        block.indent = 0
+        el.classList.remove(...LIST_KINDS.map(type => "note-" + type))
+        el.setAttribute("data-placeholder", this.placeholderFor("text"))
+        this._paintIndent(block.uuid)
+        this.saveBlock(block.uuid)
+        this.sync.undo.stopCapturing()
+        this.restoreCursorPosition(el, caret)
+    }
+
+    /**
+     * One level deeper (Tab) or up (Shift+Tab), with the items under it (the deeper ones
+     * right after it) moving along. Deeper only below an item of its level or the one above,
+     * like a sub-list: at most one level more than the item before it.
+     */
+    indentBlock(blockId, delta) {
+        const block = this.blocks[blockId]
+        if (!isList(block) || this.readOnly) return
+        const order = this.getRenderableRows().flatMap(row => row.columnsArray.flat())
+        const at = order.indexOf(block)
+        const previous = order[at - 1]
+        const level = block.indent || 0
+        const max = isList(previous) ? Math.min((previous.indent || 0) + 1, MAX_INDENT) : 0
+        const shift = Math.max(0, Math.min(level + delta, max)) - level
+        if (!shift) return
+        const moving = [block]
+        for (const next of order.slice(at + 1)) {
+            if (!isList(next) || (next.indent || 0) <= level) break
+            moving.push(next)
+        }
+        this.sync.undo.stopCapturing()
+        this.sync.undo.transact(() => {
+            for (const b of moving) {
+                b.indent = Math.max(0, Math.min((b.indent || 0) + shift, MAX_INDENT))
+                this.saveBlock(b.uuid)
+                this._paintIndent(b.uuid)
+            }
+        })
+        this.sync.undo.stopCapturing()
+        this.presence?.refresh()
+    }
+
+    /** A block's level on its DOM (style.css indents it and numbers the lists from it). */
+    _paintIndent(blockId) {
+        const el = document.querySelector(`#note-editor .block[data-block-id="${blockId}"]`)
+        if (el) el.dataset.indent = String(this.blocks[blockId]?.indent || 0)
+    }
+
+    // ── Whole blocks (images, files, tables…): selected, then deleted or left with the keys ──
+
+    /** A block taken as a whole, without a caret (its template draws it: image, file, database…). */
+    _isWhole(block) {
+        return Boolean(block && blockTypes[block.type]?.template)
+    }
+
+    /** The block before (step -1) or after (+1) this one in reading order, or null. */
+    _neighbourBlockId(blockId, step) {
+        const ids = [...document.querySelectorAll('#note-editor .block[data-block-id]')].map(el => el.dataset.blockId)
+        const at = ids.indexOf(blockId)
+        return at < 0 ? null : ids[at + step] ?? null
+    }
+
+    /**
+     * Select a whole block: it takes the keyboard focus, Backspace / Delete deletes it, Enter
+     * adds a line below it (or opens a file block's file), the arrows go to its neighbours.
+     */
+    selectBlock(blockId) {
+        if (this.readOnly || !this.blocks[blockId]) return
+        const el = document.querySelector(`#note-editor .block[data-block-id="${blockId}"]`)
+        if (!el) return
+        this._hideSlashMenu()
+        this.clearBlockSelection()
+        this.selectedBlockId = blockId
+        el.classList.add("selected")
+        el.tabIndex = -1
+        window.getSelection()?.removeAllRanges()
+        el.focus({preventScroll: true})
+        el.scrollIntoView({block: "nearest"})
+    }
+
+    clearBlockSelection() {
+        const blockId = this.selectedBlockId
+        if (!blockId) return
+        this.selectedBlockId = null
+        const el = document.querySelector(`#note-editor .block[data-block-id="${blockId}"]`)
+        el?.classList.remove("selected")
+        el?.removeAttribute("tabindex")
+    }
+
+    /** The caret goes to this block (its end, or its start), or it is selected if it is a whole one. */
+    _enterBlock(blockId, atStart = false) {
+        if (this._isWhole(this.blocks[blockId])) return this.selectBlock(blockId)
+        this.clearBlockSelection()
+        this.focusBlock(blockId)
+        const el = document.querySelector(`#note-editor .block[data-block-id="${blockId}"] > .content.editable-block`)
+        if (atStart && el && document.activeElement === el) this.restoreCursorPosition(el, 0)
+    }
+
+    /** Keys on a selected block (its own: not those typed in a cell, an item… inside it). */
+    onBlockKeyDown(blockId, event) {
+        if (event.target !== event.currentTarget || this.selectedBlockId !== blockId) return
+        if (event.ctrlKey || event.metaKey || event.altKey) return   // Ctrl+Z: the document's listener
+        const block = this.blocks[blockId]
+        if (event.key === "Backspace" || event.key === "Delete") {
+            event.preventDefault()
+            this.deleteSelectedBlock()
+        } else if (event.key === "Enter") {
+            event.preventDefault()
+            if (block?.type === "file" && fileLinkIds(block.content)) return this.openFileBlock(blockId)
+            this.clearBlockSelection()
+            const newId = this.createBlock({afterBlockId: blockId})
+            if (newId) this.focusBlock(newId)
+        } else if (event.key === "Escape") {
+            this.clearBlockSelection()
+            event.currentTarget.blur()
+        } else if (["ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"].includes(event.key)) {
+            event.preventDefault()
+            const back = event.key === "ArrowUp" || event.key === "ArrowLeft"
+            const next = this._neighbourBlockId(blockId, back ? -1 : 1)
+            if (next) this._enterBlock(next, !back)
+        }
+    }
+
+    /** Focus left the selected block (a click elsewhere or inside it, Tab…): no longer selected. */
+    onBlockBlur(blockId, event) {
+        if (this._quietFocus || event.target !== event.currentTarget) return   // moved by a live re-render
+        if (this.selectedBlockId === blockId) this.clearBlockSelection()
+    }
+
+    /** Delete the selected block, an undo step of its own: the caret goes to the block above (or below). */
+    deleteSelectedBlock() {
+        const blockId = this.selectedBlockId
+        if (!blockId || this.readOnly) return
+        const above = this._neighbourBlockId(blockId, -1)
+        const below = this._neighbourBlockId(blockId, 1)
+        this.clearBlockSelection()
+        this.sync.undo.stopCapturing()
+        this.deleteBlock(blockId)
+        this.sync.undo.stopCapturing()
+        if (!Object.keys(this.blocks).length) {   // the note keeps at least one block
+            const newId = this.createBlock({})
+            if (newId) this.focusBlock(newId)
+            return
+        }
+        const next = above ?? below
+        if (next) this._enterBlock(next, !above)
+    }
+
+    /**
+     * Keys that leave a text block for the whole block next to it, selected: Backspace at its
+     * start (an empty paragraph goes), Delete at its end, the arrows on its first / last line.
+     * True if handled.
+     */
+    _toWholeBlock(block, event) {
+        if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return false
+        const back = ["Backspace", "ArrowUp", "ArrowLeft"].includes(event.key)
+        if (!back && !["Delete", "ArrowDown", "ArrowRight"].includes(event.key)) return false
+        // An empty heading, small text…: Backspace makes it a paragraph first
+        if (event.key === "Backspace" && block.type !== "text" && block.content === "") return false
+        const neighbour = this._neighbourBlockId(block.uuid, back ? -1 : 1)
+        if (!this._isWhole(this.blocks[neighbour])) return false
+        const el = event.currentTarget
+        const selection = window.getSelection()
+        if (!selection.rangeCount || !selection.isCollapsed || !el.contains(selection.anchorNode)) return false
+        const vertical = event.key === "ArrowUp" || event.key === "ArrowDown"
+        if (vertical ? !this._caretOnEdgeLine(el, selection, back) : !this._caretAtEdge(el, selection, back)) return false
+        event.preventDefault()
+        if (event.key === "Backspace" && block.type === "text" && block.content === "") {
+            this.sync.undo.stopCapturing()
+            this.deleteBlock(block.uuid)
+        }
+        this.selectBlock(neighbour)
+        return true
+    }
+
+    /** No text between the caret and the start (back) or the end of the block. */
+    _caretAtEdge(el, selection, back) {
+        const range = selection.getRangeAt(0)
+        const rest = document.createRange()
+        rest.selectNodeContents(el)
+        if (back) rest.setEnd(range.startContainer, range.startOffset)
+        else rest.setStart(range.endContainer, range.endOffset)
+        return rest.toString().replace(/\n$/, "") === ""
+    }
+
+    /** The caret is on the block's first (back) or last line. */
+    _caretOnEdgeLine(el, selection, back) {
+        if (this._caretAtEdge(el, selection, back)) return true
+        const range = selection.getRangeAt(0).cloneRange()
+        range.collapse(true)
+        const caret = range.getClientRects()[0]
+        if (!caret) return true   // nothing laid out (an empty line)
+        const box = el.getBoundingClientRect()
+        return back ? caret.top - box.top < caret.height : box.bottom - caret.bottom < caret.height
+    }
+
+    /**
+     * A click in an image or a file block (capture: before the image / the card opens the file)
+     * selects the block. Their own controls (video, audio, the "add" buttons) still work;
+     * readers open the file as before.
+     */
+    onMediaClick(event) {
+        const media = event.target.closest?.('#note-editor [data-media-block]')
+        if (!media || this.readOnly || event.target.closest('video, audio, button, input')) return
+        event.preventDefault()
+        event.stopPropagation()   // nor does it reach closeOutside: done here
+        if (global.state.noteBlockMenu) this.closeBlockMenu()
+        this.selectBlock(media.dataset.mediaBlock)
+    }
+
+    /** Double click on a file block, or Enter on it selected: its file, in its drive. */
+    openFileBlock(blockId) {
+        const ids = fileLinkIds(this.blocks[blockId]?.content)
+        if (ids && !this.readOnly) window.openChannelMention(null, `drive:${ids[0]}/f:${ids[1]}`)
     }
 
     /** The closest text-like block above `blockId` in reading order, to move the caret to. */
@@ -858,7 +1341,11 @@ class Editor {
             { type: "heading2",    group: basic,    glyph: "H2", label: "Titre 2",         description: "Titre de section moyen", keywords: ["heading", "h2"], shortcut: "##" },
             { type: "heading3",    group: basic,    glyph: "H3", label: "Titre 3",         description: "Petit titre de section", keywords: ["heading", "h3"], shortcut: "###" },
             { type: "small",       group: basic,    glyph: "<small>Aa</small>", label: "Petit texte", description: "Texte discret, en plus petit", keywords: ["small"], shortcut: "-#" },
+            { type: "bullet",      group: basic,    glyph: "•",  label: "Liste à puces",   description: "Une liste simple", keywords: ["bullet", "list", "ul"], shortcut: "-" },
+            { type: "numbered",    group: basic,    glyph: "1.", label: "Liste numérotée", description: "Une liste ordonnée", keywords: ["numbered", "ordered", "list", "ol"], shortcut: "1." },
             { type: "checklist",   group: basic,    icon: "check",     label: "Liste de tâches", description: "Des tâches à cocher", keywords: ["checklist", "todo", "to-do"], shortcut: "/todo" },
+            { type: "image",       group: basic,    icon: "image",     label: "Image",            description: "Importer ou coller une image", keywords: ["image", "picture", "photo", "upload", "paste"], shortcut: "/image" },
+            { type: "file",        group: basic,    icon: "file",      label: "Fichier du Drive", description: "Un fichier ou une image d'un Drive, affiché dans la page", keywords: ["file", "drive", "image", "video", "pdf"], shortcut: "/file" },
             { type: "database",    group: advanced, icon: "list",      label: "Base de données", description: "Tableau ou galerie de fiches", keywords: ["database", "table", "db"], shortcut: "/database" },
             { type: "spreadsheet", group: advanced, icon: "grid",      label: "Tableur",         description: "Feuille de calcul avec formules", keywords: ["spreadsheet", "sheet"], shortcut: "/sheet" },
             { type: "showcase",    group: advanced, icon: "dashboard", label: "Indicateur",      description: "Mettre en avant une valeur ou une métrique", keywords: ["showcase", "metric"], shortcut: "/showcase" },
@@ -1110,6 +1597,7 @@ class Editor {
                     delete this.blocks[o]
                     structural = true
                     if (global.state.noteBlockMenu?.blockId === o) this.closeBlockMenu()
+                    if (this.selectedBlockId === o) this.selectedBlockId = null
                 }
                 continue
             }
@@ -1122,9 +1610,11 @@ class Editor {
             const typeChanged = local.type !== fresh.type
             const moved = LAYOUT_FIELDS.some(f => (local[f] ?? null) !== (fresh[f] ?? null))
             const edited = local.content !== fresh.content
+            const reindented = (local.indent || 0) !== (fresh.indent || 0)
             // In place: checklists, transport… keep a reference to the block
             Object.assign(local, fresh)
             if (!render) continue
+            if (reindented) this._paintIndent(o)
             if (typeChanged) relayout.add(o)
             if (typeChanged || moved) structural = true
             else if (edited) this._redrawBlock(o, caret)
@@ -1314,8 +1804,16 @@ if (!window._myceliumNoteMenuKeys) {
     }
     document.addEventListener('click', closeOutside)
     document.addEventListener('contextmenu', closeOutside)
+    // A drag started in the page (not from another app): its files are not new ones (onDrop)
+    document.addEventListener('dragstart', () => { window._dragFromPage = true }, true)
+    document.addEventListener('dragend', () => { window._dragFromPage = false }, true)
+    // After the drop's handlers (bubbling): a source removed meanwhile gets no dragend
+    document.addEventListener('drop', () => { window._dragFromPage = false })
+    // A click in an image / file block selects it (capture: before the file opens)
+    document.addEventListener('click', (event) => global.state.noteEditor?.onMediaClick(event), true)
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && global.state.noteBlockMenu) global.state.noteEditor?.closeBlockMenu()
+        if (event.key === 'Escape' && global.state.noteFilePicker) global.state.noteEditor?.closeFilePicker()
         // Ctrl+Z with the caret outside a block (after deleting one, a menu action…)
         const editor = global.state.noteEditor
         if (editor && global.state.activeChan?.type === 'note' && !event.defaultPrevented
@@ -1469,7 +1967,14 @@ const blockTypes = {
     "heading2": {placeholder: "Titre 2", initiator: "##"},
     "heading3": {placeholder: "Titre 3", initiator: "###"},
     "small": {placeholder: "Petit texte", initiator: "-#"},
+    "bullet": {placeholder: "Liste", initiator: "- "},
+    "numbered": {placeholder: "Liste", initiator: "1. "},
     "showcase": {placeholder: "Valeur ou formule", initiator: "/showcase"},
+    // Its text is a drive link ("<#drive:12/f:301>"), shown through drive_links: who can't see
+    // that drive gets "inaccessible item", never the file (static/drive-links.mjs)
+    "file": {template: (block) => fillWith("note-file-root", [block]), initiator: "/file"},
+    // An image stored with the note: whoever can read the note sees it
+    "image": {template: (block) => fillWith("note-image-root", [block]), initiator: "/image"},
     "checklist": {template: () => '<div class="note-checklist"></div>', initiator: "/todo"},
     "transport": {template: (block)=>{return fillWith("transport-root", [block])}, initiator: "/transport"},
     "synapse": {template: (block)=>{return getTemplate("synapse-root")}, initiator: "/synapse"},
@@ -1482,7 +1987,12 @@ const initiators = [
     {"type":"heading2", "initiator":"##"},
     {"type":"heading3", "initiator":"###"},
     {"type":"small", "initiator":"-#"},
+    {"type":"bullet", "initiator":"- "},
+    {"type":"bullet", "initiator":"* "},
+    {"type":"numbered", "initiator":"1. "},
     {"type":"showcase", "initiator":"/showcase"},
+    {"type":"file", "initiator":"/file"},
+    {"type":"image", "initiator":"/image"},
     {"type":"checklist", "initiator":"/todo"},
     {"type":"transport", "initiator":"/transport"},
     {"type":"synapse", "initiator":"/synapse"},
@@ -1499,9 +2009,11 @@ class InitiatorParser{
     }
 
     parse(){
+        // A space typed in a contenteditable may arrive as a no-break space: "- " either way
+        const plain = this.content.replaceAll(' ', ' ')
         for(let i = 0; i < this.content.length; i+=1) {
 
-            const char = this.content[i]
+            const char = plain[i]
             let newPossibleInitiators = []
             for (let j = 0; j < this.possibleInitiators.length; j += 1) {
                 const initiator = this.possibleInitiators[j]
@@ -1519,7 +2031,7 @@ class InitiatorParser{
             }else if (newPossibleInitiators.length === 1){
                 // Check if any of the possible initiators is fully matched
                     const initiator = newPossibleInitiators[0]
-                    if (this.content.startsWith(initiator.initiator)) {
+                    if (plain.startsWith(initiator.initiator)) {
                         return {initiator: newPossibleInitiators[0], content: this.stripContent(this.content.slice(initiator.initiator.length))}
                     }
             }

@@ -13,12 +13,15 @@
 import {FugueText, compressRanges} from "./fugue.mjs"
 
 /** Fields a block has in the CRDT (the server accepts no other). */
-export const BLOCK_FIELDS = ["type", "position", "row_group", "column_index", "sub_position", "deleted"]
+export const BLOCK_FIELDS = ["type", "position", "row_group", "column_index", "sub_position", "indent", "deleted"]
+/** What a field never set reads as (a field added after notes existed): setting it to that changes nothing. */
+export const FIELD_DEFAULTS = {indent: 0}
 
 // Per-operation limits, the same as the server's (routes/notes_sync.py): bigger edits are split
 export const MAX_INSERT = 100_000     // characters (UTF-16 units) of one insert
 export const MAX_RANGES = 1000        // id ranges of one delete
 export const MAX_DELETE_SPAN = 100_000   // clocks covered by the ranges of one delete
+export const MAX_INDENT = 5             // list item levels below the first one (indent 0 … 5)
 
 const isHighSurrogate = (s, i) => (s.charCodeAt(i) & 0xFC00) === 0xD800
 const isLowSurrogate = (s, i) => (s.charCodeAt(i) & 0xFC00) === 0xDC00

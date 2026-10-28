@@ -13,6 +13,7 @@ from message_helpers import (_enrichMessagesWithPolls, _enrichMessagesWithReacti
 from constants import USER_STORAGE_QUOTA, SERVER_STORAGE_QUOTA
 import permissions
 from routes.roles import notify_permissions_changed
+from routes.workspaces import release_note_images
 
 CHANNEL_TYPES = ("textual", "vocal", "drive", "note", "forum")
 CHANNEL_TABLES = ("textual_channel", "vocal_channel", "drive_channel", "notes_channel", "forum_channel")
@@ -419,6 +420,8 @@ def edit_server_channel(self, server_id, action="edit", field=None, value=None, 
                     for msg in self.db.getFilters("message", ["place", "=", post["id"]]):
                         self.deleteMessageWithCleanup(msg)
                     self.db.deleteSomething("forum_post", post["id"])
+            if channel_type == "note":
+                release_note_images(self, chan)   # its images (upload_note_image) and their quota
             place = chan["id"] if channel_type in ("textual", "forum") else None
             if channel_type == "vocal":
                 chat = self.db.getSomething("vocal_chat", chan["id"], "vocal")

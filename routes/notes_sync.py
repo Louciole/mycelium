@@ -44,7 +44,7 @@ from vesta import Server, HTTPError
 from routes.note_compaction import compact, utf16_len
 from routes.workspaces import (_UUID_RE, _BLOCK_TYPE_RE, _clean_block_fields, _check_parent_block,
                                _load_json_dict, _is_int, _is_number, ensure_block_resources,
-                               require_note_edit)
+                               require_note_edit, sweep_note_images, LIST_TYPES, MAX_INDENT)
 
 SERVER_CLIENT = 0          # the server's own operations (first import of a note, legacy save_block)
 MAX_CLIENT_ID = 2 ** 53 - 1
@@ -110,6 +110,7 @@ _OP_FIELDS = {
     "sub_position": _is_key,
     "row_group": lambda v: v is None or (isinstance(v, str) and bool(_UUID_RE.match(v))),
     "column_index": lambda v: _is_int(v, 0, 1000),
+    "indent": lambda v: _is_int(v, 0, MAX_INDENT),
     "deleted": lambda v: isinstance(v, bool),
 }
 
@@ -322,6 +323,9 @@ def projection_hash(row):
     a client whose own copy of the note differs writes the row again."""
     fields = [row.get("type"), row.get("pos_key"), row.get("row_group"), row.get("column_index"),
               row.get("sub_key"), bool(row.get("deleted")), row.get("content") or ""]
+    # Only when there is one: rows written before the indent existed keep their hash
+    if row.get("indent"):
+        fields.append(row["indent"])
     text = json.dumps(fields, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -334,6 +338,7 @@ def note_sync(self, channel, after=0):
     chan = self.require_channel_access(uid, channel, "note", "view")
     channel = int(chan["id"])
     after = int(after) if str(after).isdigit() else 0
+    sweep_note_images(self, chan)
     with self.db.pool.connection() as conn:
         if not conn.execute("SELECT 1 FROM note_head WHERE channel = %s", (channel,)).fetchone():
             with conn.transaction():
@@ -342,7 +347,7 @@ def note_sync(self, channel, after=0):
         head = conn.execute("SELECT seq FROM note_head WHERE channel = %s", (channel,)).fetchone()
         ops = _ops_after(conn, channel, after)
         proj = {row["uuid"]: [row["proj_seq"], projection_hash(row)] for row in conn.execute(
-            "SELECT uuid, proj_seq, type, pos_key, row_group, column_index, sub_key, deleted, content "
+            "SELECT uuid, proj_seq, type, pos_key, row_group, column_index, sub_key, deleted, content, indent "
             "FROM note_block WHERE channel = %s", (channel,)).fetchall()}
     return json.dumps({"id": channel, "name": chan["name"], "seq": head["seq"], "ops": ops, "proj": proj})
 
@@ -446,6 +451,10 @@ _PROJECTION_FIELDS = {
     "content": lambda v: _is_text(v, MAX_CONTENT),
     "deleted": lambda v: isinstance(v, bool),
 }
+# Written when sent (a client older than the field doesn't send it)
+_PROJECTION_OPTIONAL = {
+    "indent": lambda v: _is_int(v, 0, MAX_INDENT),
+}
 
 
 @Server.expose
@@ -462,7 +471,8 @@ def note_project(self, channel, seq, blocks):
     for block in blocks:
         if (not isinstance(block, dict) or not isinstance(block.get("uuid"), str) or not _UUID_RE.match(block["uuid"])
                 or set(_PROJECTION_FIELDS) - set(block)
-                or not all(valid(block[f]) for f, valid in _PROJECTION_FIELDS.items())):
+                or not all(valid(block[f]) for f, valid in _PROJECTION_FIELDS.items())
+                or not all(valid(block[f]) for f, valid in _PROJECTION_OPTIONAL.items() if f in block)):
             raise HTTPError(self.response, 400)
 
     resources = []
@@ -475,7 +485,7 @@ def note_project(self, channel, seq, blocks):
             if not conn.execute("SELECT 1 FROM note_op WHERE channel = %s AND obj = %s AND seq <= %s LIMIT 1",
                                 (channel, block["uuid"], seq)).fetchone():
                 continue
-            values = {f: block[f] for f in _PROJECTION_FIELDS}
+            values = {f: block[f] for f in (*_PROJECTION_FIELDS, *_PROJECTION_OPTIONAL) if f in block}
             written = conn.execute(
                 "UPDATE note_block SET " + ", ".join(f"{f} = %s" for f in values) + ", proj_seq = %s "
                 "WHERE uuid = %s AND channel = %s AND proj_seq <= %s",
@@ -550,6 +560,10 @@ def save_block(self, channel, block, op="edit", client_id=None):
                 ("type", fields["type"]), ("position", pos_key), ("row_group", row_group),
                 ("column_index", fields.get("column_index") or 0), ("sub_position", key_after(None)),
                 ("deleted", False))]
+            if fields["type"] not in LIST_TYPES:
+                fields.pop("indent", None)   # only list items have a level
+            if fields.get("indent"):
+                ops.append({"o": block["uuid"], "t": "set", "f": "indent", "v": fields["indent"]})
             if fields.get("content"):
                 ops.append({"o": block["uuid"], "t": "ins", "p": None, "s": "R", "x": fields["content"]})
             head = _append_server_ops(conn, channel, head, ops)
@@ -573,12 +587,17 @@ def save_block(self, channel, block, op="edit", client_id=None):
             # in the page is the CRDT's (keys): a float position here would be overwritten
             changes = {k: v for k, v in _clean_block_fields(self, block).items()
                        if v != row.get(k) and k not in ("position", "sub_position")}
+            # Only list items have a level: a block that isn't one (any more) has none
+            if changes.get("type", row["type"]) not in LIST_TYPES:
+                changes.pop("indent", None)
+                if row.get("indent"):
+                    changes["indent"] = 0
             if changes.get("parent_block") is not None:
                 if int(changes["parent_block"]) == int(row["id"]):
                     raise HTTPError(self.response, 400)
                 _check_parent_block(self, changes["parent_block"], channel)
             ops = [{"o": row["uuid"], "t": "set", "f": f, "v": changes[f]}
-                   for f in ("type", "row_group", "column_index") if f in changes and _OP_FIELDS[f](changes[f])]
+                   for f in ("type", "row_group", "column_index", "indent") if f in changes and _OP_FIELDS[f](changes[f])]
             if "content" in changes:
                 # Replace the whole text: every character typed so far goes, the new text comes
                 ranges = [[r["client_id"], r["clock"], r["clock"] + utf16_len(r["op"]["x"]) - 1]

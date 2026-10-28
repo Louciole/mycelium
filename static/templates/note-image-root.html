@@ -1,0 +1,12 @@
+<div class="note-file note-image" data-media-block="${element.uuid}">
+    ${noteImagePath(element.content) ? `<figure class="note-file-media">
+        <img src="/static/attachments/${escapeHTML(noteImagePath(element.content))}" alt="" loading="lazy" draggable="false"/>
+    </figure>`
+    : global.state.noteEditor?.isUploading(element.uuid) ? `<div class="note-file-pending note-image-uploading">${_t('Envoi…')}</div>`
+    : global.state.noteEditor?.readOnly ? ''
+    : `<button type="button" class="note-file-empty note-image-drop" onclick="global.state.noteEditor.pickImage('${element.uuid}')"
+            ondragover="this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="this.classList.remove('dragover')">
+        <img class="icon" src="/static/icons/material/image.svg" alt=""/>
+        <span>${_t('Dépose une image, ou clique pour en ajouter une')}</span>
+    </button>`}
+</div>

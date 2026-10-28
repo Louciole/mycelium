@@ -70,8 +70,17 @@ function newServer(){
 }
 window.newServer = newServer
 
+// The boot's first answers (or their failure): the initial route waits for them before the
+// loading screen goes (main.mjs markReady). Settled first thing in the handler: the route runs
+// in a later microtask, once the data is in global. bootServers resolves with false when the
+// server can't be reached (offline): main.mjs then shows the UI at once.
+let serversAnswered, convsAnswered
+export const bootServers = new Promise(resolve => serversAnswered = resolve)
+export const bootConvs = new Promise(resolve => convsAnswered = resolve)
+
 export function loadServers(){
     const onload = function() {
+        serversAnswered(true)
         const response = JSON.parse(this.responseText)
         // global.servers is a dict keyed by server id (every writer uses
         // global.servers[id] = ...). get_user_servers returns an array, so
@@ -82,7 +91,7 @@ export function loadServers(){
         global.servers = servers
         setElement(`global.servers`, servers)
     };
-    xhr("get_user_servers",onload)
+    xhr("get_user_servers",onload).onerror = () => serversAnswered(false)
 }
 
 export function loadConvs(renderOnly = false){
@@ -93,7 +102,9 @@ export function loadConvs(renderOnly = false){
         // server selector is already there and this async callback would race it.
         // Same for the discover page, which owns sec-selector while it is open.
         if (global.state.isServer || document.getElementById('discover-nav')) return
-        goTo('sec-column',"column-perso",undefined, true,()=>{goTo('sec-selector',"privateMessage")})
+        // Synchronous to the end: an async privateMessage would land after a navigation made
+        // meanwhile (a server, the discover page) and replace it
+        goTo('sec-column',"column-perso",undefined, true,()=>{goTo('sec-selector',"privateMessage", undefined, false)})
     }
 
     // Offline (or an explicit local-first paint from a snapshot): the convs are
@@ -101,10 +112,12 @@ export function loadConvs(renderOnly = false){
     // never paints offline, since the network onload below never fires.
     if (global.state.offline || renderOnly) {
         render()
+        convsAnswered()
         return
     }
 
     const onload = function() {
+        convsAnswered()
         const keys = JSON.parse(this.responseText)
         const liveIds = new Set(keys.map(k => k.id.toString()))
         for(let key of keys){
@@ -137,7 +150,7 @@ export function loadConvs(renderOnly = false){
 
         render()
     };
-    xhr("get_user_convs",onload)
+    xhr("get_user_convs",onload).onerror = () => convsAnswered()
 }
 
 export function bumpConvActivity(convId){
@@ -1918,7 +1931,7 @@ async function leaveServer(){
     if (!(await uiConfirm(_t("Quitter ce serveur ?"), {danger: true, confirmLabel: _t("Quitter le serveur")}))) return
     const onload = function() {
         deleteElementDict("global.servers", serverId)
-        goTo('sec-column', "column-perso", undefined, true, () => { goTo('sec-selector', "privateMessage") })
+        goTo('sec-column', "column-perso", undefined, true, () => { goTo('sec-selector', "privateMessage", undefined, false) })
     }
     xhr("leave_server?server_id=".concat(serverId), onload, "POST")
 }

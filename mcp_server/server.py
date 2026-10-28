@@ -105,14 +105,16 @@ def list_note_channels(server_id: int) -> dict:
 
 @mcp.tool()
 def read_note(channel_id: int) -> dict:
-    """Read a note channel's content as an ordered list of blocks (uuid, type, text)."""
+    """Read a note channel's content as an ordered list of blocks (uuid, type, text; list
+    items — types bullet / numbered — also have their level, indent 0 … 5). A file block's
+    content is a drive link: "<#drive:12/f:301>"."""
     content = client.call("get_note_content", channel_id=channel_id)
     blocks = sorted(content.get("blocks", []), key=lambda b: b.get("position", 0))
     return {
         "name": content.get("name"),
         "channel_id": channel_id,
-        "blocks": [{"uuid": b.get("uuid"), "type": b.get("type"),
-                    "content": b.get("content", "")} for b in blocks],
+        "blocks": [{"uuid": b.get("uuid"), "type": b.get("type"), "content": b.get("content", ""),
+                    **({"indent": b["indent"]} if b.get("indent") else {})} for b in blocks],
     }
 
 
@@ -129,8 +131,10 @@ def create_note_channel(server_id: int, name: str = "new note") -> dict:
 
 
 @mcp.tool()
-def append_block(channel_id: int, content: str, type: str = "text") -> dict:
-    """Append a block to a note. `type` is e.g. text, h1, h2, h3, quote, code, bullet.
+def append_block(channel_id: int, content: str, type: str = "text", indent: int = 0) -> dict:
+    """Append a block to a note. `type` is text, heading1, heading2, heading3, small, bullet,
+    numbered (one block per list item, `indent` 0 … 5 for nested items) or checklist
+    (lines "[ ] task" / "[x] done"). The content is markdown.
 
     Use this to write analysis or summaries back into a note.
     """
@@ -138,6 +142,8 @@ def append_block(channel_id: int, content: str, type: str = "text") -> dict:
     positions = [b.get("position", 0) for b in note.get("blocks", [])]
     position = (max(positions) + 1) if positions else 0.1
     block = {"type": type, "uuid": str(uuid.uuid4()), "content": content, "position": position}
+    if indent:
+        block["indent"] = indent
     client.call("save_block", channel=channel_id, block=json.dumps(block), op="create")
     return {"uuid": block["uuid"], "position": position}
 

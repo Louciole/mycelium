@@ -309,7 +309,7 @@ function onRemovedFromServer(content) {
     if (global.servers?.[sid]) deleteElementDict("global.servers", sid);
     if (global.state.currentServer?.id === sid) {
         global.state.isServer = false;
-        window.goTo('sec-column', "column-perso", undefined, true, () => { window.goTo('sec-selector', "privateMessage") });
+        window.goTo('sec-column', "column-perso", undefined, true, () => { window.goTo('sec-selector', "privateMessage", undefined, false) });
     }
     const msg = content.kind === "ban" ? _t("Vous avez été banni·e d'un serveur.") : _t("Vous avez été expulsé·e d'un serveur.");
     uiAlert(content.reason ? msg + "\n" + _t("Raison :") + " " + content.reason : msg);

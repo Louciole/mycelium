@@ -4,8 +4,9 @@
 // takes back one's own changes, everyone sees where the others are, and the server refuses
 // what a member may not write (a timed-out member included: they still read the note live).
 import { test, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import {
-    api, enc, setupServer, openServer, createChannel, setChannelPerm as setPerm,
+    api, json, enc, setupServer, openServer, createChannel, setChannelPerm as setPerm,
 } from './helpers/permissionHelpers.mjs';
 import {
     openNoteChannel, waitForNoteChannelLoaded, createSpreadsheetBlock, waitForSpreadsheetLoaded,
@@ -107,6 +108,9 @@ test.describe('Notes - collaboration', () => {
         const general = await b.page.evaluate(() => Math.min(...window.global.state.currentServer.dirs.channels.map((x) => Number(x.id))));
         await b.page.locator(`#channel-conv-${general}`).click();
         await b.page.waitForFunction((g) => Number(window.global.state.activeChan?.id) === g, general);
+        // save_block edits the note_block row, which the owner's tab writes back 1.5 s after its last edit
+        await expect.poll(async () => (await json(s.owner, `/get_note_content?channel_id=${chan}`)).blocks
+            .some((bl) => bl.uuid === first), { timeout: 10000 }).toBe(true);
         await api(s.owner, `/save_block?channel=${chan}&op=edit&block=${enc(JSON.stringify({ uuid: first, content: 'Edited while away' }))}`);
         await openNoteChannel(b.page, chan);
         await expect(b.page.locator(`[data-block-id="${first}"] .content`)).toHaveText('Edited while away', { timeout: 5000 });
@@ -390,7 +394,7 @@ test.describe('Notes - collaboration', () => {
         const refused = [403, true];
         expect(await post(`/note_push?channel=${chan}`, { client: 5151, ops: [{ c: 5151, k: 1, o: text, t: 'ins', p: null, s: 'R', x: 'x' }] })).toEqual(refused);
         expect(await post(`/note_project?channel=${chan}`, { seq: 1, blocks: [] })).toEqual(refused);
-        expect(await post(`/note_ensure_block?channel=${chan}&uuid=${crypto.randomUUID()}&type=spreadsheet`)).toEqual(refused);
+        expect(await post(`/note_ensure_block?channel=${chan}&uuid=${randomUUID()}&type=spreadsheet`)).toEqual(refused);
         expect(await post(`/save_block?channel=${chan}&op=edit&block=${enc(JSON.stringify({ uuid: text, content: 'hacked' }))}`)).toEqual(refused);
         expect(await post(`/save_spreadsheet_cell?channel=${chan}&spreadsheet_id=${sheetId}&cell_id=A1&value=hacked`)).toEqual(refused);
 
@@ -427,7 +431,7 @@ test.describe('Notes - collaboration', () => {
         await setPerm(s.owner, chan, `accountId=${b.id}`, 'edit-notes', 'allow', 'note');
         await setPerm(s.owner, chan, `accountId=${c.id}`, 'edit-notes', 'deny', 'note');
         await openNote(s.owner, s.serverId, chan);
-        const o = crypto.randomUUID();
+        const o = randomUUID();
         const set = (client, k, extra = {}) => ({ c: client, k, o, t: 'set', f: 'type', v: 'text', ...extra });
 
         // Read-only member

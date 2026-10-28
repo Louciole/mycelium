@@ -3,6 +3,7 @@
 // note_block. Only the whitelisted, validated columns may be set, and every reference
 // (parent block, database block) must stay inside the notes channel being written.
 import { test, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { loginUser } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import { createServerViaUi } from './helpers/serverHelpers.mjs';
@@ -39,7 +40,7 @@ test.describe('Notes: client-forged block fields', () => {
         const notesA = await createNotesChannel(page, serverId);
         const notesB = await createNotesChannel(page, serverId);
 
-        const textBlock = (extra = {}) => ({ type: 'text', content: 'hi', uuid: crypto.randomUUID(), position: 1, ...extra });
+        const textBlock = (extra = {}) => ({ type: 'text', content: 'hi', uuid: randomUUID(), position: 1, ...extra });
 
         // A block in B to point at
         const inB = textBlock();
@@ -93,7 +94,7 @@ test.describe('Notes: client-forged block fields', () => {
         const notesB = await createNotesChannel(page, serverId);
 
         // A database block in B (save_block auto-creates its note_database)
-        const dbBlock = { type: 'database', content: '', uuid: crypto.randomUUID(), position: 1 };
+        const dbBlock = { type: 'database', content: '', uuid: randomUUID(), position: 1 };
         expect(await saveBlock(page, notesB, dbBlock)).toBe(200);
         const content = (chan) => call(page, `/get_database_content?channel=${chan}&block_uuid=${dbBlock.uuid}`);
         const inB = await content(notesB);

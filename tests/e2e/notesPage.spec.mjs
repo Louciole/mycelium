@@ -99,13 +99,20 @@ test.describe('Notes - page editor', () => {
         });
         expect(lossy).toEqual([]);
 
-        // Typing after a list marker used to add a line per keystroke
+        // Typing after a markdown list marker in a paragraph used to add a line per keystroke.
+        // "- " typed at the start makes a list item (notesListsFiles.spec.mjs): the paragraph
+        // gets its marker by removing what was before it, and stays a paragraph
         const uuid = await getFirstBlockOfType(page, channelId, 'text');
         const el = page.locator(`[data-block-id="${uuid}"] .content`);
         await el.click();
-        await page.keyboard.type('- item sddsd');
+        await page.keyboard.type('x- item sdd');
+        await page.keyboard.press('Home');
+        await page.keyboard.press('Delete');
+        await page.keyboard.press('End');
+        await page.keyboard.type('sd');
         await expect.poll(() => page.evaluate(([id, u]) => window.global.notes[id].blocks[u].content, [channelId, uuid])).toBe('- item sddsd');
         await expect(el).toHaveText('- item sddsd');
+        expect(await page.evaluate(([id, u]) => window.global.notes[id].blocks[u].type, [channelId, uuid])).toBe('text');
         // Typed text shows as text, never as HTML
         await page.keyboard.type(' <b>x</b>');
         await page.locator('#note-page-title').click();   // rendered view

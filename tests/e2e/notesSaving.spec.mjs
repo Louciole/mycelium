@@ -4,6 +4,7 @@
 // while the server can't be reached survive a reload (IndexedDB) and are sent afterwards;
 // note_block (search, MCP) is written back by the clients.
 import { test, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { loginUser } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import { createServerViaUi, openServerFromSidebarById } from './helpers/serverHelpers.mjs';
@@ -74,7 +75,7 @@ test.describe('Notes - saving', () => {
 
     test('the GET query-string form still works (MCP server), and shows up live', async ({ page }) => {
         const { channelId } = await openFreshNote(page, 'e2enoteget');
-        const uuid = crypto.randomUUID();
+        const uuid = randomUUID();
         const block = encodeURIComponent(JSON.stringify({ uuid, type: 'text', content: 'from mcp', position: 5 }));
         const code = await page.evaluate((url) => fetch(url).then((r) => r.status),
             `/save_block?channel=${channelId}&op=create&block=${block}`);

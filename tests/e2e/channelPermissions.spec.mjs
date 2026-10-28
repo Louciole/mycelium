@@ -3,6 +3,7 @@
 // (routes/roles.py edit_channel_permissions, permissions.channel_rights, static/channel-permissions.mjs),
 // live updates over the WebSocket and the actions hidden where the server would refuse them (static/access.mjs).
 import { test, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { openServerSettings } from './helpers/serverHelpers.mjs';
 import {
     api, status, json, enc, setPerms, giveRole, createRole, setupServer, openServer,
@@ -179,7 +180,7 @@ test.describe('Channel permissions', () => {
         const sid = s.serverId;
         const notesA = await createChannel(s.owner, sid, 'note');
         const notesB = await createChannel(s.owner, sid, 'note');
-        const block = () => enc(JSON.stringify({ type: 'text', content: 'hi', uuid: crypto.randomUUID(), position: 1 }));
+        const block = () => enc(JSON.stringify({ type: 'text', content: 'hi', uuid: randomUUID(), position: 1 }));
         const write = (notes) => status(b.page, `/save_block?channel=${notesA === notes ? notesA : notesB}&op=create&block=${block()}`);
 
         expect(await write(notesA)).toBe(403);
@@ -399,7 +400,7 @@ test.describe('Channel permissions', () => {
         const forum = await createChannel(s.owner, sid, 'forum');
         const drive = await createChannel(s.owner, sid, 'drive');
         const notes = await createChannel(s.owner, sid, 'note');
-        const block = enc(JSON.stringify({ type: 'text', content: 'owner text', uuid: crypto.randomUUID(), position: 1 }));
+        const block = enc(JSON.stringify({ type: 'text', content: 'owner text', uuid: randomUUID(), position: 1 }));
         await api(s.owner, `/save_block?channel=${notes}&op=create&block=${block}`);
         const post = await s.owner.evaluate(async (f) => (await import('/static/crud.mjs')).createForumPost(f, 'Owner post', 'hello'), forum);
         await setPerm(s.owner, forum, 'roleId=everyone', 'send-messages', 'deny', 'forum');

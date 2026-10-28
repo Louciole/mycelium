@@ -3,9 +3,13 @@
 Endpoints take the live Mycelium instance as ``self``; shared helpers remain on
 the class (see server.py).
 """
+import base64
+import hashlib
 import json
 import math
+import os
 import re
+import time
 
 from vesta import Server, HTTPError
 
@@ -815,6 +819,10 @@ def _is_short_str(value, max_len):
     return isinstance(value, str) and len(value) <= max_len
 
 
+# List items (static/workspaces/notes.mjs LIST_KINDS): only they have a level, 0 … MAX_INDENT
+LIST_TYPES = ("bullet", "numbered")
+MAX_INDENT = 5             # static/crdt/doc.mjs MAX_INDENT
+
 # note_block columns a client may set, with their validators. id and channel are
 # server-owned; uuid is only taken on create (it is the block's key afterwards).
 _BLOCK_FIELDS = {
@@ -825,6 +833,7 @@ _BLOCK_FIELDS = {
     "column_index": lambda v: v is None or _is_int(v, 0, 1000),
     "sub_position": lambda v: v is None or _is_number(v),
     "parent_block": lambda v: v is None or _is_int(v, 1, 2**63 - 1),
+    "indent": lambda v: _is_int(v, 0, MAX_INDENT),
 }
 
 
@@ -883,6 +892,104 @@ def require_note_edit(self, uid, channel):
 def _checkDatabaseAccess(self, uid, channel):
     """Check that user may edit a notes channel's content. Returns server_id or raises."""
     return require_note_edit(self, uid, channel)["server"]
+
+
+# Images pasted or uploaded into a note ("image" blocks, static/workspaces/notes.mjs): stored with
+# the note like chat attachments (not in a drive), on the server's quota. No SVG: opened on its
+# own, it would run its scripts on this origin.
+NOTE_IMAGE_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp",
+                    "image/avif": "avif"}
+MAX_NOTE_IMAGE = 20 * 1024 * 1024   # bytes
+_IMAGE_URI_RE = re.compile(r"^data:([a-z]+/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$")
+# An image no block shows any more is kept this long (seconds): an undo, or a tab that still has
+# its block, can bring it back. Its file's time is its last upload
+NOTE_IMAGE_GRACE = 30 * 24 * 3600
+NOTE_IMAGE_SWEEP = 24 * 3600   # seconds between two sweeps of a note's images (per process)
+_note_image_sweeps = {}        # channel -> time of its last sweep
+
+
+def _note_image_dir(self, channel_id):
+    """Where a note's images are (saveFile category note_<channel>, under static/attachments/)."""
+    return os.path.join(self.path, "static", "attachments", f"note_{int(channel_id)}")
+
+
+@Server.expose
+def upload_note_image(self, channel, file):
+    """Store an image for a note (JSON body {channel, file: data URI}). Answer: {path}, under
+    /static/attachments/ — the image block's text. Files are named by their content: an image
+    the note already has is not stored, nor counted in the quota, twice."""
+    uid = self.getUser()
+    chan = require_note_edit(self, uid, channel)
+    match = _IMAGE_URI_RE.match(file) if isinstance(file, str) else None
+    if not match or match.group(1) not in NOTE_IMAGE_TYPES:
+        raise HTTPError(self.response, 400, "not an image")
+    if self._estimateBase64Size(file) > MAX_NOTE_IMAGE:
+        raise HTTPError(self.response, 400, "image too large")
+    data = base64.b64decode(match.group(2))
+    ext = NOTE_IMAGE_TYPES[match.group(1)]
+    existing = os.path.join(_note_image_dir(self, chan["id"]), f"{hashlib.sha256(data).hexdigest()}.{ext}")
+    if os.path.isfile(existing):
+        os.utime(existing)   # shown again: its grace starts over (sweep_note_images)
+        return json.dumps({"path": f"note_{int(chan['id'])}/{os.path.basename(existing)}"})
+    sweep_note_images(self, chan)   # what it frees counts for this upload
+    self._checkQuota(chan["server"], len(data))
+    path = self.saveFile(file, ext=ext, category=f"note_{int(chan['id'])}")
+    self._adjustStorage(chan["server"], len(data))
+    return json.dumps({"path": path})
+
+
+def _remove_note_images(self, chan, names):
+    """Delete these files of a note's images and give their size back to its server's quota."""
+    folder = _note_image_dir(self, chan["id"])
+    freed = 0
+    for name in names:
+        path = os.path.join(folder, name)
+        try:
+            size = os.path.getsize(path)
+            os.remove(path)
+            freed += size
+        except OSError as e:
+            print(f"Error deleting note image {path}: {e}")
+    self._adjustStorage(chan["server"], -freed)
+
+
+def sweep_note_images(self, chan):
+    """Delete the images of a note that no block shows any more, and give their size back:
+    those last uploaded more than NOTE_IMAGE_GRACE ago that no block has, nor a block deleted
+    within that time (undoing the deletion brings it back). At most once per NOTE_IMAGE_SWEEP
+    per note (note_sync, upload_note_image)."""
+    now = time.time()
+    if now - _note_image_sweeps.get(chan["id"], 0) < NOTE_IMAGE_SWEEP:
+        return
+    _note_image_sweeps[chan["id"]] = now
+    try:
+        with os.scandir(_note_image_dir(self, chan["id"])) as entries:
+            old = {e.name for e in entries if e.is_file() and e.stat().st_mtime < now - NOTE_IMAGE_GRACE}
+    except OSError:   # no image ever stored with it
+        return
+    if not old:
+        return
+    prefix = f"note_{int(chan['id'])}/"
+    with self.db.pool.connection() as conn:
+        shown = {row["content"][len(prefix):] for row in conn.execute(
+            "SELECT b.content FROM note_block b WHERE b.channel = %(channel)s AND starts_with(b.content, %(prefix)s) "
+            "AND (NOT b.deleted OR EXISTS (SELECT 1 FROM note_op o WHERE o.channel = b.channel AND o.obj = b.uuid "
+            "AND o.created_at > now() - make_interval(secs => %(grace)s)))",
+            {"channel": int(chan["id"]), "prefix": prefix, "grace": NOTE_IMAGE_GRACE}).fetchall()}
+    _remove_note_images(self, chan, old - shown)
+
+
+def release_note_images(self, chan):
+    """A note channel is deleted: its images go, their size is given back."""
+    try:
+        names = [e.name for e in os.scandir(_note_image_dir(self, chan["id"])) if e.is_file()]
+    except OSError:
+        return
+    _remove_note_images(self, chan, names)
+    try:
+        os.rmdir(_note_image_dir(self, chan["id"]))
+    except OSError:
+        pass
 
 
 def _checkConvAccess(self, uid, conv_id):

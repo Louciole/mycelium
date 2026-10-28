@@ -17,7 +17,7 @@
  *   opened, a row whose fingerprint differs from this tab's copy is written again.
  */
 import {xhr} from "../framework/templating.mjs"
-import {NoteDoc, BLOCK_FIELDS, MAX_INSERT, MAX_RANGES, MAX_DELETE_SPAN} from "../crdt/doc.mjs"
+import {NoteDoc, BLOCK_FIELDS, FIELD_DEFAULTS, MAX_INSERT, MAX_RANGES, MAX_DELETE_SPAN, MAX_INDENT} from "../crdt/doc.mjs"
 import {UndoManager} from "../crdt/undo.mjs"
 import {keyToFloat, isKey} from "../crdt/keys.mjs"
 
@@ -260,7 +260,7 @@ export class NoteSync {
         const ops = []
         for (const f of BLOCK_FIELDS) {
             const value = f === "deleted" ? false : normalizeField(f, block[f])
-            if (value === undefined || this.doc.get(o, f) === value) continue
+            if (value === undefined || (this.doc.get(o, f) ?? FIELD_DEFAULTS[f]) === value) continue
             const before = this.doc.objects.get(o)?.fields.get(f)
             const op = this.doc.set(o, f, value)
             this.undo.record(op, before)
@@ -459,7 +459,7 @@ export class NoteSync {
             uuid: o, type: block.type, position: keyToFloat(block.position), pos_key: block.position,
             row_group: block.row_group ?? null, column_index: block.column_index ?? 0,
             sub_position: keyToFloat(block.sub_position), sub_key: isKey(block.sub_position) ? block.sub_position : "V",
-            content: block.content, deleted: block.deleted,
+            content: block.content, deleted: block.deleted, indent: block.indent,
         }
     }
 
@@ -514,6 +514,7 @@ export class NoteSync {
         for (const f of BLOCK_FIELDS) if (f !== "deleted") block[f] = this.doc.get(o, f)
         block.row_group ??= o
         block.column_index ??= 0
+        block.indent ??= 0
         return block
     }
 
@@ -703,13 +704,19 @@ function normalizeField(f, value) {
     if (f === "position" || f === "sub_position") return isKey(value) ? value : undefined
     if (f === "column_index") return Number.isInteger(value) && value >= 0 ? value : 0
     if (f === "row_group") return value ?? null
+    if (f === "indent") return Number.isInteger(value) && value >= 0 ? Math.min(value, MAX_INDENT) : undefined
     return value ?? undefined
 }
 
-/** Fingerprint of a note_block row, the same as routes/notes_sync.py projection_hash. */
+/**
+ * Fingerprint of a note_block row, the same as routes/notes_sync.py projection_hash. The
+ * indent counts only when there is one: rows written before it existed keep their hash.
+ */
 export async function projectionHash(row) {
-    const text = JSON.stringify([row.type, row.pos_key, row.row_group, row.column_index, row.sub_key,
-                                 Boolean(row.deleted), row.content || ""])
+    const fields = [row.type, row.pos_key, row.row_group, row.column_index, row.sub_key,
+                    Boolean(row.deleted), row.content || ""]
+    if (row.indent) fields.push(row.indent)
+    const text = JSON.stringify(fields)
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
     return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("")
 }

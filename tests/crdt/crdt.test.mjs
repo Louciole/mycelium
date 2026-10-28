@@ -2,7 +2,7 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 import {keyBetween, isKey, keyToFloat} from "../../static/crdt/keys.mjs"
-import {NoteDoc} from "../../static/crdt/doc.mjs"
+import {NoteDoc, FIELD_DEFAULTS} from "../../static/crdt/doc.mjs"
 import {UndoManager} from "../../static/crdt/undo.mjs"
 
 // Small deterministic PRNG: a failing seed can be replayed
@@ -248,6 +248,19 @@ test("undo never overwrites a field someone changed after me; it undoes a block 
     assert.equal(a.get(o, "deleted"), true)
     undo.redo()
     assert.equal(a.get(o, "deleted"), false)
+})
+
+test("undo of a field never set before (a list item's first indent) puts it back to its default", () => {
+    const o = OBJECTS[0]
+    const a = new NoteDoc(1)
+    const undo = new UndoManager(a)
+    a.set(o, "type", "bullet")
+    const op = a.set(o, "indent", 1)
+    undo.record(op, undefined)
+    undo.undo()
+    assert.equal(a.get(o, "indent"), FIELD_DEFAULTS.indent)
+    undo.redo()
+    assert.equal(a.get(o, "indent"), 1)
 })
 
 // ── Review fixes (2026-10-22) ────────────────────────────────────────────────

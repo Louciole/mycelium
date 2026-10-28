@@ -1,0 +1,28 @@
+<div id="note-file-picker" class="drive-overlay" onclick="if (event.target === this) global.state.noteEditor?.closeFilePicker()">
+<div class="drive-dialog note-file-picker" role="dialog" aria-modal="true" aria-label="${_t('Choisir un fichier')}">
+    <div class="drive-dialog-title">${_t('Choisir un fichier')}</div>
+    <div class="drive-dialog-crumbs">${element.crumbs.map((c, i) => i === element.crumbs.length - 1
+        ? `<b>${escapeHTML(c.name)}</b>`
+        : `<button type="button" class="drive-crumb" onclick="global.state.noteEditor.browseFilePicker(${c.drive ?? 'null'}, ${c.id ?? 'null'})">${escapeHTML(c.name)}</button><span class="drive-crumb-sep">›</span>`).join('')}</div>
+    <div class="drive-dialog-list">
+        ${element.loading ? `<div class="drive-empty">${_t('Loading…')}</div>`
+        : element.drives ? (element.drives.length ? element.drives.map(d => `<button type="button" class="drive-dialog-folder"
+                onclick="global.state.noteEditor.browseFilePicker(${d.id}, null)">
+                <img class="icon" src="/static/icons/material/folder.svg" alt=""/>${escapeHTML(d.name)}</button>`).join('')
+            : `<div class="drive-empty">${_t('Aucun Drive dans ce serveur')}</div>`)
+        : element.folders.length || element.files.length ? element.folders.map(f => `<button type="button" class="drive-dialog-folder"
+                onclick="global.state.noteEditor.browseFilePicker(${element.drive}, ${f.id})">
+                <img class="icon" src="/static/icons/material/folder.svg" alt=""/>${escapeHTML(f.foldername)}</button>`).join('')
+            + element.files.map(f => `<button type="button" class="drive-dialog-folder note-file-choice" data-file-id="${f.id}"
+                onclick="global.state.noteEditor.chooseFile(${element.drive}, ${f.id})">
+                ${driveKindBadge(f.filename)}<span>${escapeHTML(f.filename)}</span></button>`).join('')
+        : `<div class="drive-empty">${_t('Ce dossier est vide')}</div>`}
+    </div>
+    <div class="drive-dialog-actions">
+        <button type="button" class="drive-bar-btn" onclick="global.state.noteEditor.closeFilePicker()">${_t('Cancel')}</button>
+        ${element.canUpload ? `<button type="button" class="drive-new-btn" ${element.uploading ? 'disabled' : ''}
+            onclick="document.getElementById('note-file-input').click()">${element.uploading ? _t('Envoi…') : _t('Importer ici')}</button>
+        <input type="file" id="note-file-input" hidden onchange="global.state.noteEditor.uploadFile(event)"/>` : ''}
+    </div>
+</div>
+</div>

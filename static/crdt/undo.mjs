@@ -8,6 +8,7 @@
  * Operations made within `captureTimeout` ms in the same object form one step, and
  * `stopCapturing()` closes a step (Enter, another block, a menu action…).
  */
+import {FIELD_DEFAULTS} from "./doc.mjs"
 
 export class UndoManager {
     constructor(doc, {captureTimeout = 500, limit = 200} = {}) {
@@ -111,8 +112,9 @@ export class UndoManager {
         if (entry.kind === "set") {
             const stamp = doc.stamp(entry.o, entry.f)
             if (!stamp || stamp.k !== entry.k || stamp.c !== entry.c) return null   // changed by someone since
-            // A block that did not exist before: undoing its creation deletes it
-            const value = entry.before ? entry.before.v : (entry.f === "deleted" ? true : undefined)
+            // A block that did not exist before: undoing its creation deletes it. A field never
+            // set before goes back to the value it read as
+            const value = entry.before ? entry.before.v : (entry.f === "deleted" ? true : FIELD_DEFAULTS[entry.f])
             if (value === undefined) return null
             const before = {v: entry.v, k: entry.k, c: entry.c}
             const op = doc.set(entry.o, entry.f, value)

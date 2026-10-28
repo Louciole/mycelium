@@ -31,3 +31,5 @@
 </div>
 ${Subscribe('global.state.slashMenu', () => getTemplate('slash-menu'))}
 ${Subscribe('global.state.noteBlockMenu', () => global.state.noteBlockMenu ? fillWith('note-block-menu', [global.state.noteBlockMenu]) : '')}
+<input type="file" id="note-image-input" accept="image/png,image/jpeg,image/gif,image/webp,image/avif" hidden onchange="global.state.noteEditor.onImagePicked(event)"/>
+${Subscribe('global.state.noteFilePicker', () => global.state.noteFilePicker ? fillWith('note-file-picker', [global.state.noteEditor.filePickerView()]) : '')}
