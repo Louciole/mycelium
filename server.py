@@ -696,7 +696,9 @@ class Mycelium(ForumMixin, Server):
         })
 
     def activeSuspension(self, uid):
-        """The unexpired account_suspension row for uid, or None (expired rows lazily deleted)."""
+        """The unexpired account_suspension row for uid, or None (expired rows lazily deleted).
+        Checked on every request (checkJwt): one lookup on a UNIQUE column, and no
+        in-process cache, which the other server processes couldn't invalidate."""
         rows = self.db.getFilters("account_suspension", ["account", "=", uid])
         if not rows:
             return None
@@ -724,8 +726,23 @@ class Mycelium(ForumMixin, Server):
         """Tell the user's live clients why, then drop them from the WS pool so they
         stop receiving notifications and fail checkWSAuth. The sockets are left to
         close on their own (they live on the WS thread's event loop); re-auth is
-        refused by the suspension gate."""
-        self.sendNotification(uid, notif)
+        refused by the suspension gate.
+        Doesn't wait: the HTTP thread serves everyone, a slow client must not stall it."""
+        loop = getattr(self, "ws_loop", None)
+        if loop is None:
+            self._dropUserClients(uid)
+        else:
+            asyncio.run_coroutine_threadsafe(self._notifyThenDropUserClients(uid, notif), loop)
+
+    async def _notifyThenDropUserClients(self, uid, notif):
+        # On the WS loop. Send first: it only reaches the clients still in the pool
+        try:
+            await asyncio.wait_for(self.sendNotificationAsync(uid, notif), timeout=2)
+        except Exception as e:
+            print(f"[moderation] could not notify {uid} before disconnecting them: {e!r}")
+        self._dropUserClients(uid)
+
+    def _dropUserClients(self, uid):
         for client in self.db.getAll("active_client", uid, "userid") or []:
             self.pool.pop(client["id"], None)
             self.db.deleteSomething("active_client", client["id"])

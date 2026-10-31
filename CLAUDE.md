@@ -33,7 +33,9 @@ python server.py       # starts server on port 8080 by default
 | Run single E2E spec | `npx playwright test tests/e2e/<spec>.spec.mjs` |
 | Install Playwright | `npx playwright install --with-deps chromium` |
 
-E2E tests run against `http://localhost:808` (see `tests/playwright.config.mjs`).
+E2E tests run against `http://localhost:8808`: `tests/e2e/frontServer.mjs`, started by `tests/playwright.config.mjs` (re-exported by the root `playwright.config.mjs`), serves `/static/` from disk and proxies the rest to the app on `:9876` — nginx on `/mnt/c` (WSL) caps static files at ~200/s. `E2E_BASE_URL=http://localhost:808` goes through nginx instead.
+
+Load tests: `python tests/perf/loadtest.py` (server endpoints, stdlib) and `npx playwright test --config tests/perf/playwright.perf.config.mjs` (parallel app boots, `WORKERS=8`).
 
 ## Architecture
 

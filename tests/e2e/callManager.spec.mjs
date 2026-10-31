@@ -21,7 +21,6 @@ import {
     waitForAppReady
 } from './helpers/callHelpers.mjs';
 
-const SERVER_URL = 'http://localhost:808';
 const TEST_TIMEOUT = 30000;
 
 

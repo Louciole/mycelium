@@ -1,11 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loginUser } from './helpers/authHelpers.mjs';
+import { loginUser, SERVER_URL } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import { createServerViaUi, openServerFromSidebarById, getServerIds } from './helpers/serverHelpers.mjs';
 import { disconnectViaUi, reloadAndWaitForApp } from './helpers/messagingHelpers.mjs';
 import { api, setupServer, status } from './helpers/permissionHelpers.mjs';
 
-const SERVER_URL = 'http://localhost:808';
 const TEST_TIMEOUT = 120000;
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────

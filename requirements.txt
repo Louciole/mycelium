@@ -1,4 +1,4 @@
 vesta-web
 requests
 firebase-admin
-psutil  # host CPU/RAM telemetry for the "Server resources" live metric (optional; degrades to n/a)
+psutil

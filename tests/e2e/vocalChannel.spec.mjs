@@ -6,6 +6,7 @@ import { test, expect } from '@playwright/test';
 import { setupServer, createChannel, openServer, setChannelPerm } from './helpers/permissionHelpers.mjs';
 import { createConversation, openConversation, waitForAppReady } from './helpers/callHelpers.mjs';
 import { reloadAndWaitForApp } from './helpers/messagingHelpers.mjs';
+import { SERVER_URL } from './helpers/authHelpers.mjs';
 
 /** Reload (to receive the conv), go to the DM list and open `conv`. */
 async function openDm(page, conv) {
@@ -225,7 +226,7 @@ test.describe('Vocal channels', () => {
         const { s, chan, member } = await twoInVocal(browser, 'vocothertab');
         try {
             const extra = await member.page.context().newPage();
-            await extra.goto('http://localhost:808/channels');
+            await extra.goto(`${SERVER_URL}/channels`);
             await waitForAppReady(extra, 20000);
             await extra.close();
             await member.page.waitForTimeout(3000);
@@ -391,10 +392,21 @@ test.describe('Vocal channels', () => {
             const member = s.members[0];
             await openServer(s.owner, s.serverId);
             await joinFromSidebar(s.owner, chan);
-            // The member's tab is gone (no WebSocket), then a join lands over HTTP
+            // The member's tab is gone (no WebSocket), then a join lands over HTTP.
+            // Wait for the server to have handled the closed socket first: that cleanup
+            // takes them out of their calls, the join below included when it lands first.
+            // Its last step tells the subscribers the member is Offline (the DB already
+            // says so before the calls are cleaned up): subscribe the owner to them.
+            await s.owner.evaluate(async (id) => {
+                if (global.users[id]) global.users[id].status = null;   // update_status sets it again
+                else global.users[id] = { id };
+                await fetch(`/subscribe?client_id=${global.state.clientID}&cat=user&items=[${id}]`);
+            }, member.id);
             const request = member.page.context().request;
             await member.page.close();
-            const joined = await request.post(`http://localhost:808/join_vocal_channel?channel_id=${chan}`);
+            await expect.poll(() => s.owner.evaluate((id) => global.users[id]?.status?.text, member.id),
+                { timeout: 10000 }).toBe('Offline');
+            const joined = await request.post(`${SERVER_URL}/join_vocal_channel?channel_id=${chan}`);
             expect(joined.ok()).toBe(true);
             const participants = async () => (await s.owner.evaluate(async (c) =>
                 (await fetch(`/get_vocal_channel_state?channel_id=${c}`)).json(), chan)).participants;
@@ -450,7 +462,7 @@ test.describe('Vocal channels', () => {
             await joinFromSidebar(s.owner, chan);
             await openServer(m, s.serverId);   // reload: occupants only come from get_serv_content
             await expect(m.locator(`#vocal-occupant-${s.ownerId}`)).toBeVisible();
-            await m.goto(`http://localhost:808/channels#${s.serverId}/vocal/${chan}`);
+            await m.goto(`${SERVER_URL}/channels#${s.serverId}/vocal/${chan}`);
             await m.reload();
             await expect(m.locator('.vocal-lobby .vocal-lobby-avatar')).toHaveCount(1, { timeout: 15000 });
             await expect(m.locator('.vocal-header-count')).toHaveText(/^1 /);

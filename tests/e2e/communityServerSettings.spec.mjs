@@ -63,7 +63,8 @@ async function pickLanguage(page, code) {
 
 let tokenSeq = 0;
 function uniqueToken() {
-    return `c${Date.now().toString(36)}${(tokenSeq++).toString(36)}`;
+    // + random: the tests of this file run in parallel workers, each with its own counter
+    return `c${Date.now().toString(36)}${(tokenSeq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
 /** Logs in, creates a server named after a unique token and opens its settings. */

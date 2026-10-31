@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginUser } from './helpers/authHelpers.mjs';
+import { loginUser, SERVER_URL } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import {
     changeServerName,
@@ -150,7 +150,7 @@ test.describe('Discover page - E2E', () => {
             await waitForAppReady(page2);
 
             // Deep link straight to the discover page.
-            await page2.goto('http://localhost:808/channels#discover');
+            await page2.goto(`${SERVER_URL}/channels#discover`);
             await waitForAppReady(page2);
             await page2.locator('#discover-nav').waitFor({ state: 'visible', timeout: 10000 });
             await expect(page2.locator('#discover-servers')).toHaveClass(/selected/);

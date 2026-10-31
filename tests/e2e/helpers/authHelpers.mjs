@@ -2,8 +2,13 @@
  * Authentication helpers for E2E tests.
  */
 
-export const SERVER_URL = 'http://localhost:808';
+// The front server started by playwright.config.mjs (static files + proxy to the
+// app), or e.g. E2E_BASE_URL=http://localhost:808 to go through nginx.
+export const SERVER_URL = process.env.E2E_BASE_URL || 'http://localhost:8808';
 export const TEST_PASSWORD = 'Test123!';
+// Signup + first page loads: when the run's first browsers all start at once it can
+// take more than 10 s (it's setup: the tests time what they check themselves).
+const NAVIGATION_TIMEOUT = 30000;
 
 // Email of the test account each page is logged in as (see accountOf).
 const accounts = new WeakMap();
@@ -20,7 +25,10 @@ export function accountOf(page) {
  * @returns {Promise<Object>} Logged-in user information
  */
 export async function loginUser(page, username) {
-    const email = `${username}@test.com`;
+    // + the worker: tests run in parallel and most name their users `prefix_${Date.now()}`,
+    // two of them starting in the same millisecond would share an account. Stable within a
+    // worker, so logging the same username in again still finds the same account.
+    const email = `${username}_w${process.env.TEST_WORKER_INDEX ?? 0}@test.com`;
     const password = TEST_PASSWORD;
 
     // 1. Go to /auth
@@ -33,7 +41,7 @@ export async function loginUser(page, username) {
     // IMPORTANT: Wait for the navigation that happens after submit.
     // The form performs an XHR request then redirects in the callback.
     await Promise.all([
-        page.waitForNavigation({ timeout: 10000 }), // Wait for redirect
+        page.waitForNavigation({ timeout: NAVIGATION_TIMEOUT }), // Wait for redirect
         page.click('button[type="submit"]')          // Click submit
     ]);
 
@@ -56,7 +64,7 @@ export async function loginUser(page, username) {
 
         // 3.1.3 - Submit and wait for navigation to /channels
         await Promise.all([
-            page.waitForNavigation({ timeout: 10000 }),
+            page.waitForNavigation({ timeout: NAVIGATION_TIMEOUT }),
             page.click('button[type="submit"]')
         ]);
     }

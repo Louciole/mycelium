@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginUser } from './helpers/authHelpers.mjs';
+import { loginUser, SERVER_URL } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import {
     changeServerName,
@@ -9,7 +9,6 @@ import {
     openServerSettings
 } from './helpers/serverHelpers.mjs';
 
-const SERVER_URL = 'http://localhost:808';
 const TEST_TIMEOUT = 120000;
 
 async function apiPost(page, path) {

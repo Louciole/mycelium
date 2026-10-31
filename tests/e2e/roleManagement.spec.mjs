@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginUser } from './helpers/authHelpers.mjs';
+import { loginUser, SERVER_URL } from './helpers/authHelpers.mjs';
 import { waitForAppReady } from './helpers/callHelpers.mjs';
 import {
     createServerViaUi,
@@ -9,7 +9,6 @@ import {
 } from './helpers/serverHelpers.mjs';
 import { disconnectViaUi, reloadAndWaitForApp } from './helpers/messagingHelpers.mjs';
 
-const SERVER_URL = 'http://localhost:808';
 const TEST_TIMEOUT = 120000;
 
 // ─── Thin API helper (role creation/setup only — everything user-facing is UI) ─
