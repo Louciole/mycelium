@@ -1,0 +1,12 @@
+${fillWith('cb-head', [{
+    uuid: element.uuid, tint: element.tint, icon: element.icon, editable: true,
+    title: element.state.settings.title, placeholder: element.title, sub: element.sub,
+    aside: element.ring ? `<span class="cb-progress${element.ring.complete ? ' complete' : ''}" role="img" aria-label="${escapeHTML(element.ring.label)}"
+            style="--done:${element.ring.donePct}%; --taken:${element.ring.takenPct}%"><span>${element.ring.done}/${element.ring.total}</span></span>` : '',
+}])}
+<div class="cb-list">${fillWith('cb-check-row', element.rows)}</div>
+<form class="cb-add-row cb-check-new" onsubmit="event.preventDefault(); cbAddCheck('${element.uuid}', this)">
+    ${fillWith('cb-icon-plus', [{}])}
+    <input name="text" data-keep="new-item" maxlength="200" autocomplete="off"
+        placeholder="${escapeHTML(element.placeholder)}" aria-label="${escapeHTML(element.placeholder)}"/>
+</form>

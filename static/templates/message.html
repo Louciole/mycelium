@@ -6,7 +6,7 @@
                 <div class="icon-wrapper" onclick="openReactionPicker(event, ${element.id})">
                     <img class="icon" src="/static/icons/material/emoji.svg" height="1.2rem"/>
                 </div>
-                ${element.sender === global.user.id && !isConvSpreadsheetMessage(element) ? `
+                ${element.sender === global.user.id && !isBlockMessage(element) ? `
                 <div class="icon-wrapper" onclick="editMsg(${element.id})">
                     <img class="icon" src="/static/icons/material/edit.svg"  height="1.2rem"/>
                 </div>
@@ -27,6 +27,7 @@
             </div>
 
             ${isConvSpreadsheetMessage(element) ? fillWith('conv-spreadsheet-message', [element]) :
+              isConvBlockMessage(element) ? renderConvBlockMessage(element) :
               isPollMessage(element) ? fillWith('poll-message', [element]) : `
             <div class="global-convs🪟${element.place}🥹-messages🪟${element.id}🥹-body mdBlock" data-content="()=>{
             return renderMessageBody(global.convs['${element.place}']?.messages['${element.id}'].body)

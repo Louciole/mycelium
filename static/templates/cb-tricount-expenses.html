@@ -1,0 +1,4 @@
+${element.newForm ? fillWith('cb-expense-form', [element.newForm]) : `
+<button type="button" class="cb-add" onclick="cbStartExpense('${element.uuid}')">${fillWith('cb-icon-plus', [{}])}<span>${escapeHTML(_t('Add an expense'))}</span></button>`}
+${element.items.length ? '' : `<p class="cb-empty">${escapeHTML(_t('No expenses yet. Add the first one!'))}</p>`}
+<div class="cb-list">${fillWith('cb-expense-row', element.rows)}</div>

@@ -1,31 +1,24 @@
 <section class="menu-wrapper" id="create-block" style="display:none" onclick="closeMenu('#create-block')">
     <div class="menu block-picker" onclick="event.stopPropagation()">
-        <div class="close" onclick="closeMenu('#create-block')">+</div>
-        <h2>${_t("Insert a block")}</h2>
+        <div class="block-picker-head">
+            <h2>${_t("Insert a block")}</h2>
+            <label class="block-picker-search-box">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                <input class="block-picker-search" type="search" placeholder="${_t("Search a block…")}"
+                       aria-label="${_t("Search a block…")}" oninput="filterBlockPicker(this.value)"/>
+            </label>
+            <button type="button" class="block-picker-close" aria-label="${_t("Close")}" onclick="closeMenu('#create-block')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+        </div>
         <div class="block-picker-columns">
-            <div class="block-picker-categories">
-                <div class="block-cat-item selected" data-cat="featured" onclick="selectBlockCategory('featured')">${_t("Featured")}</div>
-                <div class="block-cat-item" data-cat="empty" onclick="selectBlockCategory('empty')">${_t("Empty blocks")}</div>
-            </div>
+            <nav class="block-picker-categories">${fillWith('block-picker-category', blockCategories())}</nav>
             <div class="block-picker-options">
-                <div class="block-option-group" data-for="featured">
-                    <div class="block-option" onclick="insertConvBlock('spreadsheet','tricount')">
-                        <img class="icon" src="/static/icons/material/table.svg"/>
-                        <div>
-                            <p class="block-option-name">${_t("Tricount")}</p>
-                            <p class="block-option-desc">${_t("Track shared expenses")}</p>
-                        </div>
-                    </div>
+                ${fillWith('block-picker-section', blockCategories())}
+                <div class="block-option-section" data-section="search">
+                    <div class="block-option-group" data-for="search" style="display:none"></div>
                 </div>
-                <div class="block-option-group" data-for="empty" style="display:none">
-                    <div class="block-option" onclick="insertConvBlock('spreadsheet','empty')">
-                        <img class="icon" src="/static/icons/material/table.svg"/>
-                        <div>
-                            <p class="block-option-name">${_t("Sheet")}</p>
-                            <p class="block-option-desc">${_t("Empty spreadsheet")}</p>
-                        </div>
-                    </div>
-                </div>
+                <p class="block-picker-empty" style="display:none">${_t("No block matches your search")}</p>
             </div>
         </div>
     </div>

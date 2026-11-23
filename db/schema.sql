@@ -719,3 +719,34 @@ create table if not exists platform_action_log (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+
+-- Interactive blocks posted in a conversation (routes/conv_blocks.py): a tricount, a
+-- checklist… One row per block, its entries (expenses, tasks) in conv_block_item.
+-- Spreadsheet blocks keep using note_spreadsheet (conv_id / message_id above).
+create table if not exists conv_block (
+    id bigserial NOT NULL PRIMARY KEY,
+    uuid varchar(36) NOT NULL UNIQUE,
+    message_id integer NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+    place integer NOT NULL,
+    type varchar(20) NOT NULL,
+    template varchar(32) NOT NULL DEFAULT 'empty',
+    settings jsonb NOT NULL DEFAULT '{}',
+    version bigint NOT NULL DEFAULT 0,   -- bumped on every change: clients keep the newest state
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+create index if not exists idx_conv_block_message on conv_block(message_id);
+
+create table if not exists conv_block_item (
+    id bigserial NOT NULL PRIMARY KEY,
+    block_id bigint NOT NULL REFERENCES conv_block(id) ON DELETE CASCADE,
+    position float NOT NULL DEFAULT 0,
+    data jsonb NOT NULL DEFAULT '{}',
+    author integer,
+    updated_by integer,                  -- last editor (the server writes it)
+    version bigint NOT NULL DEFAULT 0,   -- bumped on every change: if_version checks it
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+create index if not exists idx_conv_block_item_block on conv_block_item(block_id);
+ALTER TABLE conv_block_item ALTER COLUMN block_id TYPE bigint;   -- was integer (a no-op once bigint)
+ALTER TABLE conv_block_item ADD COLUMN IF NOT EXISTS updated_by integer;
+ALTER TABLE conv_block_item ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;

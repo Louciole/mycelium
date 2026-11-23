@@ -1,0 +1,38 @@
+<form class="cb-form" data-form="${element.key}" oninput="cbShareHint(this, '${escapeHTML(element.cur)}')"
+      onsubmit="event.preventDefault(); cbSubmitExpense('${element.uuid}', ${element.itemId ?? 'null'}, this)">
+    <div class="cb-form-row">
+        ${element.transfer ? '' : `<label class="cb-label grow">${escapeHTML(_t('What for'))}
+            <input class="cb-input" data-keep="${element.key}-label" name="label" maxlength="120" required placeholder="${escapeHTML(_t('What for? (e.g. Pizza)'))}" value="${escapeHTML(element.d.label || '')}"/>
+        </label>`}
+        <label class="cb-label amount">${escapeHTML(_t('Amount'))}
+            <span class="cb-input cb-money">
+                <input data-keep="${element.key}-amount" name="amount" inputmode="decimal" required pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="0.00" value="${element.amount}"/>
+                <span class="cb-currency">${escapeHTML(element.cur)}</span>
+            </span>
+        </label>
+    </div>
+    <div class="cb-form-row">
+        <label class="cb-label grow">${escapeHTML(element.transfer ? _t('From') : _t('Paid by'))}
+            <select class="cb-input" data-keep="${element.key}-payer" name="payer">${element.people.map(p => `
+                <option value="${p.id}"${p.id === element.d.payer ? ' selected' : ''}>${escapeHTML(p.id === element.me?.id ? cbFmt('{name} (me)', {name: p.name}) : p.name)}</option>`).join('')}
+            </select>
+        </label>
+        <label class="cb-label grow">${escapeHTML(_t('Date'))}
+            <input class="cb-input" type="date" data-keep="${element.key}-date" name="date" value="${escapeHTML(element.d.date || '')}"/>
+        </label>
+    </div>
+    ${element.transfer ? '' : `<fieldset class="cb-split">
+        <legend class="cb-label">${escapeHTML(_t('Split between'))}</legend>
+        ${element.people.map(p => `
+        <label class="cb-split-chip">
+            <input type="checkbox" data-keep="${element.key}-split-${p.id}" value="${p.id}"${element.d.split.includes(p.id) ? ' checked' : ''}/>
+            <span>${escapeHTML(p.name)}</span>
+        </label>`).join('')}
+        <span class="cb-share" data-share>${escapeHTML(element.hint)}</span>
+    </fieldset>`}
+    <div class="cb-form-row end">
+        ${element.itemId != null ? `<button type="button" class="btn small danger" onclick="cbDeleteItem('${element.uuid}', ${element.itemId})">${escapeHTML(_t('Delete'))}</button>` : ''}
+        <button type="button" class="btn small" onclick="cbCancelExpense('${element.uuid}')">${escapeHTML(_t('Cancel'))}</button>
+        <button type="submit" class="btn small blue">${escapeHTML(element.itemId != null ? _t('Save') : _t('Add the expense'))}</button>
+    </div>
+</form>

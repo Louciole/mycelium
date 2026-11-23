@@ -1,10 +1,5 @@
-<div class="conv-block-message">
-    <div class="conv-block-controls inline">
-        ${element.sender === global.user.id ? `
-        <div class="icon-wrapper" onclick="delMsg(${element.id})">
-            <img class="icon" src="/static/icons/material/trash.svg"/>
-        </div>` : ''}
-    </div>
+<div class="conv-block-message conv-block cb-sheet">
+    ${fillWith('cb-head', [convSheetHead(element)])}
     <div class="conv-spreadsheet-container"
          data-block-id="${getConvSpreadsheetUuid(element)}"
          data-conv-id="${element.place}">

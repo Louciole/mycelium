@@ -1,0 +1,18 @@
+${fillWith('cb-head', [{
+    uuid: element.uuid, tint: 'green', icon: 'group', editable: true,
+    title: element.state.settings.title, placeholder: 'Tricount', sub: element.sub,
+    aside: `<span class="cb-stack" role="img" aria-label="${escapeHTML(element.people.map(p => p.name).join(', '))}">${
+        element.people.slice(0, 5).map(p => cbPersonAvatar(element, p.id, 'small')).join('')}${
+        element.people.length > 5 ? `<span class="cb-avatar small more" aria-hidden="true">+${element.people.length - 5}</span>` : ''}</span>`,
+}])}
+<div class="cb-stats">${element.stats.map(s => `
+    <div class="cb-stat${s.optional ? ' optional' : ''}${s.kind ? ' ' + s.kind : ''}">
+        <span class="cb-stat-label">${escapeHTML(s.label)}</span>
+        <span class="cb-stat-value">${escapeHTML(s.value)}</span>
+    </div>`).join('')}
+</div>
+<div class="cb-tabs" role="tablist">${element.tabs.map(t => `
+    <button type="button" role="tab" aria-selected="${element.view.tab === t.id}" class="cb-tab${element.view.tab === t.id ? ' selected' : ''}"
+            onclick="cbTab('${element.uuid}','${t.id}')">${escapeHTML(t.label)}${t.count !== '' ? ` <span class="cb-count">${t.count}</span>` : ''}</button>`).join('')}
+</div>
+<div class="cb-body">${fillWith('cb-tricount-' + element.view.tab, [element])}</div>

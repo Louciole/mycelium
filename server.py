@@ -1067,6 +1067,7 @@ import routes.servers        # noqa: E402,F401
 import routes.discovery      # noqa: E402,F401
 import routes.conversations  # noqa: E402,F401
 import routes.messaging      # noqa: E402,F401
+import routes.conv_blocks    # noqa: E402,F401
 import routes.calls          # noqa: E402,F401
 import routes.workspaces     # noqa: E402,F401
 import routes.drive          # noqa: E402,F401

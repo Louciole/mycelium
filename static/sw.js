@@ -32,6 +32,10 @@ const SHELL_ASSETS = [
     '/static/templates/profile-info.html',
     '/static/templates/create-poll.html',
     '/static/templates/create-block.html',
+    '/static/templates/block-picker-category.html',   // filled in by create-block.html
+    '/static/templates/block-picker-section.html',
+    '/static/templates/block-picker-option.html',
+    '/static/templates/cb-glyph.html',
     '/static/templates/poll-voters.html',
 ];
 

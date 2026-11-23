@@ -1,0 +1,18 @@
+<div class="cb-people">${element.persons.map(({p, removable}) => `
+    <div class="cb-person">
+        ${cbPersonAvatar(element, p.id)}
+        <input class="cb-input grow" data-keep="person-${p.id}" maxlength="32" value="${escapeHTML(p.name)}"
+            aria-label="${escapeHTML(_t('Name'))}" onkeydown="checkEnter(event, () => this.blur())"
+            onchange="cbRenamePerson('${element.uuid}','${p.id}', this.value)"/>
+        ${p.account ? `<span class="cb-chip small">${escapeHTML(_t('member'))}</span>` : ''}
+        <button type="button" class="cb-icon-btn" ${removable ? `title="${escapeHTML(_t('Remove'))}"` : `disabled title="${escapeHTML(_t('This participant still has expenses'))}"`}
+            aria-label="${escapeHTML(_t('Remove'))}" onclick="cbRemovePerson('${element.uuid}','${p.id}')"><img class="icon" src="/static/icons/material/close.svg" alt=""/></button>
+    </div>`).join('')}
+</div>
+<form class="cb-add-row" onsubmit="event.preventDefault(); cbAddPerson('${element.uuid}', this.name.value, this)">
+    ${fillWith('cb-icon-plus', [{}])}
+    <input name="name" data-keep="person-new" maxlength="32" required autocomplete="off" placeholder="${escapeHTML(_t('Add someone (name)'))}" aria-label="${escapeHTML(_t('Add someone (name)'))}"/>
+</form>
+<label class="cb-label inline cb-currency-pick">${escapeHTML(_t('Currency'))}
+    <select class="cb-input" onchange="cbCurrency('${element.uuid}', this.value)">${element.currencies.map(c => `<option${c === element.cur ? ' selected' : ''}>${escapeHTML(c)}</option>`).join('')}</select>
+</label>

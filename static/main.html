@@ -49,9 +49,89 @@
     </script>
 </head>
 <body>
-    <div id="loading-screen">
-        <h1>Mycelium is loading</h1>
-        <div class="spinner"></div>
+    <div id="loading-screen" role="status" aria-label="Loading…">
+        <!-- Pixel-art mushroom off on an adventure: 3.6 s seamless loop, pure CSS (see #loading-screen in style.css).
+             1 SVG unit = 1 pixel of the sprite; every animation moves in whole pixels (step keyframes). -->
+        <svg class="ls-scene" viewBox="0 -4 48 30" shape-rendering="crispEdges" aria-hidden="true">
+            <defs>
+                <!-- stepped edge fade, pixel style -->
+                <linearGradient id="ls-grad">
+                    <stop offset=".06" stop-color="#000"/><stop offset=".06" stop-color="#555"/>
+                    <stop offset=".13" stop-color="#555"/><stop offset=".13" stop-color="#aaa"/>
+                    <stop offset=".2" stop-color="#aaa"/><stop offset=".2" stop-color="#fff"/>
+                    <stop offset=".8" stop-color="#fff"/><stop offset=".8" stop-color="#aaa"/>
+                    <stop offset=".87" stop-color="#aaa"/><stop offset=".87" stop-color="#555"/>
+                    <stop offset=".94" stop-color="#555"/><stop offset=".94" stop-color="#000"/>
+                </linearGradient>
+                <mask id="ls-fade" maskUnits="userSpaceOnUse" x="0" y="-4" width="48" height="30">
+                    <rect y="-4" width="48" height="30" fill="url(#ls-grad)"/>
+                </mask>
+            </defs>
+
+            <g mask="url(#ls-fade)">
+                <g class="px-far">
+                    <path id="ls-far-tile" d="M6 16h3v1h-3zM5 17h5v1h-5zM7 18h1v3h-1zM18 18h3v1h-3zM19 19h1v2h-1z"/>
+                    <use href="#ls-far-tile" x="24"/>
+                    <use href="#ls-far-tile" x="48"/>
+                </g>
+                <path class="px-ground" d="M0 21h48v1h-48z"/>
+                <g class="px-near">
+                    <g id="ls-near-tile">
+                        <path class="px-tuft" d="M9 19h1v2h-1zM11 18h1v3h-1zM36 19h1v2h-1zM37 18h1v3h-1zM39 19h1v2h-1z"/>
+                        <path class="px-friend" d="M29 18h3v1h-3zM30 19h1v2h-1z"/>
+                        <path class="px-dash" d="M4 23h4v1h-4zM27 23h2v1h-2zM41 23h3v1h-3z"/>
+                        <path class="px-rock" d="M0 18h2v1h-2zM-2 19h1v1h-1zM0 19h3v1h-3z"/>
+                        <path class="px-rock-hi" d="M-1 18h1v1h-1zM-1 19h1v1h-1z"/>
+                        <path class="px-rock-lo" d="M-2 20h5v1h-5z"/>
+                    </g>
+                    <use href="#ls-near-tile" x="48"/>
+                </g>
+            </g>
+            <path class="px-shadow px-shadow-wide" d="M19 21h9v1h-9z"/>
+            <path class="px-shadow px-shadow-mid" d="M21 21h5v1h-5z"/>
+            <path class="px-shadow px-shadow-small" d="M22 21h3v1h-3z"/>
+            <path class="px-dust px-dust-1" d="M18 20h1v1h-1zM28 20h1v1h-1z"/>
+            <path class="px-dust px-dust-2" d="M17 19h1v1h-1zM29 19h1v1h-1zM16 20h1v1h-1zM30 20h1v1h-1z"/>
+            <path class="px-bang" d="M28 2h1v1h-1zM28 3h1v1h-1zM28 4h1v1h-1zM28 6h1v1h-1z"/>
+            <g class="px-hop">
+                <g class="px-feet">
+                    <path class="px-foot px-feet-a" d="M20 20h2v1h-2zM25 20h2v1h-2z"/>
+                    <path class="px-foot px-feet-b" d="M22 20h4v1h-4z"/>
+                </g>
+                <path class="px-leg px-legs-up" d="M22 19h1v1h-1zM25 19h1v1h-1z"/>
+                <path class="px-leg px-legs-down" d="M21 20h1v1h-1zM25 20h1v1h-1z"/>
+                <g class="px-body">
+                        <path class="px-packdark" d="M14 11h4v1h-4zM13 14h7v1h-7z"/>
+                        <path class="px-flap" d="M13 12h5v1h-5zM13 13h7v1h-7z"/>
+                        <path class="px-pack" d="M13 15h1v1h-1zM16 15h4v1h-4zM14 16h6v1h-6z"/>
+                        <path class="px-pocket" d="M14 15h2v1h-2z"/>
+                    <path class="px-stem" d="M20 12h7v1h-7zM20 13h7v1h-7zM20 14h7v1h-7zM20 15h7v1h-7zM20 16h7v1h-7zM20 17h7v1h-7zM20 18h7v1h-7zM21 19h5v1h-5z"/>
+                    <path class="px-stem px-squash" d="M19 17h1v1h-1zM27 17h1v1h-1zM19 18h1v1h-1zM27 18h1v1h-1z"/>
+                    <path class="px-strap" d="M21 15h1v1h-1zM21 16h1v1h-1zM21 17h1v1h-1z"/>
+                    <g class="px-face">
+                        <path class="px-eye" d="M23 17h1v1h-1zM25 17h1v1h-1z"/>
+                        <path class="px-eye px-lid" d="M23 16h1v1h-1zM25 16h1v1h-1z"/>
+                    </g>
+                    <g class="px-cap-g">
+                            <path class="px-cap" d="M20 9h6v1h-6zM18 10h2v1h-2zM22 10h6v1h-6zM17 11h3v1h-3zM22 11h4v1h-4zM28 11h1v1h-1zM16 12h10v1h-10zM28 12h2v1h-2zM16 13h1v1h-1zM19 13h11v1h-11z"/>
+                            <path class="px-spot" d="M20 10h2v1h-2zM20 11h2v1h-2zM26 11h2v1h-2zM26 12h2v1h-2zM17 13h2v1h-2z"/>
+                            <path class="px-capshade" d="M17 14h12v1h-12z"/>
+                        <path class="px-cap px-squash" d="M15 12h1v1h-1zM30 12h1v1h-1zM15 13h1v1h-1zM30 13h1v1h-1z"/>
+                    </g>
+                </g>
+            </g>
+        </svg>
+        <div class="ls-label" aria-hidden="true"><span class="ls-text">Loading</span><span class="ls-dots"><i></i><i></i><i></i></span></div>
+        <script>
+            // Localise the label before first paint, same language pick as translations/translation.mjs
+            (function () {
+                var m = document.cookie.match(/(?:^|;\s*)mycelium_lang=([^;]+)/);
+                var l = (m ? m[1] : navigator.language || 'en').split('-')[0];
+                var t = { fr: 'Chargement', en: 'Loading', de: 'Wird geladen', br: 'O kargañ', eo: 'Ŝargante' }[l] || 'Loading';
+                document.querySelector('#loading-screen .ls-text').textContent = t;
+                document.getElementById('loading-screen').setAttribute('aria-label', t + '…');
+            })();
+        </script>
     </div>
     <div id="app-track">
     <section id="main-selector">

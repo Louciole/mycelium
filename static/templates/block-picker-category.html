@@ -1,0 +1,4 @@
+${element.id === 'empty' ? '<span class="block-cat-sep" role="separator"></span>' : ''}
+<button type="button" class="block-cat-item${element.selected ? ' selected' : ''}" data-cat="${element.id}" onclick="selectBlockCategory('${element.id}')">
+    ${cbGlyph(element.icon)}<span>${escapeHTML(_t(element.label))}</span>
+</button>

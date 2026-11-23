@@ -1,0 +1,13 @@
+<div class="cb-head">
+    <span class="cb-tile tint-${element.tint}">${cbGlyph(element.icon)}</span>
+    <div class="cb-head-main">
+        ${element.editable
+            ? `<input class="cb-title" data-keep="title" maxlength="80" value="${escapeHTML(element.title || '')}"
+                placeholder="${escapeHTML(_t(element.placeholder))}" aria-label="${escapeHTML(_t('Title'))}"
+                onkeydown="checkEnter(event, () => this.blur())"
+                onchange="cbRename('${element.uuid}', this.value)"/>`
+            : `<span class="cb-title static">${escapeHTML(_t(element.title))}</span>`}
+        <div class="cb-sub">${escapeHTML(element.sub)}</div>
+    </div>
+    ${element.aside || ''}
+</div>

@@ -1,0 +1,22 @@
+<div class="cb-check${element.d.done ? ' done' : ''}${element.editing ? ' editing' : ''}">
+    <button type="button" class="cb-box${element.d.done ? ' checked' : ''}" role="checkbox" aria-checked="${!!element.d.done}"
+        aria-label="${escapeHTML(element.d.text)}" onclick="cbToggle('${element.uuid}', ${element.item.id}, ${!element.d.done})"></button>
+    ${element.editing ? `
+    <input class="cb-input grow" data-keep="edit-${element.item.id}" maxlength="200" value="${escapeHTML(element.d.text)}"
+        onkeydown="cbTextKey(event, '${element.uuid}')"
+        onblur="cbSaveText('${element.uuid}', ${element.item.id}, this.value)"/>` : `
+    <span class="cb-check-text" ondblclick="cbEditText('${element.uuid}', ${element.item.id})"
+        onclick="cbTapText('${element.uuid}', ${element.item.id})">${escapeHTML(element.d.text)}</span>`}
+    ${element.claim ? (element.d.claimed_by ? `
+    <button type="button" class="cb-claim taken${element.mineClaim ? ' mine' : ''}"
+        ${element.mineClaim ? `title="${escapeHTML(_t('Let someone else take it'))}" onclick="cbClaim('${element.uuid}', ${element.item.id}, false)"` : 'disabled'}>
+        ${cbAvatar(element.claimedName, element.d.claimed_by, 'tiny', element.d.claimed_by)}<span>${escapeHTML(element.mineClaim ? _t('Me') : element.claimedName || '?')}</span>
+    </button>` : `
+    <button type="button" class="cb-claim" onclick="cbClaim('${element.uuid}', ${element.item.id}, true)">${fillWith('cb-icon-plus', [{}])}<span>${escapeHTML(_t("I'll bring it"))}</span></button>`)
+    : element.d.done && element.d.done_by ? `
+    <span class="cb-who" title="${escapeHTML(element.doneName || '')}">${cbAvatar(element.doneName, element.d.done_by, 'tiny', element.d.done_by)}<span>${escapeHTML(element.mineDone ? _t('Me') : element.doneName || '?')}</span></span>` : ''}
+    <span class="cb-row-actions">
+        <button type="button" class="cb-icon-btn" title="${escapeHTML(_t('Edit'))}" aria-label="${escapeHTML(_t('Edit'))}" onmousedown="event.preventDefault()" onclick="cbEditText('${element.uuid}', ${element.item.id})"><img class="icon" src="/static/icons/material/edit.svg" alt=""/></button>
+        <button type="button" class="cb-icon-btn" title="${escapeHTML(_t('Delete'))}" aria-label="${escapeHTML(_t('Delete'))}" onmousedown="event.preventDefault()" onclick="cbDeleteItem('${element.uuid}', ${element.item.id})"><img class="icon" src="/static/icons/material/trash.svg" alt=""/></button>
+    </span>
+</div>

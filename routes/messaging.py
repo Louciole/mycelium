@@ -9,7 +9,8 @@ import secrets
 
 from vesta import Server, HTTPError
 from message_helpers import (notifyChannelMesage, notifyConvMessage, post_system_message, is_system_message,
-                             _lookupMessagePlace, notifyPlaceMembers)
+                             _lookupMessagePlace, notifyPlaceMembers, insert_message)
+from routes.conv_blocks import create_conv_block
 
 DICE_MAX_COUNT = 20
 DICE_MIN_FACES, DICE_MAX_FACES = 2, 1000
@@ -55,11 +56,8 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
         allow_user_options = bool(poll.get("allowUserOptions", False))
 
         # Insert message with empty body for polls
-        message = {"sender": uid, "place": conv["id"], "body": "", "attachments": "[]"}
-        if reply and reply != "undefined" and reply != "null":
-            message["reply"] = reply
-        msgId = self.db.insertDict("message", message, getId=True)
-        message["id"] = msgId
+        message = insert_message(self, uid, conv["id"], reply=reply)
+        msgId = message["id"]
 
         # Insert poll
         pollId = self.db.insertDict("poll", {
@@ -103,64 +101,18 @@ def send_message(self, conv, content, reply=False, attachments = [], poll=None, 
 
         return json.dumps({"message": message}, default=str)
 
-    # Handle conv block (spreadsheet) creation
+    # Interactive block (tricount, checklist, sheet…): routes/conv_blocks.py
     if conv_block:
-        import uuid as _uuid
-        block_type = conv_block.get("type", "")
-        template   = conv_block.get("template", "empty")
-        if block_type != "spreadsheet":
-            raise HTTPError(self.response, 400, "Unsupported block type")
-
-        block_uuid = str(_uuid.uuid4())
-        msg_body = {"sender": uid, "place": conv["id"], "body": "", "attachments": "[]"}
-        if reply and reply != "undefined" and reply != "null":
-            msg_body["reply"] = reply
-        msg_id = self.db.insertDict("message", msg_body, getId=True)
-        msg_body["id"] = msg_id
-
-        rows, cols = 5, 3
-        sheet_id = self.db.insertDict("note_spreadsheet", {
-            "block_uuid": block_uuid,
-            "conv_id": conv["id"],
-            "message_id": msg_id,
-            "rows": rows,
-            "cols": cols
-        }, getId=True)
-
-        cells = {}
-        if template == "tricount":
-            for i, header in enumerate(["Name", "Amount", "Paid By"]):
-                self.db.insertDict("note_spreadsheet_cell", {
-                    "spreadsheet_id": sheet_id,
-                    "row_idx": 1,
-                    "col_idx": i,
-                    "value": header
-                })
-                cells[self._sheet_ref(i, 1)] = header
-
-        attachment = [{"type": "conv_spreadsheet", "uuid": block_uuid}]
-        self.db.edit("message", msg_id, "attachments", json.dumps(attachment))
-        msg_body["attachments"]     = json.dumps(attachment)
-        msg_body["convSpreadsheet"] = {
-            "uuid": block_uuid, "id": sheet_id,
-            "rows": rows, "cols": cols, "cells": cells, "col_widths": {}
-        }
-
+        message = create_conv_block(self, uid, conv["id"], conv_block, reply)
         if channel_type:
-            notifyChannelMesage(self, uid, channel, msg_body, channel_type)
+            notifyChannelMesage(self, uid, channel, message, channel_type)
         else:
-            notifyConvMessage(self, uid, conv, msg_body)
-
-        return json.dumps({"message": msg_body}, default=str)
+            notifyConvMessage(self, uid, conv, message)
+        return json.dumps({"message": message}, default=str)
 
     if dice and not content.strip():
         content = f"/d {dice[0]}d{dice[1]}"   # keep the command visible in the conversation
-    message = {"sender": uid, "place": conv["id"], "body": content, "attachments": json.dumps(attachmentList)}
-    if reply and reply != "undefined" and reply != "null":
-        message["reply"] = reply
-
-    msgId = self.db.insertDict("message", message, getId=True)
-    message["id"] = msgId
+    message = insert_message(self, uid, conv["id"], body=content, attachments=json.dumps(attachmentList), reply=reply)
 
     if channel_type:
         notifyChannelMesage(self, uid, channel, message, channel_type)

@@ -1,0 +1,3 @@
+${element.photo
+    ? `<span class="cb-avatar${element.size ? ' ' + element.size : ''} photo" style="background-image:url('/static/attachments/${encodeURIComponent(element.photo)}')" aria-hidden="true"></span>`
+    : `<span class="cb-avatar${element.size ? ' ' + element.size : ''}" style="--av:${element.color}" aria-hidden="true">${escapeHTML(element.initial)}</span>`}

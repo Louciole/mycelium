@@ -1,0 +1,24 @@
+<div class="cb-balances">${element.balances.map(b => `
+    <div class="cb-balance">
+        ${cbPersonAvatar(element, b.p.id)}
+        <span class="cb-balance-name">${escapeHTML(b.p.name)}${b.mine ? ` <span class="cb-muted">${escapeHTML(_t('(me)'))}</span>` : ''}</span>
+        <span class="cb-balance-bar" aria-hidden="true">
+            <span class="neg">${b.v < 0 ? `<span style="width:${b.width}%"></span>` : ''}</span>
+            <span class="pos">${b.v > 0 ? `<span style="width:${b.width}%"></span>` : ''}</span>
+        </span>
+        <span class="cb-amount ${b.kind}">${b.v > 0 ? '+' : b.v < 0 ? '−' : ''}${cbMoney(Math.abs(b.v), element.cur)}</span>
+    </div>`).join('')}
+</div>
+<h4 class="cb-section">${escapeHTML(_t('How to settle up'))}</h4>
+<div class="cb-settles">${element.settles.length ? element.settles.map(mv => `
+    <div class="cb-settle${mv.mine ? ' mine' : ''}">
+        <span class="cb-settle-who">${cbPersonAvatar(element, mv.from, 'small')}${fillWith('cb-icon-arrow', [{}])}${cbPersonAvatar(element, mv.to, 'small')}</span>
+        <span class="cb-settle-text">${cbFmt(mv.sentence, {
+            from: `<strong>${escapeHTML(element.name[mv.from])}</strong>`,
+            to: `<strong>${escapeHTML(element.name[mv.to])}</strong>`,
+            amount: `<strong class="cb-num">${cbMoney(mv.amount, element.cur)}</strong>`,
+        })}</span>
+        <button type="button" class="btn small${mv.mine ? ' blue' : ''}" onclick="cbSettle('${element.uuid}','${mv.from}','${mv.to}',${mv.amount})">${escapeHTML(_t(mv.button))}</button>
+    </div>`).join('')
+    : `<p class="cb-empty">${escapeHTML(element.items.length ? _t('Everyone is settled up 🎉') : _t('No expenses yet. Add the first one!'))}</p>`}
+</div>

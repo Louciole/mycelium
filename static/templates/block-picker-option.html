@@ -1,0 +1,7 @@
+<button type="button" class="block-option" onclick="${element.action === 'poll' ? `closeMenu('#create-block');openMenu('create-poll')` : `insertConvBlock('${element.type}','${element.template}')`}">
+    <span class="cb-tile tint-${element.tint}">${cbGlyph(element.icon)}</span>
+    <span class="block-option-text">
+        <span class="block-option-name">${escapeHTML(_t(element.name))}</span>
+        <span class="block-option-desc">${escapeHTML(_t(element.desc))}</span>
+    </span>
+</button>

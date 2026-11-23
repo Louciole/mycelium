@@ -76,6 +76,25 @@ def _lookupMessagePlace(self, place_id):
     return None, None
 
 
+def insert_message(self, uid, place_id, body="", attachments="[]", reply=None, conn=None):
+    """Insert a message row and return it as clients hold it (id and timestamp
+    included, in one round trip). `reply` as the client sent it ("undefined",
+    "null" and empty mean none). `conn`: run inside the caller's transaction."""
+    message = {"sender": uid, "place": place_id, "body": body, "attachments": attachments}
+    if reply and reply not in ("undefined", "null"):
+        message["reply"] = reply
+    cols = list(message)      # fixed names, never user input
+    query = (f"INSERT INTO message ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))})"
+             " RETURNING id, timestamp")
+    if conn is None:
+        with self.db.pool.connection() as own:
+            row = own.execute(query, [message[c] for c in cols]).fetchone()
+    else:
+        row = conn.execute(query, [message[c] for c in cols]).fetchone()
+    message.update(id=row["id"], timestamp=row["timestamp"])
+    return message
+
+
 def notifyPlaceMembers(self, place_id, notif, exclude=None, place=None):
     """Send a WS notif about a message place to whoever can read it: the members
     who can view the channel (private channels, overwrites) or the conv's members.
@@ -116,8 +135,7 @@ def post_system_message(self, actor, place_id, kind, params, body, icon=None, pl
     (send_message answers them over HTTP) unless `notify_actor` is set, which is what
     server-triggered events need."""
     attachments = json.dumps([{"type": "system", "kind": kind, "icon": icon, "params": params}])
-    message = {"sender": actor, "place": place_id, "body": body, "attachments": attachments}
-    message["id"] = self.db.insertDict("message", message, getId=True)
+    message = insert_message(self, actor, place_id, body=body, attachments=attachments)
 
     channel, channel_type = place if place is not None else _lookupMessagePlace(self, place_id)
     if channel_type:
@@ -338,6 +356,8 @@ def _enrichMessagesWithReactions(self, messages):
 
 
 def _enrichMessagesWithConvBlocks(self, messages):
+    from routes.conv_blocks import read_block_states   # (it imports this module)
+    parsed = []
     for msg in messages:
         atts = msg.get("attachments") or []
         if isinstance(atts, str):
@@ -345,7 +365,16 @@ def _enrichMessagesWithConvBlocks(self, messages):
             except: atts = []
         if not isinstance(atts, list):
             atts = []
+        parsed.append((msg, atts))
+    # Tricounts / checklists: every block of the page in one go
+    states = read_block_states(self, [att.get("uuid") for _, atts in parsed for att in atts
+                                      if isinstance(att, dict) and att.get("type") == "conv_block"])
+    for msg, atts in parsed:
         for att in atts:
+            if isinstance(att, dict) and att.get("type") == "conv_block":
+                state = states.get(att.get("uuid"))
+                if state:
+                    msg["convBlock"] = state
             if isinstance(att, dict) and att.get("type") == "conv_spreadsheet":
                 sheet = self.db.getSomething("note_spreadsheet", att["uuid"], "block_uuid")
                 if sheet:

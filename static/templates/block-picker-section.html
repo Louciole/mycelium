@@ -1,0 +1,6 @@
+<div class="block-option-section" data-section="${element.id}"${element.selected ? '' : ' style="display:none"'}>
+    <p class="cb-section">${escapeHTML(_t(element.label))}</p>
+    <div class="block-option-group" data-for="${element.id}">
+        ${fillWith('block-picker-option', blockOptionsIn(element.id))}
+    </div>
+</div>

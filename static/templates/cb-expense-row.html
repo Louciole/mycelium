@@ -1,0 +1,16 @@
+${element.form ? fillWith('cb-expense-form', [element.form]) : `
+<div class="cb-row${element.d.transfer ? ' transfer' : ''}">
+    ${cbPersonAvatar(element.m, element.d.payer)}
+    <span class="cb-row-main" onclick="cbEditExpense('${element.m.uuid}', ${element.item.id})">
+        ${element.d.transfer ? `
+        <span class="cb-row-title">${escapeHTML(element.m.name[element.d.payer] ?? '?')} → ${escapeHTML(element.m.name[element.d.split[0]] ?? '?')}</span>
+        <span class="cb-row-sub">${escapeHTML(_t('Reimbursement'))}${element.date ? ' · ' + escapeHTML(element.date) : ''}</span>` : `
+        <span class="cb-row-title">${escapeHTML(element.d.label)}</span>
+        <span class="cb-row-sub"><strong>${escapeHTML(element.m.name[element.d.payer] ?? '?')}</strong> · ${escapeHTML(_t('for'))} ${escapeHTML(element.split)}${element.date ? ' · ' + escapeHTML(element.date) : ''}</span>`}
+    </span>
+    <span class="cb-amount">${cbMoney(element.d.amount, element.m.cur)}</span>
+    <span class="cb-row-actions">
+        <button type="button" class="cb-icon-btn" title="${escapeHTML(_t('Edit'))}" aria-label="${escapeHTML(_t('Edit'))}" onclick="cbEditExpense('${element.m.uuid}', ${element.item.id})"><img class="icon" src="/static/icons/material/edit.svg" alt=""/></button>
+        <button type="button" class="cb-icon-btn" title="${escapeHTML(_t('Delete'))}" aria-label="${escapeHTML(_t('Delete'))}" onclick="cbDeleteItem('${element.m.uuid}', ${element.item.id})"><img class="icon" src="/static/icons/material/trash.svg" alt=""/></button>
+    </span>
+</div>`}

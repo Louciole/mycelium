@@ -231,6 +231,13 @@ export async function onMessage(event) {
                     }
                     break;
 
+                case "conv_block_changed": {
+                    // A tricount / checklist changed (routes/conv_blocks.py): the whole new state
+                    const blockData = message.content.content
+                    window.applyConvBlockState?.(blockData.block, blockData.place)
+                    break
+                }
+
                 case "poll_voted":
                     const pollVoteData = message.content.content;
                     const pvConv = global.convs[pollVoteData.place];
